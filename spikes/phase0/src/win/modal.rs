@@ -1,14 +1,19 @@
 //! Runs blocking OS modal loops (DoDragDrop, TrackPopupMenuEx, shell dialogs) from our own hidden
-//! message-only window instead of from inside a GPUI task.
+//! message-only window instead of from inside a GPUI task (ADR-015).
 //!
 //! Why: a modal loop keeps pumping messages, so GPUI executes other tasks *inside* the task that
 //! started the loop. With gpui-kit's `profiler` feature that nesting panics
 //! (`ThreadTimings::save_task_timing` keeps one "running task" slot per thread), which is also what
-//! gpui-kit's own `NativeMenu` would hit. Posting the job to this window runs it from the plain
-//! message loop — outside GPUI's borrows *and* outside the executor — and the result comes back
-//! through a oneshot channel that a foreground task awaits.
+//! gpui-kit's own `NativeMenu` would hit. Posting a wake-up to this window runs the job from the
+//! plain message loop — outside GPUI's borrows *and* outside the executor — and the result comes
+//! back through a oneshot channel that a foreground task awaits.
+//!
+//! Jobs wait in a thread-local queue (never as pointers inside messages), and only one job runs at
+//! a time: a nested loop that dispatches another wake-up leaves the queue alone, and the outer job
+//! re-posts when it finishes.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 
 use futures::channel::oneshot;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -25,26 +30,37 @@ type Job = Box<dyn FnOnce()>;
 
 thread_local! {
     static HOST: Cell<isize> = const { Cell::new(0) };
+    static QUEUE: RefCell<VecDeque<Job>> = const { RefCell::new(VecDeque::new()) };
+    static BUSY: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Queues `job` to run on the UI thread from the host window's message handler.
-/// If the job cannot be queued or panics, the receiver resolves to `Canceled`.
+/// Creates the host window. Call once on the UI thread at startup, so it never ends up on
+/// another thread by accident.
+pub fn init() -> Result<()> {
+    host().map(|_| ())
+}
+
+/// Queues `job` to run on the UI thread from the host window's message handler. If the wake-up
+/// cannot be posted or the job panics, the receiver resolves to `Canceled`.
 pub fn run<T: 'static>(job: impl FnOnce() -> T + 'static) -> oneshot::Receiver<T> {
     let (tx, rx) = oneshot::channel();
-    let job: Job = Box::new(move || {
-        let _ = tx.send(job());
+    QUEUE.with(|queue| {
+        queue.borrow_mut().push_back(Box::new(move || {
+            let _ = tx.send(job());
+        }));
     });
-    let raw = Box::into_raw(Box::new(job));
-    // SAFETY: on success the host window takes ownership of `raw` and frees it exactly once.
-    let posted = host().and_then(|hwnd| unsafe {
-        PostMessageW(Some(hwnd), WM_RUN_MODAL, WPARAM(0), LPARAM(raw as isize))
-    });
-    if let Err(err) = posted {
+    if let Err(err) = wake() {
         log::error!(target: "sx_spike", "modal host: cannot queue job: {err}");
-        // SAFETY: the message was not posted, so we still own `raw`.
-        drop(unsafe { Box::from_raw(raw) });
+        // Dropping the queued job drops its sender, so the awaiting task sees `Canceled`.
+        QUEUE.with(|queue| queue.borrow_mut().pop_back());
     }
     rx
+}
+
+fn wake() -> Result<()> {
+    let hwnd = host()?;
+    // SAFETY: posts a data-less message to our own window.
+    unsafe { PostMessageW(Some(hwnd), WM_RUN_MODAL, WPARAM(0), LPARAM(0)) }
 }
 
 fn host() -> Result<HWND> {
@@ -88,9 +104,19 @@ unsafe extern "system" fn host_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_RUN_MODAL {
-        // SAFETY: `lparam` is the pointer `run` handed over with this exact message.
-        let job = unsafe { Box::from_raw(lparam.0 as *mut Job) };
-        super::guard((), move || (*job)());
+        // A wake-up dispatched by a nested modal loop must not start a second job.
+        if BUSY.with(Cell::get) {
+            return LRESULT(0);
+        }
+        let Some(job) = QUEUE.with(|queue| queue.borrow_mut().pop_front()) else {
+            return LRESULT(0);
+        };
+        BUSY.with(|busy| busy.set(true));
+        super::guard((), job);
+        BUSY.with(|busy| busy.set(false));
+        if QUEUE.with(|queue| !queue.borrow().is_empty()) {
+            let _ = wake();
+        }
         return LRESULT(0);
     }
     // SAFETY: default handling for every other message.

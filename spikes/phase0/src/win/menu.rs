@@ -4,6 +4,7 @@
 
 use std::fmt;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use windows::Win32::Foundation::{HANDLE, HMODULE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -88,12 +89,12 @@ pub fn show(
             cm3: menu.cast().ok(),
             cm2: menu.cast().ok(),
         };
-        let _ = SetWindowSubclass(
-            owner,
-            Some(subclass_proc),
-            SUBCLASS_ID,
-            &raw const state as usize,
-        );
+        // Removed by the guard on every exit path, before `state` is dropped (declared after it).
+        // The modal host runs one job at a time, so the fixed subclass id is never nested.
+        let subclass = SubclassGuard::install(owner, &state);
+        if subclass.is_none() {
+            log::warn!(target: "sx_spike", "menu: SetWindowSubclass failed; submenus may stay empty");
+        }
         apply_menu_theme(dark);
         let mut pt = POINT {
             x: client.0,
@@ -110,7 +111,7 @@ pub fn show(
             owner,
             None,
         );
-        let _ = RemoveWindowSubclass(owner, Some(subclass_proc), SUBCLASS_ID);
+        drop(subclass);
         drop(state);
 
         let Ok(id) = u32::try_from(selected.0) else {
@@ -171,8 +172,11 @@ unsafe extern "system" fn subclass_proc(
             if unsafe { cm3.HandleMenuMsg2(msg, wparam, lparam, Some(&mut result)) }.is_ok() {
                 return Some(result);
             }
-        } else if let Some(cm2) = &state.cm2 {
-            // SAFETY: as above, for menus that only implement IContextMenu2.
+        } else if let Some(cm2) = &state.cm2
+            && msg != WM_MENUCHAR
+        {
+            // SAFETY: as above, for menus that only implement IContextMenu2 (which does not
+            // handle WM_MENUCHAR).
             if unsafe { cm2.HandleMenuMsg(msg, wparam, lparam) }.is_ok() {
                 return Some(LRESULT(0));
             }
@@ -211,16 +215,25 @@ fn command_verb(menu: &IContextMenu, offset: usize) -> String {
 fn apply_menu_theme(dark: bool) {
     type SetPreferredAppMode = unsafe extern "system" fn(i32) -> i32;
     type FlushMenuThemes = unsafe extern "system" fn();
-    // SAFETY: uxtheme is loaded from System32 only; ordinals are checked for null before use.
+    // Loaded once from System32 and kept for the process lifetime.
+    static UXTHEME: OnceLock<isize> = OnceLock::new();
+    let module = *UXTHEME.get_or_init(|| {
+        // SAFETY: loads a system DLL restricted to System32 (no DLL planting).
+        unsafe {
+            LoadLibraryExW(
+                windows::core::w!("uxtheme.dll"),
+                Some(HANDLE::default()),
+                LOAD_LIBRARY_SEARCH_SYSTEM32,
+            )
+        }
+        .map_or(0, |m| m.0 as isize)
+    });
+    if module == 0 {
+        return;
+    }
+    // SAFETY: ordinals are checked for null before use; signatures match uxtheme's exports.
     unsafe {
-        let Ok(module) = LoadLibraryExW(
-            windows::core::w!("uxtheme.dll"),
-            Some(HANDLE::default()),
-            LOAD_LIBRARY_SEARCH_SYSTEM32,
-        ) else {
-            return;
-        };
-        let module: HMODULE = module;
+        let module = HMODULE(module as *mut core::ffi::c_void);
         if let Some(f) = GetProcAddress(module, PCSTR(135usize as *const u8)) {
             let f: SetPreferredAppMode = std::mem::transmute(f);
             f(if dark { 2 } else { 3 });
@@ -229,6 +242,33 @@ fn apply_menu_theme(dark: bool) {
             let f: FlushMenuThemes = std::mem::transmute(f);
             f();
         }
+    }
+}
+
+/// Installs the menu-message subclass on the owner and removes it on drop.
+struct SubclassGuard(HWND);
+
+impl SubclassGuard {
+    /// # Safety
+    /// `state` must outlive the returned guard.
+    unsafe fn install(owner: HWND, state: &MenuState) -> Option<Self> {
+        // SAFETY: subclassing our own window on its thread; refdata outlives the guard.
+        let ok = unsafe {
+            SetWindowSubclass(
+                owner,
+                Some(subclass_proc),
+                SUBCLASS_ID,
+                std::ptr::from_ref(state) as usize,
+            )
+        };
+        ok.as_bool().then_some(Self(owner))
+    }
+}
+
+impl Drop for SubclassGuard {
+    fn drop(&mut self) {
+        // SAFETY: removes exactly the subclass installed by `install`.
+        let _ = unsafe { RemoveWindowSubclass(self.0, Some(subclass_proc), SUBCLASS_ID) };
     }
 }
 

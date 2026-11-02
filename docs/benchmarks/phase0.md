@@ -135,6 +135,37 @@ Data tambahan:
 8. **Hit test title bar memakai posisi pointer terakhir yang diketahui GPUI.** Satu lompatan kursor
    sintetis tidak memicu snap flyout, tapi gerakan pointer biasa memicunya. Tidak berdampak ke pengguna.
 
+## Review `windows-integration-reviewer`
+
+Review menemukan 0 defect kritis dan 2 defect tinggi di drop target. Keduanya sudah diperbaiki dan
+diuji ulang:
+
+1. **Efek mengabaikan `*pdweffect` (efek yang diizinkan sumber).** Shift bisa menghasilkan MOVE walau
+   sumber hanya mengizinkan COPY|LINK. Sekarang efek selalu diiriskan dengan izin sumber. Uji ulang:
+   drag dengan Shift dari sumber COPY|LINK ditolak.
+2. **Drop melaporkan MOVE/LINK ke sumber tanpa melakukan apa pun.** Sumber non-optimized bisa
+   menghapus file aslinya. Sekarang spike membalas `DROPEFFECT_NONE` dan hanya melaporkan efek yang
+   *akan* dilakukan ke UI. Di produksi, efek yang dibalas harus persis sama dengan yang dijalankan
+   `sx-ops`.
+
+Ikut diperbaiki:
+- modal host memakai antrean thread-local (tanpa pointer di `lparam`), penjaga *busy* agar job tidak
+  bersarang, dan `init()` di UI thread;
+- subclass menu memakai guard RAII;
+- `WM_MENUCHAR` hanya diteruskan ke `IContextMenu3`;
+- uxtheme dimuat sekali;
+- `tymed` dicek dan path dibaca dengan `OsString::from_wide`;
+- akhir `EnumFormatEtc` dicek `== S_OK` dan `ptd` dibebaskan;
+- `WM_LBUTTONUP` sintetis hanya dikirim bila tombol sudah dilepas.
+
+Risiko yang dibawa ke produksi (Fase 1–2):
+- Verb shell `delete`/`cut`/`paste`/`rename` harus dicegat dan dijalankan lewat `sx-ops` (journal +
+  undo, aturan 5), bukan `InvokeCommand`.
+- Panggilan shell yang bisa lambat (UNC offline) berjalan di UI thread.
+- Drop target perlu guard yang memanggil `RevokeDragDrop` sebelum window hancur.
+- Theme watcher dan hotkey thread belum punya jalur berhenti.
+- Clipboard dan picker shim belum direview.
+
 ## Keterbatasan pengukuran (jujur)
 
 - Satu mesin, layar 165 Hz. Angka di 60 Hz tidak diukur, meski p99 ≤ 7.7 ms memberi ruang besar.

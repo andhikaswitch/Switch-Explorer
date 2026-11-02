@@ -246,6 +246,11 @@ impl Workspace {
     }
 
     fn start_services(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The modal host window must live on the UI thread (ADR-015).
+        if let Err(err) = modal::init() {
+            self.push_event(format!("modal host gagal dibuat: {err}"));
+        }
+
         // Global hotkey thread → UI.
         let (tx, mut rx) = mpsc::unbounded();
         hotkey::spawn(tx);

@@ -135,6 +135,9 @@ padahal `ThreadTimings::save_task_timing` hanya punya satu slot "task berjalan" 
 **Konsekuensi.**
 - Tidak ada panic, dan task GPUI tetap berjalan selama loop modal: tick UI tiap ~108 ms terukur saat menu
   dan drag terbuka.
+- Job disimpan di antrean milik thread, bukan sebagai pointer di pesan. Hanya satu job berjalan
+  sekaligus: wake-up dari loop bersarang diabaikan, lalu dikirim ulang setelah job selesai. Window
+  dibuat di UI thread saat startup.
 - Setelah `DoDragDrop`, kirim `WM_LBUTTONUP` sintetis karena loop modal menelannya.
 - Bug profiler dilaporkan ke upstream; jangan memakai `NativeMenu` gpui-kit bersama fitur `profiler`.
 
@@ -151,6 +154,11 @@ untuk drag image. Spike membuktikan ini aman dan menerima drop dari Explorer mau
 
 **Konsekuensi.**
 - API `on_drop::<ExternalPaths>` GPUI tidak dipakai di area file.
+- Efek selalu diiriskan dengan efek yang diizinkan sumber (`*pdweffect` masuk). Modifier yang tidak
+  diizinkan menghasilkan NONE.
+- `Drop` membalas efek yang **benar-benar** dijalankan `sx-ops`. Kalau MOVE dibalas tanpa dikerjakan,
+  sumber non-optimized akan menghapus file aslinya. Ikuti aturan optimized move dan
+  `CFSTR_PERFORMEDDROPEFFECT`.
 - Zona drop harus memakai bounds yang benar: elemen `absolute` wajib diberi `inset_0`, kalau tidak ia
   jatuh ke posisi statisnya.
 

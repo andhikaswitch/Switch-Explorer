@@ -4,16 +4,18 @@
 //! zones and reports which clipboard formats the source offers.
 
 use std::cell::Cell;
+use std::ffi::OsString;
+use std::os::windows::ffi::OsStringExt as _;
 use std::path::PathBuf;
 use std::rc::Rc;
 
 use futures::channel::mpsc::UnboundedSender;
 use gpui_kit::{Bounds, Pixels};
-use windows::Win32::Foundation::{E_UNEXPECTED, HWND, LPARAM, POINT, POINTL, WPARAM};
+use windows::Win32::Foundation::{E_UNEXPECTED, HWND, LPARAM, POINT, POINTL, S_OK, WPARAM};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, CoCreateInstance, DATADIR_GET, DVASPECT_CONTENT, FORMATETC, IBindCtx,
-    IDataObject, TYMED_HGLOBAL,
+    CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree, DATADIR_GET, DVASPECT_CONTENT,
+    FORMATETC, IBindCtx, IDataObject, TYMED_HGLOBAL,
 };
 use windows::Win32::System::DataExchange::GetClipboardFormatNameW;
 use windows::Win32::System::Ole::{
@@ -22,6 +24,7 @@ use windows::Win32::System::Ole::{
     RevokeDragDrop,
 };
 use windows::Win32::System::SystemServices::{MK_CONTROL, MK_SHIFT, MODIFIERKEYS_FLAGS};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     BHID_DataObject, CLSID_DragDropHelper, DragQueryFileW, HDROP, IDropTargetHelper, ILFree,
@@ -61,11 +64,13 @@ pub fn start_drag(hwnd: Hwnd, paths: &[PathBuf], allowed: DROPEFFECT) -> Result<
 }
 
 /// DoDragDrop's modal loop swallows WM_LBUTTONUP, so GPUI would still see the button pressed.
+/// Skipped when the button is in fact still held (e.g. the drag was cancelled with Esc).
 pub fn post_button_up(hwnd: Hwnd) {
     let mut pt = POINT::default();
     // SAFETY: plain Win32 calls on our own live window from its owning thread.
     unsafe {
-        if GetCursorPos(&mut pt).is_ok() && ScreenToClient(hwnd.get(), &mut pt).as_bool() {
+        let held = GetAsyncKeyState(i32::from(VK_LBUTTON.0)) as u16 & 0x8000 != 0;
+        if !held && GetCursorPos(&mut pt).is_ok() && ScreenToClient(hwnd.get(), &mut pt).as_bool() {
             let lparam = (((pt.y as u32 & 0xFFFF) << 16) | (pt.x as u32 & 0xFFFF)) as isize;
             let _ = PostMessageW(Some(hwnd.get()), WM_LBUTTONUP, WPARAM(0), LPARAM(lparam));
         }
@@ -174,6 +179,7 @@ pub fn install(
         helper,
         tx,
         files: Cell::new(0),
+        allowed: Cell::new(DROPEFFECT_NONE),
         last: Cell::new((u32::MAX, false)),
     }
     .into();
@@ -192,7 +198,25 @@ struct SpikeDropTarget {
     helper: Option<IDropTargetHelper>,
     tx: UnboundedSender<DropEvent>,
     files: Cell<usize>,
+    /// Effects the source allows (the incoming `*pdweffect` of each call).
+    allowed: Cell<DROPEFFECT>,
     last: Cell<(u32, bool)>,
+}
+
+/// Reads the source's allowed effects and resets the out-value to NONE before anything fallible.
+///
+/// # Safety
+/// `pdweffect` must be the valid in/out pointer OLE passes to `IDropTarget` methods.
+unsafe fn take_allowed(pdweffect: *mut DROPEFFECT) -> DROPEFFECT {
+    if pdweffect.is_null() {
+        return DROPEFFECT_NONE;
+    }
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let allowed = *pdweffect;
+        *pdweffect = DROPEFFECT_NONE;
+        allowed
+    }
 }
 
 impl SpikeDropTarget {
@@ -210,19 +234,31 @@ impl SpikeDropTarget {
             .is_some_and(|zone| zone.contains(x, y))
     }
 
-    /// Effect from modifiers like Explorer: Ctrl copy, Shift move, Alt or Ctrl+Shift link.
-    /// Without modifiers the spike picks copy (the real app decides by volume).
+    /// Effect from modifiers like Explorer (Ctrl copy, Shift move, Alt or Ctrl+Shift link),
+    /// always limited to what the source allows. An explicit modifier the source refuses gives
+    /// NONE; without modifiers the first allowed of copy → move → link is used (the real app
+    /// prefers move on the same volume).
     fn effect(&self, keys: MODIFIERKEYS_FLAGS, in_zone: bool) -> DROPEFFECT {
-        if self.files.get() == 0 || !in_zone {
+        let allowed = self.allowed.get();
+        if self.files.get() == 0 || !in_zone || allowed == DROPEFFECT_NONE {
             return DROPEFFECT_NONE;
         }
         let ctrl = keys.0 & MK_CONTROL.0 != 0;
         let shift = keys.0 & MK_SHIFT.0 != 0;
         let alt = keys.0 & MK_ALT != 0;
-        match (ctrl, shift, alt) {
-            (true, true, _) | (_, _, true) => DROPEFFECT_LINK,
-            (false, true, false) => DROPEFFECT_MOVE,
-            _ => DROPEFFECT_COPY,
+        let wanted = match (ctrl, shift, alt) {
+            (true, true, _) | (_, _, true) => Some(DROPEFFECT_LINK),
+            (false, true, false) => Some(DROPEFFECT_MOVE),
+            (true, false, false) => Some(DROPEFFECT_COPY),
+            (false, false, false) => None,
+        };
+        match wanted {
+            Some(effect) if allowed.0 & effect.0 != 0 => effect,
+            Some(_) => DROPEFFECT_NONE,
+            None => [DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_LINK]
+                .into_iter()
+                .find(|e| allowed.0 & e.0 != 0)
+                .unwrap_or(DROPEFFECT_NONE),
         }
     }
 }
@@ -236,13 +272,15 @@ impl IDropTarget_Impl for SpikeDropTarget_Impl {
         pt: &POINTL,
         pdweffect: *mut DROPEFFECT,
     ) -> Result<()> {
+        // SAFETY: OLE passes a valid in/out effect pointer.
+        self.allowed.set(unsafe { take_allowed(pdweffect) });
         guard(Err(Error::from(E_UNEXPECTED)), || {
             let data = pdataobj.ok()?;
             let (files, _) = hdrop_paths(data, false);
             self.files.set(files);
             let in_zone = self.in_zone(pt);
             let effect = self.effect(grfkeystate, in_zone);
-            // SAFETY: OLE passes a valid out-pointer for the effect.
+            // SAFETY: OLE passes a valid in/out effect pointer.
             unsafe { *pdweffect = effect };
             if let Some(helper) = &self.helper {
                 let point = POINT { x: pt.x, y: pt.y };
@@ -266,6 +304,8 @@ impl IDropTarget_Impl for SpikeDropTarget_Impl {
         pt: &POINTL,
         pdweffect: *mut DROPEFFECT,
     ) -> Result<()> {
+        // SAFETY: OLE passes a valid in/out effect pointer.
+        self.allowed.set(unsafe { take_allowed(pdweffect) });
         guard(Err(Error::from(E_UNEXPECTED)), || {
             let in_zone = self.in_zone(pt);
             let effect = self.effect(grfkeystate, in_zone);
@@ -302,19 +342,22 @@ impl IDropTarget_Impl for SpikeDropTarget_Impl {
         pt: &POINTL,
         pdweffect: *mut DROPEFFECT,
     ) -> Result<()> {
+        // SAFETY: OLE passes a valid in/out effect pointer.
+        self.allowed.set(unsafe { take_allowed(pdweffect) });
         guard(Err(Error::from(E_UNEXPECTED)), || {
             let data = pdataobj.ok()?;
             let in_zone = self.in_zone(pt);
             let effect = self.effect(grfkeystate, in_zone);
-            // SAFETY: OLE passes a valid out-pointer for the effect.
-            unsafe { *pdweffect = effect };
+            // The spike performs no file operation, so the source is told NONE (left in place by
+            // `take_allowed`): reporting MOVE would let a non-optimized source delete its
+            // originals. Production must return exactly what sx-ops performed.
             if let Some(helper) = &self.helper {
                 let point = POINT { x: pt.x, y: pt.y };
                 // SAFETY: helper call with the dropped data object.
                 let _ = unsafe { helper.Drop(data, &point, effect) };
             }
             let (_, paths) = hdrop_paths(data, true);
-            // The spike only reports drops; it never performs file operations.
+            // The UI only reports the effect that *would* be performed.
             let _ = self.tx.unbounded_send(DropEvent::Drop {
                 paths,
                 effect,
@@ -335,19 +378,28 @@ fn hdrop_paths(data: &IDataObject, collect: bool) -> (usize, Vec<PathBuf>) {
         tymed: TYMED_HGLOBAL.0 as u32,
     };
     let mut paths = Vec::new();
-    // SAFETY: the medium is released before returning; the HDROP is only read while held.
+    // SAFETY: the medium is released before returning; the HDROP is only read while held and
+    // only after checking that the source really returned an HGLOBAL.
     unsafe {
+        if data.QueryGetData(&format) != S_OK {
+            return (0, paths);
+        }
         let Ok(mut medium) = data.GetData(&format) else {
             return (0, paths);
         };
+        if medium.tymed != TYMED_HGLOBAL.0 as u32 || medium.u.hGlobal.is_invalid() {
+            ReleaseStgMedium(&mut medium);
+            return (0, paths);
+        }
         let hdrop = HDROP(medium.u.hGlobal.0);
         let count = DragQueryFileW(hdrop, u32::MAX, None);
         if collect {
             for i in 0..count {
                 let len = DragQueryFileW(hdrop, i, None) as usize;
                 let mut buf = vec![0u16; len + 1];
-                DragQueryFileW(hdrop, i, Some(&mut buf));
-                paths.push(PathBuf::from(String::from_utf16_lossy(&buf[..len])));
+                let copied = DragQueryFileW(hdrop, i, Some(&mut buf)) as usize;
+                // Keep the exact UTF-16 (NTFS names need not be valid Unicode).
+                paths.push(PathBuf::from(OsString::from_wide(&buf[..copied.min(len)])));
             }
         }
         ReleaseStgMedium(&mut medium);
@@ -364,10 +416,11 @@ fn formats(data: &IDataObject) -> Vec<String> {
             return names;
         };
         let mut item = [FORMATETC::default()];
-        while enumerator.Next(&mut item, None).is_ok() && names.len() < 24 {
+        // `Next` returns S_FALSE (a success code) at the end, so compare with S_OK exactly.
+        while enumerator.Next(&mut item, None) == S_OK && names.len() < 24 {
             let cf = item[0].cfFormat;
-            if cf == 0 {
-                break;
+            if !item[0].ptd.is_null() {
+                CoTaskMemFree(Some(item[0].ptd.cast_const().cast()));
             }
             let mut buf = [0u16; 128];
             let len = GetClipboardFormatNameW(u32::from(cf), &mut buf);
