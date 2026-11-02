@@ -13,8 +13,10 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+futures.workspace = true
 gpui-kit.workspace = true
 sx-core.workspace = true
+sx-ipc.workspace = true
 sx-settings.workspace = true
 sx-shell.workspace = true
 sx-theme.workspace = true

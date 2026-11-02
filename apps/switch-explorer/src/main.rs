@@ -7,20 +7,22 @@
 
 mod args;
 mod logging;
+mod single;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context as _;
+use futures::channel::mpsc;
 use gpui_kit::component::TitleBar;
 use gpui_kit::{
-    App, AppContext as _, WindowBackgroundAppearance, WindowBounds, WindowOptions, px, size,
+    App, AppContext as _, Global, WindowBackgroundAppearance, WindowBounds, WindowOptions, px, size,
 };
 use sx_core::{CommandRegistry, Location};
 use sx_settings::{Features, SettingsError, SettingsStore};
 use sx_theme::Mode;
-use sx_ui::{ThemeController, Workspace, WorkspaceOptions};
+use sx_ui::{OpenRequest, ThemeController, Workspace, WorkspaceOptions};
 
 use crate::args::Args;
 
@@ -28,6 +30,11 @@ use crate::args::Args;
 const WINDOW_SIZE: (f32, f32) = (1180.0, 760.0);
 /// Below this the layout switches to its narrow form (DESIGN.md §8.8).
 const WINDOW_MIN: (f32, f32) = (560.0, 400.0);
+
+/// Keeps the single-instance server running for the life of the app.
+struct IpcServer(#[allow(dead_code)] sx_ipc::ServerHandle);
+
+impl Global for IpcServer {}
 
 fn data_dir(var: &str) -> Option<PathBuf> {
     std::env::var_os(var).map(|base| PathBuf::from(base).join("SwitchExplorer"))
@@ -49,6 +56,16 @@ fn main() -> anyhow::Result<()> {
     for warning in &warnings {
         tracing::warn!(error = %warning, "settings");
     }
+    let server = match single::claim(&args) {
+        single::Role::Forwarded => {
+            tracing::debug!(
+                ms = started.elapsed().as_secs_f64() * 1000.0,
+                "forwarded to the running instance"
+            );
+            return Ok(());
+        }
+        single::Role::Primary(server) => server,
+    };
     let os_build = sx_win::os_build();
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
@@ -62,6 +79,8 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_else(|| sx_win::ui_language()),
     );
     let registry = CommandRegistry::builtin().context("command registry")?;
+    let (requests_tx, requests) = mpsc::unbounded::<OpenRequest>();
+    let ipc = server.and_then(|server| single::serve(server, requests_tx));
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
@@ -70,7 +89,10 @@ fn main() -> anyhow::Result<()> {
             gpui_kit::init(cx);
             sx_ui::actions::bind(&registry, cx);
             tracing::debug!(ms = started.elapsed().as_secs_f64() * 1000.0, "kit ready");
-            open_main_window(&args, features, os_build, started, cx);
+            if let Some(handle) = ipc {
+                cx.set_global(IpcServer(handle));
+            }
+            open_main_window(&args, features, os_build, started, requests, cx);
         });
     Ok(())
 }
@@ -100,6 +122,7 @@ fn open_main_window(
     features: Arc<Features>,
     os_build: u32,
     started: Instant,
+    requests: mpsc::UnboundedReceiver<OpenRequest>,
     cx: &mut App,
 ) {
     let mut appearance = sx_shell::appearance::current();
@@ -124,6 +147,7 @@ fn open_main_window(
         appearance,
         forced_light: args.light,
         bench_started: args.bench_open.is_some().then_some(started),
+        requests: Some(requests),
     };
     let window_options = WindowOptions {
         window_bounds: Some(WindowBounds::centered(

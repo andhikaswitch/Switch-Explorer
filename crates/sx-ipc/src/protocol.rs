@@ -24,6 +24,9 @@ pub enum Message {
         paths: Vec<PathBuf>,
         select: Option<PathBuf>,
         new_window: bool,
+        /// Also open Home (`--home`, Win+E).
+        #[serde(default)]
+        home: bool,
     },
     /// Bring the main window to the front.
     Activate,
@@ -71,6 +74,7 @@ mod tests {
             paths: vec![PathBuf::from(r"C:\Users\Raka\日本語")],
             select: None,
             new_window: false,
+            home: false,
         };
         let framed = encode(&message).unwrap();
         let len = body_len(framed[..4].try_into().unwrap()).unwrap();

@@ -32,8 +32,19 @@ use crate::theme::{ActiveTokens as _, ThemeController};
 /// Delay before "Loading…" appears, so fast folders do not flicker (DESIGN.md §11).
 const LOADING_DELAY: Duration = Duration::from_millis(150);
 
+/// A request from another process (single instance, `OpenPaths`) or the command line.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OpenRequest {
+    /// Folders to open, one tab each.
+    pub paths: Vec<PathBuf>,
+    /// An item to show: its folder opens and the item is selected.
+    pub select: Option<PathBuf>,
+    /// Open Home too.
+    pub home: bool,
+}
+
 /// What the window starts with.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct WorkspaceOptions {
     /// One tab per location; Home when empty.
     pub locations: Vec<Location>,
@@ -45,6 +56,8 @@ pub struct WorkspaceOptions {
     pub forced_light: Option<bool>,
     /// `--bench-open`: process start; the first listing prints its timings and quits.
     pub bench_started: Option<Instant>,
+    /// Requests forwarded by later launches (single instance).
+    pub requests: Option<mpsc::UnboundedReceiver<OpenRequest>>,
 }
 
 /// A pinned sidebar item.
@@ -145,6 +158,9 @@ impl Workspace {
         this.active = 0;
         this.refresh_drives(cx);
         this.watch_appearance(window, cx);
+        if let Some(requests) = options.requests {
+            this.watch_requests(requests, window, cx);
+        }
         this.sync_window(window);
         this
     }
@@ -176,6 +192,44 @@ impl Workspace {
     }
 
     // ---- Appearance ---------------------------------------------------------------------
+
+    fn watch_requests(
+        &mut self,
+        mut requests: mpsc::UnboundedReceiver<OpenRequest>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn_in(window, async move |this, cx| {
+            while let Some(request) = requests.next().await {
+                let alive = this.update_in(cx, |this, window, cx| {
+                    this.open_request(request, cx);
+                    window.activate_window();
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Opens what another launch asked for: one tab per folder; `select` opens the item's folder
+    /// and selects it. A request with nothing in it just brings the window forward.
+    pub(crate) fn open_request(&mut self, request: OpenRequest, cx: &mut Context<Self>) {
+        if request.home {
+            self.open_tab(Location::Home, cx);
+        }
+        for path in request.paths {
+            self.open_tab(Location::Path(path), cx);
+        }
+        if let Some(item) = request.select
+            && let Some(parent) = item.parent()
+        {
+            self.open_tab(Location::Path(parent.to_path_buf()), cx);
+            self.tab_mut().reveal = item.file_name().map(|n| n.to_string_lossy().into_owned());
+        }
+        cx.notify();
+    }
 
     fn watch_appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (tx, mut rx) = mpsc::unbounded();

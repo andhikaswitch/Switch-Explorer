@@ -255,8 +255,14 @@ pub struct DirSnapshot {
 
 ## 12. IPC
 
-- Nama pipe: `\\.\pipe\switch-explorer.<SID-user>.v1`; mutex arbitrase
-  `Local\SwitchExplorer.SingleInstance.v1`.
+- Nama pipe: `\\.\pipe\switch-explorer.<SID-user>.v1`. Arbitrase instance tunggal memakai pipe itu
+  sendiri: instance pertama membuatnya dengan `FILE_FLAG_FIRST_PIPE_INSTANCE` dan maksimum 1 instance,
+  sehingga proses berikutnya gagal membuat pipe (`ACCESS_DENIED`/`PIPE_BUSY`), lalu menjadi klien dan
+  meneruskan permintaannya. Tidak perlu mutex terpisah.
+- Semua I/O pipe overlapped dengan timeout 2 detik per pesan. Klien yang tersambung lalu diam tidak
+  memblokir server. Server menunggu klien menutup koneksi sebelum `DisconnectNamedPipe`, karena
+  disconnect membuang data yang belum dibaca.
+- Klien memanggil `AllowSetForegroundWindow(pid server)` agar window instance utama boleh maju ke depan.
 - Framing: panjang `u32` little-endian + JSON (serde). Maksimum 1 MB per pesan.
 - Pesan: `Hello { version, client }`, `OpenPaths { paths, select, new_window }`, `Activate`,
   `UploadToDrive { paths }`, `PickRequest { .. }`, `PickResult { .. }`, `Ping`/`Pong`, `Shutdown`.

@@ -6054,8 +6054,10 @@ name = "switch-explorer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "gpui-kit",
  "sx-core",
+ "sx-ipc",
  "sx-settings",
  "sx-shell",
  "sx-theme",
@@ -6094,6 +6096,13 @@ version = "0.1.0"
 [[package]]
 name = "sx-ipc"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
+ "windows 0.62.2",
+]
 
 [[package]]
 name = "sx-ops"

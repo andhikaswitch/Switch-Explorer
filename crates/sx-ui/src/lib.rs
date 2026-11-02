@@ -18,7 +18,7 @@ pub mod theme;
 pub mod workspace;
 
 pub use theme::{ActiveTokens, ThemeController, Tokens};
-pub use workspace::{Workspace, WorkspaceOptions};
+pub use workspace::{OpenRequest, Workspace, WorkspaceOptions};
 
 /// UI language: `id` for Indonesian, `en` otherwise (FEATURES.md F-I18N-01).
 pub fn set_locale(lang: &str) {
