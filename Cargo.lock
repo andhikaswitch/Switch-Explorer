@@ -6167,6 +6167,7 @@ dependencies = [
  "image",
  "raw-window-handle",
  "rust-i18n",
+ "serde_json",
  "sx-core",
  "sx-fs",
  "sx-ops",
@@ -6174,6 +6175,7 @@ dependencies = [
  "sx-shell",
  "sx-theme",
  "sx-win",
+ "tempfile",
  "tracing",
 ]
 

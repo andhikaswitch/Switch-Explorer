@@ -183,6 +183,8 @@ pub const BUILTIN: &[CommandSpec] = &[
     cmd("app.transfer_panel", Workspace, &["ctrl-j"], true, false),
     cmd("app.settings", Workspace, &["ctrl-,"], true, false),
     cmd("hotswitch.panel", Workspace, &["ctrl-k k"], true, false),
+    // No default shortcut, like Explorer; the star in the command bar and the palette.
+    cmd("sidebar.pin", Workspace, &[], true, true),
     cmd("theme.reset", Workspace, &["ctrl-alt-shift-t"], true, false),
     cmd(
         "dev.token_inspector",
@@ -200,12 +202,14 @@ mod tests {
 
     #[test]
     fn builtin_ids_are_unique_and_dotted() {
+        // Commands Explorer has no shortcut for either; reached from the UI and the palette.
+        const UNBOUND: &[&str] = &["sidebar.pin"];
         let registry = CommandRegistry::builtin().expect("built-in commands are unique");
         assert_eq!(registry.len(), BUILTIN.len());
         for spec in registry.iter() {
             assert!(spec.id.contains('.'), "{} is not a dotted id", spec.id);
             assert!(
-                !spec.bindings.is_empty(),
+                !spec.bindings.is_empty() || UNBOUND.contains(&spec.id),
                 "{} has no default binding",
                 spec.id
             );

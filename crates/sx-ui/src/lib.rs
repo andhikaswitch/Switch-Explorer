@@ -15,6 +15,7 @@ mod icons;
 mod ops;
 mod overlays;
 mod pages;
+mod pins;
 mod sidebar;
 mod slash;
 mod status;

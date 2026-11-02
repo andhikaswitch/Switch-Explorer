@@ -23,7 +23,7 @@ use sx_fs::{Address, Column, LoadError, SortSpec, ViewOptions};
 use sx_settings::Features;
 use sx_shell::OsAppearance;
 use sx_theme::{Mode, Token};
-use sx_win::{Drive, KnownFolder};
+use sx_win::Drive;
 
 use crate::actions::{self, WORKSPACE_CONTEXT};
 use crate::tab::{Content, Tab};
@@ -64,6 +64,8 @@ pub struct WorkspaceOptions {
     pub requests: Option<mpsc::UnboundedReceiver<OpenRequest>>,
     /// Where the operation journal lives (`%LOCALAPPDATA%\SwitchExplorer\journal`).
     pub journal_dir: Option<PathBuf>,
+    /// `%APPDATA%\SwitchExplorer\pins.json`; `None` keeps pins for this session only.
+    pub pins_file: Option<PathBuf>,
 }
 
 /// A pinned sidebar item.
@@ -86,6 +88,7 @@ pub struct Workspace {
     pub(crate) editing_address: bool,
     pub(crate) drives: Vec<Drive>,
     pub(crate) pins: Vec<Pin>,
+    pins_file: Option<PathBuf>,
     pub(crate) sidebar_visible: bool,
     /// The sidebar item or card under the pointer. Their children (icon, caption, gauge) take
     /// the highlight colours from this; GPUI group hover is not known yet when text is laid out.
@@ -155,7 +158,11 @@ impl Workspace {
             address,
             editing_address: false,
             drives: Vec::new(),
-            pins: default_pins(),
+            pins: crate::pins::load(options.pins_file.as_deref())
+                .into_iter()
+                .map(Pin::new)
+                .collect(),
+            pins_file: options.pins_file.clone(),
             sidebar_visible: true,
             hovered: None,
             features: options.features,
@@ -883,11 +890,9 @@ fn restore_selection(tab: &mut Tab, snapshot: sx_fs::DirSnapshot) {
     tab.selection.restore(rows, focus_row.map(|r| r as u32));
 }
 
-fn default_pins() -> Vec<Pin> {
-    KnownFolder::PINNED_DEFAULTS
-        .iter()
-        .filter_map(|&folder| sx_win::known_folder(folder))
-        .map(|path| Pin {
+impl Pin {
+    fn new(path: PathBuf) -> Self {
+        Self {
             name: path
                 .file_name()
                 .map_or_else(
@@ -896,8 +901,38 @@ fn default_pins() -> Vec<Pin> {
                 )
                 .into(),
             path,
-        })
-        .collect()
+        }
+    }
+}
+
+impl Workspace {
+    pub(crate) fn is_pinned(&self, path: &std::path::Path) -> bool {
+        self.pins.iter().any(|p| p.path == path)
+    }
+
+    /// Pins or unpins the current folder (F-SIDE-02), unless `sidebar.pins_locked`.
+    pub(crate) fn toggle_pin(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.tab().location().as_path().map(PathBuf::from) else {
+            return;
+        };
+        if self.features.sidebar_pins_locked {
+            self.notice = Some(t!("nav.pins_locked").into());
+            cx.notify();
+            return;
+        }
+        if self.is_pinned(&path) {
+            self.pins.retain(|p| p.path != path);
+        } else {
+            self.pins.push(Pin::new(path));
+        }
+        if let Some(file) = &self.pins_file {
+            let paths: Vec<PathBuf> = self.pins.iter().map(|p| p.path.clone()).collect();
+            if let Err(err) = crate::pins::save(file, &paths) {
+                tracing::warn!(error = %err, "pins not saved");
+            }
+        }
+        cx.notify();
+    }
 }
 
 fn hwnd(window: &Window) -> Option<isize> {
@@ -1025,6 +1060,7 @@ impl Workspace {
         .on_action(cx.listener(|this, _: &actions::FileCopyPath, _, cx| this.copy_paths(cx)))
         .on_action(cx.listener(|this, _: &actions::EditUndo, _, cx| this.undo(cx)))
         .on_action(cx.listener(|this, _: &actions::EditRedo, _, cx| this.redo(cx)))
+        .on_action(cx.listener(|this, _: &actions::SidebarPin, _, cx| this.toggle_pin(cx)))
         .on_action(cx.listener(|this, _: &actions::TransferPanel, _, cx| {
             this.ops.transfer_panel = !this.ops.transfer_panel;
             cx.notify();

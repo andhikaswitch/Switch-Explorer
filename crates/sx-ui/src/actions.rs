@@ -47,6 +47,7 @@ actions!(
         EditUndo,
         EditRedo,
         TransferPanel,
+        SidebarPin,
     ]
 );
 
@@ -81,6 +82,7 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "edit.undo" => Box::new(EditUndo),
         "edit.redo" => Box::new(EditRedo),
         "app.transfer_panel" => Box::new(TransferPanel),
+        "sidebar.pin" => Box::new(SidebarPin),
         _ => return None,
     })
 }

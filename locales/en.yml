@@ -9,6 +9,8 @@ tab:
   new: New tab
   close: Close tab
 nav:
+  pins_locked: Pinned folders are locked. Turn off sidebar.pins_locked to change them.
+  pin: Pin to sidebar
   home: Home
   this_pc: This PC
   recycle_bin: Recycle Bin

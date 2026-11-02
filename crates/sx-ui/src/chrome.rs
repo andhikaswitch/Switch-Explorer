@@ -258,6 +258,20 @@ impl Workspace {
                 }),
             )
             .child(self.render_address(cx))
+            .when(tab.location().as_path().is_some(), |el| {
+                let pinned = tab.location().as_path().is_some_and(|p| self.is_pinned(p));
+                el.child(self.nav_button(
+                    "nav-pin",
+                    if pinned {
+                        IconName::StarFill
+                    } else {
+                        IconName::Star
+                    },
+                    true,
+                    cx,
+                    Workspace::toggle_pin,
+                ))
+            })
     }
 
     fn nav_button(
