@@ -1,0 +1,13 @@
+[package]
+name = "sx-ops"
+description = "File operation engine: plans, queue, conflicts, journal and undo."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

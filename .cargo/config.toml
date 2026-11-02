@@ -1,0 +1,5 @@
+[alias]
+xtask = "run --package xtask --"
+
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]   # no VC redist; required for the shim DLL

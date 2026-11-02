@@ -1,0 +1,13 @@
+[package]
+name = "sx-cloud"
+description = "Cloud providers (Google Drive), transfer queue and credentials. Lazy-loaded."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "sx-ui"
+description = "GPUI Kit views and components, theme bridge, OSD and Token Inspector."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

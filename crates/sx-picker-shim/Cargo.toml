@@ -1,0 +1,16 @@
+[package]
+name = "sx-picker-shim"
+description = "Experimental COM proxy for FileOpenDialog/FileSaveDialog (Picker Takeover)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[lints]
+workspace = true

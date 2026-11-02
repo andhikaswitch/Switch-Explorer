@@ -1,0 +1,13 @@
+[package]
+name = "sx-theme"
+description = "Theme tokens, value parser, OKLCH colour, palette generator, resolver and contrast validator."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

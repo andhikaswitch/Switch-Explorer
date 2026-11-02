@@ -1,0 +1,13 @@
+[package]
+name = "sx-integration"
+description = "System integration: registry (with backup), default folder handler, Win+E, global hotkeys, Picker Bridge."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,78 @@
+[workspace]
+resolver = "3"
+members = ["apps/*", "crates/*", "xtask"]
+# The Phase 0 spike keeps its own workspace and lockfile.
+exclude = ["spikes"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+# Internal crates
+sx-core = { path = "crates/sx-core" }
+sx-settings = { path = "crates/sx-settings" }
+sx-theme = { path = "crates/sx-theme" }
+sx-win = { path = "crates/sx-win" }
+sx-fs = { path = "crates/sx-fs" }
+sx-ops = { path = "crates/sx-ops" }
+sx-shell = { path = "crates/sx-shell" }
+sx-integration = { path = "crates/sx-integration" }
+sx-ipc = { path = "crates/sx-ipc" }
+sx-cloud = { path = "crates/sx-cloud" }
+sx-search = { path = "crates/sx-search" }
+sx-tools = { path = "crates/sx-tools" }
+sx-ui = { path = "crates/sx-ui" }
+
+# UI — exact pins; gpui-kit only requires ^0.8.1 for its layers (ADR-001, phase0 report).
+gpui-kit = { version = "=0.8.1", default-features = false, features = ["component", "assets"] }
+gpui-base = "=0.8.1"
+gpui-component = "=0.8.1"
+gpui-kit-assets = "=0.8.1"
+
+# Windows — same major as gpui-pre-windows so it compiles once; features chosen per crate.
+windows = { version = "0.62", default-features = false }
+windows-core = "0.62"
+
+# General
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+toml_edit = "0.23"
+tracing = "0.1"
+futures = "0.3"
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "warn"
+dbg_macro = "deny"
+todo = "warn"
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+# Numeric casts between UI/pixel/Win32 types are pervasive and checked where it matters.
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = "symbols"
+panic = "unwind"
+
+[profile.dev.package."*"]
+opt-level = 2

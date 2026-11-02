@@ -1,0 +1,13 @@
+[package]
+name = "sx-shell"
+description = "Shell COM services: icons, thumbnails, context menu, OLE drag and drop, clipboard, DWM, OS theme."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

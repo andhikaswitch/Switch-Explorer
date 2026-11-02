@@ -1,0 +1,6 @@
+# Pinned to the stable release used when the workspace was scaffolded; raise deliberately.
+# i686-pc-windows-msvc is added when sx-picker-shim gets real code (Phase 6, ADR-020).
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]

@@ -1,0 +1,13 @@
+[package]
+name = "sx-fs"
+description = "Directory model, natural sort keys, filtering and folder watcher."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
