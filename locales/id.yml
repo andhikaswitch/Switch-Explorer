@@ -9,6 +9,7 @@ tab:
   new: Tab baru
   close: Tutup tab
 nav:
+  shell_unknown: "Windows tidak mengenal shell:%{name}. Periksa namanya, misalnya shell:Downloads atau shell:startup."
   pins_locked: Folder yang disematkan sedang dikunci. Matikan sidebar.pins_locked untuk mengubahnya.
   pin: Sematkan ke sidebar
   home: Beranda

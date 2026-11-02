@@ -22,7 +22,7 @@ pub fn parse(input: &str, current: Option<&Path>) -> Option<Address> {
     if let Some(name) = strip_prefix_ignore_case(text, "shell:") {
         return Some(Address::Shell(name.trim().to_string()));
     }
-    let expanded = expand_vars(text).replace('/', "\\");
+    let expanded = expand_home(&expand_vars(text)).replace('/', "\\");
     let mut path = PathBuf::from(&expanded);
     // `C:` alone means the drive root here, not "the current folder on C:".
     if expanded.len() == 2 && expanded.ends_with(':') {
@@ -38,6 +38,18 @@ fn strip_prefix_ignore_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str> 
     let head = text.get(..prefix.len())?;
     head.eq_ignore_ascii_case(prefix)
         .then(|| &text[prefix.len()..])
+}
+
+/// `~` and `~\rest` mean the user profile folder (`%USERPROFILE%`).
+fn expand_home(text: &str) -> String {
+    let rest = match text.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with(['\\', '/']) => rest,
+        _ => return text.to_string(),
+    };
+    match std::env::var("USERPROFILE") {
+        Ok(home) => format!("{home}{rest}"),
+        Err(_) => text.to_string(),
+    }
 }
 
 /// Replaces `%NAME%` with the environment variable; unknown names stay as typed (like cmd.exe).
@@ -126,6 +138,13 @@ mod tests {
         );
         assert_eq!(expand_vars("%SX_NOT_SET_42%\\x"), "%SX_NOT_SET_42%\\x");
         assert_eq!(expand_vars("100% done"), "100% done");
+        let home = std::env::var("USERPROFILE").unwrap();
+        assert_eq!(parse("~", None), loc(&home));
+        assert_eq!(
+            parse(r"~\Documents", None),
+            loc(&format!(r"{home}\Documents"))
+        );
+        assert_eq!(parse("~x", Some(Path::new(r"C:\a"))), loc(r"C:\a\~x"));
         assert_eq!(
             parse("Shell:Downloads", None),
             Some(Address::Shell("Downloads".into()))

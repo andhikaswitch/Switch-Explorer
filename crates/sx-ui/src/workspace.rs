@@ -645,9 +645,21 @@ impl Workspace {
                         self.leave_address(window, cx);
                         self.navigate(location, cx);
                     }
-                    Some(Address::Shell(_)) => {
-                        self.notice = Some(t!("nav.shell_unsupported").into());
-                        cx.notify();
+                    Some(Address::Shell(name)) => {
+                        self.leave_address(window, cx);
+                        let resolving = sx_shell::names::resolve(name.clone());
+                        cx.spawn(async move |this, cx| {
+                            let folder = resolving.await;
+                            let _ = this.update(cx, |this, cx| {
+                                if let Some(path) = folder {
+                                    this.navigate(Location::Path(path), cx);
+                                } else {
+                                    this.notice = Some(t!("nav.shell_unknown", name = name).into());
+                                    cx.notify();
+                                }
+                            });
+                        })
+                        .detach();
                     }
                     None => {
                         self.notice = Some(t!("nav.invalid_address", input = text).into());

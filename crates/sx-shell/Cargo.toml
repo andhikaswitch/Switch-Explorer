@@ -33,6 +33,7 @@ features = [
 ]
 
 [dev-dependencies]
+futures = { workspace = true, features = ["executor"] }
 tempfile.workspace = true
 
 [lints]
