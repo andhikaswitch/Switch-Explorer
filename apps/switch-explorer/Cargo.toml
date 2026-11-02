@@ -13,6 +13,16 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+gpui-kit.workspace = true
+sx-core.workspace = true
+sx-settings.workspace = true
+sx-shell.workspace = true
+sx-theme.workspace = true
+sx-ui.workspace = true
+sx-win.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

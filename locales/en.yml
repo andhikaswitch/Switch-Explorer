@@ -1,0 +1,69 @@
+app:
+  name: Switch Explorer
+window:
+  minimize: Minimize
+  maximize: Maximize
+  restore: Restore
+  close: Close
+tab:
+  new: New tab
+  close: Close tab
+nav:
+  home: Home
+  this_pc: This PC
+  recycle_bin: Recycle Bin
+  pinned: Pinned
+  drives: Drives
+  back: Back
+  forward: Forward
+  up: Up
+  refresh: Refresh
+  address: Address
+  address_placeholder: Type a path, %VARIABLE% or shell:name
+  shell_unsupported: "shell: names open in a later version. Type a full path instead."
+  invalid_address: Can't open "%{input}". Type a full path, like C:\Users.
+details:
+  name: Name
+  modified: Date modified
+  type: Type
+  size: Size
+  type_folder: File folder
+  type_file: File
+  type_ext: "%{ext} file"
+  type_link: Shortcut to folder
+  sort_ascending: Sorted ascending
+  sort_descending: Sorted descending
+  empty: This folder is empty. Drag files here or press Ctrl+Shift+N to create a folder.
+  loading: Loading…
+error:
+  not_found: This folder no longer exists. It may have been moved or deleted. Go up or pick another folder.
+  access_denied: You don't have permission to open this folder. Ask its owner for access or open it as an administrator.
+  not_a_folder: This path points to a file, not a folder.
+  other: "Can't open this folder: %{reason}"
+  open_failed: "Can't open \"%{name}\": %{reason}"
+home:
+  title: Home
+  body: Pinned folders, drives and recent files will appear here. For now, pick a place on the left.
+this_pc:
+  title: This PC
+  free_of: "%{free} free of %{total}"
+  no_media: No media
+recycle_bin:
+  title: Recycle Bin
+  body: The Recycle Bin opens in File Explorer for now.
+  open: Open in File Explorer
+drive:
+  local: Local Disk
+  removable: USB Drive
+  network: Network Drive
+  optical: CD Drive
+  ram: RAM Disk
+  other: Drive
+status:
+  items_one: 1 item
+  items: "%{count} items"
+  selected_one: 1 selected
+  selected: "%{count} selected"
+  free: "%{drive} %{free} free"
+size:
+  bytes: "%{n} bytes"

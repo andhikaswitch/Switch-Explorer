@@ -54,6 +54,8 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Ikon | `icon.folder.back`, `icon.folder.front`, `icon.default` | Color |
 | Bayangan | `shadow.card`, `shadow.popover`, `shadow.dialog`, `shadow.glow` | Shadow |
 | Angka | `radius.*`, `space.*`, `row.height.*`, `row.cut.opacity`, `slash.angle_deg`, `motion.*` | Number |
+| Tipografi | `font.size.{caption,body,subtitle,title,display}`, `font.line.{…}` (px, DESIGN §4) | Number |
+| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,control,icon,icon_sm}`, `focus.ring_width`, `opacity.disabled` | Number |
 | Font | `font.ui`, `font.display`, `font.mono` (daftar fallback), `font.scale` | Font/Number |
 
 Setiap token dideklarasikan sekali di `sx-theme` lewat `define_tokens!` (id, tipe, grup, deskripsi i18n,
@@ -144,6 +146,26 @@ mono = ["Cascadia Mono", "Consolas"]
 "motion.base" = 160
 "motion.slow" = 240
 "motion.slide" = 280
+"font.size.caption" = 12
+"font.size.body" = 14
+"font.size.subtitle" = 16
+"font.size.title" = 20
+"font.size.display" = 28
+"font.line.caption" = 16
+"font.line.body" = 20
+"font.line.subtitle" = 22
+"font.line.title" = 26
+"font.line.display" = 34
+"size.titlebar" = 40
+"size.commandbar" = 44
+"size.statusbar" = 28
+"size.sidebar" = 248
+"size.tab_max" = 220
+"size.control" = 32
+"size.icon" = 20
+"size.icon_sm" = 16
+"focus.ring_width" = 2
+"opacity.disabled" = 0.4
 
 [common]               # berlaku di kedua mode
 "fg.on_highlight" = "#0A1A2F"

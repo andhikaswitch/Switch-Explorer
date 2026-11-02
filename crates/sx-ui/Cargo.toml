@@ -8,6 +8,17 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+futures.workspace = true
+gpui-kit.workspace = true
+raw-window-handle.workspace = true
+rust-i18n.workspace = true
+sx-core.workspace = true
+sx-fs.workspace = true
+sx-settings.workspace = true
+sx-shell.workspace = true
+sx-theme.workspace = true
+sx-win.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

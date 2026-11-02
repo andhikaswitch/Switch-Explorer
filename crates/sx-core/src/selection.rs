@@ -76,6 +76,20 @@ impl Selection {
         self.anchor = None;
         self.focus = None;
     }
+
+    /// Moves the keyboard focus without changing what is selected (`Ctrl+↑/↓`); the next
+    /// `Shift` extension starts from here.
+    pub fn move_focus(&mut self, ix: u32) {
+        self.focus = Some(ix);
+        self.anchor = Some(ix);
+    }
+
+    /// Replaces the selection with `items` (after a re-sort or a refresh), focusing `focus`.
+    pub fn restore(&mut self, items: impl IntoIterator<Item = u32>, focus: Option<u32>) {
+        self.items = items.into_iter().collect();
+        self.focus = focus;
+        self.anchor = focus;
+    }
 }
 
 #[cfg(test)]

@@ -57,6 +57,14 @@ pub const PAIRS: &[ContrastPair] = &[
         TEXT,
     ),
     pair(&[HeaderFg], &[BgContent], &[], TEXT),
+    // Chrome text: command bar buttons (bg.window), status bar, sidebar captions.
+    pair(
+        &[FgPrimary, FgSecondary],
+        &[BgWindow, BgStatusbar],
+        &[],
+        TEXT,
+    ),
+    pair(&[FgPrimary, FgSecondary, FgMuted], &[BgSidebar], &[], TEXT),
     pair(&[NavItemFg, NavSectionFg], &[BgSidebar], &[], TEXT),
     pair(&[NavItemActiveFg], &[NavItemActiveBg], &[BgSidebar], TEXT),
     pair(&[TabFg], &[BgTitlebar], &[], TEXT),

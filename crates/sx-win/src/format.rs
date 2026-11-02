@@ -6,7 +6,9 @@ use windows::Win32::Globalization::{
     DATE_SHORTDATE, GetDateFormatEx, GetTimeFormatEx, TIME_NOSECONDS,
 };
 use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTimeEx};
-use windows::Win32::UI::Shell::StrFormatKBSizeW;
+use windows::Win32::UI::Shell::{
+    SFBS_FLAGS_ROUND_TO_NEAREST_DISPLAYED_DIGIT, StrFormatByteSizeEx, StrFormatKBSizeW,
+};
 use windows::core::PCWSTR;
 
 /// Short date and time in the user's locale and time zone, e.g. `12/05/2025 21:10`.
@@ -72,6 +74,21 @@ pub fn kb_size(bytes: u64) -> String {
     String::from_utf16_lossy(&buf[..len])
 }
 
+/// Size with the unit Explorer picks (bytes, KB, MB, GB, TB), as on drive tiles: `212 GB`.
+pub fn byte_size(bytes: u64) -> String {
+    let mut buf = [0u16; 64];
+    // SAFETY: the buffer length is passed with the slice; the function NUL-terminates it.
+    let ok = unsafe {
+        StrFormatByteSizeEx(bytes, SFBS_FLAGS_ROUND_TO_NEAREST_DISPLAYED_DIGIT, &mut buf)
+    }
+    .is_ok();
+    if !ok {
+        return format!("{} KB", bytes.div_ceil(1024));
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..len])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,5 +110,12 @@ mod tests {
         assert!(kb_size(0).starts_with('0'));
         let big = kb_size(10 * 1024 * 1024);
         assert!(big.contains("240"), "{big}");
+    }
+
+    #[test]
+    fn byte_sizes_pick_a_unit() {
+        let gb = byte_size(212 * 1024 * 1024 * 1024);
+        assert!(gb.starts_with("212") && gb.ends_with("GB"), "{gb}");
+        assert!(byte_size(500).starts_with("500"));
     }
 }

@@ -32,6 +32,9 @@ gpui-kit = { version = "=0.8.1", default-features = false, features = ["componen
 gpui-base = "=0.8.1"
 gpui-component = "=0.8.1"
 gpui-kit-assets = "=0.8.1"
+# Already in the tree through gpui-component (no extra weight); same major.
+rust-i18n = "4.2"
+raw-window-handle = "0.6"
 
 # Windows — same major as gpui-pre-windows so it compiles once; features chosen per crate.
 windows = { version = "0.62", default-features = false, features = ["std"] }
@@ -47,6 +50,10 @@ toml_edit = "0.23"
 tracing = "0.1"
 futures = "0.3"
 tempfile = "3"
+# Logging (ARCHITECTURE.md §14): fmt layer into a daily rolling file; `log` records from GPUI
+# are bridged in. No env-filter: the level comes from `dev.log_level`.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "tracing-log"] }
+tracing-appender = "0.2"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

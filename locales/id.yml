@@ -1,0 +1,69 @@
+app:
+  name: Switch Explorer
+window:
+  minimize: Minimalkan
+  maximize: Maksimalkan
+  restore: Pulihkan
+  close: Tutup
+tab:
+  new: Tab baru
+  close: Tutup tab
+nav:
+  home: Beranda
+  this_pc: PC ini
+  recycle_bin: Recycle Bin
+  pinned: Disematkan
+  drives: Drive
+  back: Kembali
+  forward: Maju
+  up: Naik
+  refresh: Muat ulang
+  address: Alamat
+  address_placeholder: Ketik path, %VARIABEL% atau shell:nama
+  shell_unsupported: "Nama shell: bisa dibuka di versi berikutnya. Ketik path lengkap dulu."
+  invalid_address: Tidak bisa membuka "%{input}". Ketik path lengkap, misalnya C:\Users.
+details:
+  name: Nama
+  modified: Diubah
+  type: Tipe
+  size: Ukuran
+  type_folder: Folder file
+  type_file: File
+  type_ext: "File %{ext}"
+  type_link: Pintasan ke folder
+  sort_ascending: Urut naik
+  sort_descending: Urut turun
+  empty: Folder ini kosong. Seret file ke sini atau tekan Ctrl+Shift+N untuk membuat folder.
+  loading: Memuat…
+error:
+  not_found: Folder ini sudah tidak ada. Mungkin dipindahkan atau dihapus. Naik satu tingkat atau pilih folder lain.
+  access_denied: Kamu tidak punya izin membuka folder ini. Minta akses ke pemiliknya atau buka sebagai administrator.
+  not_a_folder: Path ini menunjuk ke file, bukan folder.
+  other: "Tidak bisa membuka folder ini: %{reason}"
+  open_failed: "Tidak bisa membuka \"%{name}\": %{reason}"
+home:
+  title: Beranda
+  body: Folder yang disematkan, drive, dan file terbaru akan tampil di sini. Untuk sekarang, pilih lokasi di kiri.
+this_pc:
+  title: PC ini
+  free_of: "%{free} kosong dari %{total}"
+  no_media: Tidak ada media
+recycle_bin:
+  title: Recycle Bin
+  body: Untuk sekarang, Recycle Bin dibuka di File Explorer.
+  open: Buka di File Explorer
+drive:
+  local: Disk Lokal
+  removable: Drive USB
+  network: Drive Jaringan
+  optical: Drive CD
+  ram: Disk RAM
+  other: Drive
+status:
+  items_one: 1 item
+  items: "%{count} item"
+  selected_one: 1 dipilih
+  selected: "%{count} dipilih"
+  free: "%{drive} sisa %{free}"
+size:
+  bytes: "%{n} byte"

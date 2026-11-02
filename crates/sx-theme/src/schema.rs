@@ -228,6 +228,29 @@ define_tokens! {
     MotionBase = "motion.base": Number,
     MotionSlow = "motion.slow": Number,
     MotionSlide = "motion.slide": Number,
+    // Type scale (DESIGN.md §4): size and line height in px.
+    FontSizeCaption = "font.size.caption": Number,
+    FontSizeBody = "font.size.body": Number,
+    FontSizeSubtitle = "font.size.subtitle": Number,
+    FontSizeTitle = "font.size.title": Number,
+    FontSizeDisplay = "font.size.display": Number,
+    FontLineCaption = "font.line.caption": Number,
+    FontLineBody = "font.line.body": Number,
+    FontLineSubtitle = "font.line.subtitle": Number,
+    FontLineTitle = "font.line.title": Number,
+    FontLineDisplay = "font.line.display": Number,
+    // Window chrome (DESIGN.md §8.1) and controls (§11, §14) in px.
+    SizeTitlebar = "size.titlebar": Number,
+    SizeCommandbar = "size.commandbar": Number,
+    SizeStatusbar = "size.statusbar": Number,
+    SizeSidebar = "size.sidebar": Number,
+    SizeTabMax = "size.tab_max": Number,
+    SizeControl = "size.control": Number,
+    SizeIcon = "size.icon": Number,
+    SizeIconSm = "size.icon_sm": Number,
+    FocusRingWidth = "focus.ring_width": Number,
+    // Opacity of disabled controls (0..1).
+    OpacityDisabled = "opacity.disabled": Number,
 }
 
 #[cfg(test)]
