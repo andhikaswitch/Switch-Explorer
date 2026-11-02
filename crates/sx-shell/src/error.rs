@@ -22,6 +22,16 @@ pub enum ShellError {
 }
 
 impl ShellError {
+    /// The Win32 error code (`ERROR_*`) behind a failed open, when there is one.
+    pub fn win32_code(&self) -> Option<u32> {
+        match self {
+            Self::Open { source, .. } | Self::Com(source) => {
+                sx_win::win32_code(source.code().0 as u32)
+            }
+            _ => None,
+        }
+    }
+
     /// The user cancelled a shell dialog (e.g. "Open with"), which is not a failure to report.
     pub fn is_cancelled(&self) -> bool {
         // HRESULT_FROM_WIN32(ERROR_CANCELLED)

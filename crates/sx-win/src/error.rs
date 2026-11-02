@@ -19,6 +19,14 @@ pub enum WinError {
 }
 
 impl WinError {
+    /// The Win32 error code (`ERROR_*`) behind the failure, when there is one.
+    pub fn win32_code(&self) -> Option<u32> {
+        match self {
+            Self::RelativePath | Self::NulInPath => None,
+            Self::Enumerate { source, .. } => win32_code(source.code().0 as u32),
+        }
+    }
+
     /// The error as a portable kind (not found, permission denied, not a folder, …) for
     /// user-facing messages.
     pub fn io_kind(&self) -> ErrorKind {
@@ -27,6 +35,11 @@ impl WinError {
             Self::Enumerate { source, .. } => hresult_kind(source.code().0 as u32),
         }
     }
+}
+
+/// The Win32 code inside an `HRESULT_FROM_WIN32` value (0x8007xxxx).
+pub fn win32_code(hr: u32) -> Option<u32> {
+    (hr & 0xFFFF_0000 == 0x8007_0000).then_some(hr & 0xFFFF)
 }
 
 /// Maps `HRESULT_FROM_WIN32` codes (0x8007xxxx) through std's Win32 error table.

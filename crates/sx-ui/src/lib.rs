@@ -7,16 +7,19 @@
 rust_i18n::i18n!("../../locales", fallback = "en");
 
 pub mod actions;
+mod assets;
 mod chrome;
 mod details;
 mod format;
 mod pages;
 mod sidebar;
+mod slash;
 mod status;
 mod tab;
 pub mod theme;
 pub mod workspace;
 
+pub use assets::Assets;
 pub use theme::{ActiveTokens, ThemeController, Tokens};
 pub use workspace::{OpenRequest, Workspace, WorkspaceOptions};
 

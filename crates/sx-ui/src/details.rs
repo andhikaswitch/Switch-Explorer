@@ -3,12 +3,13 @@
 
 use std::ops::Range;
 
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, ClickEvent, Context, ElementId, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
-    uniform_list,
+    AnyElement, ClickEvent, Context, Div, ElementId, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
+    Window, div, uniform_list,
 };
 use rust_i18n::t;
 use sx_core::{EntryKind, Location};
@@ -58,7 +59,7 @@ impl Workspace {
             (Content::Page, Location::ThisPc) => self.render_this_pc(cx).into_any_element(),
             (Content::Page, _) => self.render_recycle_bin(cx).into_any_element(),
             (Content::Loading { since }, _) => {
-                let text = (since.elapsed() >= std::time::Duration::from_millis(150))
+                let text = (since.elapsed() >= crate::workspace::LOADING_DELAY)
                     .then(|| t!("details.loading").to_string());
                 self.centered(text.map(SharedString::from), cx)
             }
@@ -121,7 +122,7 @@ impl Workspace {
             )
             .when(can_up, |el| {
                 el.child(
-                    self.text_button("failure-up", t!("nav.up").into(), cx, |this, cx| {
+                    self.text_button("failure-up", t!("nav.go_up").into(), cx, |this, cx| {
                         this.go_up(cx);
                     }),
                 )
@@ -166,7 +167,7 @@ impl Workspace {
         let columns = Columns::for_width(window.viewport_size().width);
         let count = self.tab().row_count();
         let focused = self.list_focus.is_focused(window);
-        div()
+        let list = div()
             .id("details")
             .key_context(LIST_CONTEXT)
             .track_focus(&self.list_focus)
@@ -174,88 +175,104 @@ impl Workspace {
             .flex_col()
             .flex_1()
             .min_h_0()
-            .on_key_down(cx.listener(Self::list_key_down))
-            .on_action(cx.listener(|this, _: &actions::SelectPrevious, _, cx| {
-                this.move_selection(-1, false, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::SelectNext, _, cx| {
-                this.move_selection(1, false, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::SelectFirst, _, cx| {
-                this.move_selection(isize::MIN / 2, false, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::SelectLast, _, cx| {
-                this.move_selection(isize::MAX / 2, false, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::SelectPageUp, _, cx| {
-                let page = this.tab().page_rows.get() as isize;
-                this.move_selection(-page, false, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::SelectPageDown, _, cx| {
-                let page = this.tab().page_rows.get() as isize;
-                this.move_selection(page, false, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::ExtendPrevious, _, cx| {
-                this.move_selection(-1, true, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::ExtendNext, _, cx| {
-                this.move_selection(1, true, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::ExtendFirst, _, cx| {
-                this.move_selection(isize::MIN / 2, true, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::ExtendLast, _, cx| {
-                this.move_selection(isize::MAX / 2, true, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::MoveFocusPrevious, _, cx| {
-                this.move_selection(-1, false, true);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::MoveFocusNext, _, cx| {
-                this.move_selection(1, false, true);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::ToggleFocused, _, cx| {
-                if let Some(focus) = this.tab().selection.focus() {
-                    this.tab_mut().selection.toggle(focus);
-                    cx.notify();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &actions::SelectAll, _, cx| {
-                let len = this.tab().row_count() as u32;
-                this.tab_mut().selection.select_all(len);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|this, _: &actions::OpenSelected, _, cx| {
-                this.open_selection(false, cx);
-            }))
-            .on_action(cx.listener(|this, _: &actions::OpenInNewTab, _, cx| {
-                this.open_selection(true, cx);
-            }))
+            .on_key_down(cx.listener(Self::list_key_down));
+        self.list_actions(list, cx)
             .child(self.render_header(columns, cx))
             .child(
-                uniform_list(
-                    "rows",
-                    count,
-                    cx.processor(move |this, range: Range<usize>, _window, cx| {
-                        this.render_rows(range, columns, focused, cx)
-                    }),
-                )
-                .track_scroll(&self.tab().scroll)
-                .flex_1()
-                .px(t.px(Token::SpaceXs))
-                .pb(t.px(Token::SpaceSm)),
+                // The scrollbar overlays the rows below the header; its colours come through
+                // the theme bridge (`scrollbar.*`).
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .child(
+                        uniform_list(
+                            "rows",
+                            count,
+                            cx.processor(move |this, range: Range<usize>, _window, cx| {
+                                this.render_rows(range, columns, focused, cx)
+                            }),
+                        )
+                        .track_scroll(&self.tab().scroll)
+                        .flex_1()
+                        .px(t.px(Token::SpaceXs))
+                        .pb(t.px(Token::SpaceSm)),
+                    )
+                    .vertical_scrollbar(&self.tab().scroll),
             )
+    }
+
+    /// Keyboard selection and opening in the focused list.
+    fn list_actions(&self, list: Stateful<Div>, cx: &Context<Self>) -> Stateful<Div> {
+        list.on_action(cx.listener(|this, _: &actions::SelectPrevious, _, cx| {
+            this.move_selection(-1, false, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::SelectNext, _, cx| {
+            this.move_selection(1, false, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::SelectFirst, _, cx| {
+            this.move_selection(isize::MIN / 2, false, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::SelectLast, _, cx| {
+            this.move_selection(isize::MAX / 2, false, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::SelectPageUp, _, cx| {
+            let page = this.tab().page_rows.get() as isize;
+            this.move_selection(-page, false, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::SelectPageDown, _, cx| {
+            let page = this.tab().page_rows.get() as isize;
+            this.move_selection(page, false, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::ExtendPrevious, _, cx| {
+            this.move_selection(-1, true, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::ExtendNext, _, cx| {
+            this.move_selection(1, true, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::ExtendFirst, _, cx| {
+            this.move_selection(isize::MIN / 2, true, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::ExtendLast, _, cx| {
+            this.move_selection(isize::MAX / 2, true, false);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::MoveFocusPrevious, _, cx| {
+            this.move_selection(-1, false, true);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::MoveFocusNext, _, cx| {
+            this.move_selection(1, false, true);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::ToggleFocused, _, cx| {
+            if let Some(focus) = this.tab().selection.focus() {
+                this.tab_mut().selection.toggle(focus);
+                cx.notify();
+            }
+        }))
+        .on_action(cx.listener(|this, _: &actions::SelectAll, _, cx| {
+            let len = this.tab().row_count() as u32;
+            this.tab_mut().selection.select_all(len);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &actions::OpenSelected, _, cx| {
+            this.open_selection(false, cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::OpenInNewTab, _, cx| {
+            this.open_selection(true, cx);
+        }))
     }
 
     fn render_header(&self, columns: Columns, cx: &Context<Self>) -> impl IntoElement {
@@ -401,9 +418,7 @@ impl Workspace {
                 el.bg(s.selected_bg).border_color(s.selected_border)
             })
             .when(state.selected && !state.focused, |el| el.bg(s.inactive_bg))
-            .when(state.is_focus && !state.selected, |el| {
-                el.border_color(s.focus_ring)
-            })
+            .when(state.is_focus, |el| el.border_color(s.focus_ring))
             .when(!state.selected, |el| el.hover(move |st| st.bg(hover)))
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 window.focus(&this.list_focus, cx);

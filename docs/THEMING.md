@@ -54,9 +54,9 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Kategori | `category.{documents,audio,pictures,videos,archives,code,apps,other}` | Color |
 | Ikon | `icon.folder.back`, `icon.folder.front`, `icon.default` | Color |
 | Bayangan | `shadow.card`, `shadow.popover`, `shadow.dialog`, `shadow.glow` | Shadow |
-| Angka | `radius.*`, `space.*`, `row.height.*`, `row.cut.opacity`, `slash.angle_deg`, `motion.*` | Number |
+| Angka | `radius.*`, `space.*`, `row.height.*`, `row.cut.opacity`, `slash.angle_deg`, `slash.edge_width`, `motion.*` | Number |
 | Tipografi | `font.size.{caption,body,subtitle,title,display}`, `font.line.{…}` (px, DESIGN §4) | Number |
-| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,control,icon,icon_sm}`, `focus.ring_width`, `opacity.disabled` | Number |
+| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `focus.ring_width`, `opacity.disabled` | Number |
 | Font | `font.ui`, `font.display`, `font.mono` (daftar fallback), `font.scale` | Font/Number |
 
 Setiap token dideklarasikan sekali di `sx-theme` lewat `define_tokens!` (id, tipe, grup, deskripsi i18n,
@@ -143,6 +143,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "row.height.comfortable" = 36
 "row.cut.opacity" = 0.5
 "slash.angle_deg" = 12
+"slash.edge_width" = 3
 "motion.fast" = 100
 "motion.base" = 160
 "motion.slow" = 240
@@ -162,6 +163,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "size.statusbar" = 28
 "size.sidebar" = 248
 "size.tab_max" = 220
+"size.tab_indicator" = 3
 "size.control" = 32
 "size.icon" = 20
 "size.icon_sm" = 16
@@ -278,7 +280,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "fg.link" = "{pal.accent.700}"
 "border.subtle" = "alpha({pal.accent.700}, 0.10)"
 "border.strong" = "alpha({pal.accent.700}, 0.22)"
-"border.input" = "#7C90A8"
+"border.input" = "#72869E"
 "border.input_focus" = "{pal.accent.700}"
 "divider" = "alpha(#0A1A2F, 0.08)"
 "accent.text" = "{pal.accent.700}"
@@ -483,6 +485,8 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 | `fg.primary`, `fg.secondary`, `fg.muted` | `bg.content`, `surface.card`, `surface.overlay` | 4.5:1 |
 | `fg.primary`, `fg.secondary`, `fg.muted` | `row.selected.bg`, `row.selected_inactive.bg` (di atas `bg.content`) | 4.5:1 |
 | `header.fg` | `bg.content` | 4.5:1 |
+| `fg.primary`, `fg.secondary` | `bg.window` (command bar), `bg.statusbar` | 4.5:1 |
+| `fg.primary`, `fg.secondary`, `fg.muted` | `bg.sidebar` | 4.5:1 |
 | `nav.item.fg`, `nav.section.fg` | `bg.sidebar` | 4.5:1 |
 | `nav.item.active.fg` | `nav.item.active.bg` (semua stop gradien, di atas `bg.sidebar`) | 4.5:1 |
 | `tab.fg` | `bg.titlebar` | 4.5:1 |
@@ -494,10 +498,16 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 | `input.placeholder` | `surface.input` | 4.5:1 |
 | `accent.text`, `fg.link`, `success.text`, `warning.text`, `danger.text`, `info.text` | `bg.content` | 4.5:1 |
 | `button.primary.fg` | `button.primary.bg`, `…bg_hover`, `…bg_pressed` | 4.5:1 |
-| `button.secondary.fg` | `button.secondary.bg`, `…bg_hover` (di atas `bg.content`) | 4.5:1 |
+| `button.secondary.fg` | `button.secondary.bg` (di atas `bg.content`) | 4.5:1 |
+| `button.secondary.fg_hover` | `button.secondary.bg_hover`, `…bg_pressed` (di atas `bg.content`) | 4.5:1 |
+| `button.ghost.fg_hover` | `button.ghost.bg_hover`, `…bg_pressed` (di atas `bg.window`) | 4.5:1 |
+| `nav.item.hover.fg` | `nav.item.hover.bg`, `nav.item.pressed.bg` (di atas `bg.sidebar`) | 4.5:1 |
+| `card.hover.fg` | `surface.card_hover` (di atas `bg.content`) | 4.5:1 |
 | `fg.on_solid` | `accent.solid` & variannya | 4.5:1 |
 | `button.danger.fg` | `button.danger.bg`, `…bg_hover` | 4.5:1 |
 | `focus.ring`, `border.input`, `border.input_focus` | `bg.content`, `surface.input` | 3:1 |
+| `border.input`, `border.input_focus` | `bg.window` (address field di command bar) | 3:1 |
+| `focus.ring` | `bg.sidebar`, `bg.titlebar`, `bg.window` | 3:1 |
 | `checkbox.border`, `toggle.off.border`, `selection.border` | `bg.content` | 3:1 |
 | `drop_target.border`, `drop_blocked.border` | `bg.content` | 3:1 |
 | `slider.fill`, `progress.fill`, `toggle.on.bg` | `bg.content` | 3:1 |

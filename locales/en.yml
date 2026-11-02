@@ -17,6 +17,7 @@ nav:
   back: Back
   forward: Forward
   up: Up
+  go_up: Go up
   refresh: Refresh
   address: Address
   address_placeholder: Type a path, %VARIABLE% or shell:name
@@ -30,17 +31,21 @@ details:
   type_folder: File folder
   type_file: File
   type_ext: "%{ext} file"
-  type_link: Shortcut to folder
   sort_ascending: Sorted ascending
   sort_descending: Sorted descending
-  empty: This folder is empty. Drag files here or press Ctrl+Shift+N to create a folder.
+  empty: This folder is empty.
   loading: Loading…
 error:
   not_found: This folder no longer exists. It may have been moved or deleted. Go up or pick another folder.
-  access_denied: You don't have permission to open this folder. Ask its owner for access or open it as an administrator.
-  not_a_folder: This path points to a file, not a folder.
-  other: "Can't open this folder: %{reason}"
-  open_failed: "Can't open \"%{name}\": %{reason}"
+  access_denied: You don't have permission to open this folder. Ask its owner for access, then press F5.
+  not_a_folder: This path points to a file, not a folder. Type the folder that contains it.
+  not_ready: The drive isn't ready. Insert the media or reconnect the drive, then press F5.
+  network: Can't reach this network location. Check the connection and the path, then press F5.
+  other: "Can't open this folder (error %{code}). Press F5 to try again."
+  open_failed: "Can't open \"%{name}\" (error %{code}). Try again, or open it from its app."
+  open_no_app: "No app is set to open \"%{name}\". Pick one in Windows Settings > Apps > Default apps."
+  open_missing: "\"%{name}\" no longer exists. Press F5 to refresh the folder."
+  open_in_use: "\"%{name}\" is in use by another app. Close it there and try again."
 home:
   title: Home
   body: Pinned folders, drives and recent files will appear here. For now, pick a place on the left.

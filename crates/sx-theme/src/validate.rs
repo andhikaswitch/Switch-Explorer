@@ -157,6 +157,14 @@ pub const PAIRS: &[ContrastPair] = &[
         &[],
         NON_TEXT,
     ),
+    // The address field sits on the command bar; focus rings also land on chrome surfaces.
+    pair(&[BorderInput, BorderInputFocus], &[BgWindow], &[], NON_TEXT),
+    pair(
+        &[FocusRing],
+        &[BgSidebar, BgTitlebar, BgWindow],
+        &[],
+        NON_TEXT,
+    ),
     pair(
         &[CheckboxBorder, ToggleOffBorder, SelectionBorder],
         &[BgContent],

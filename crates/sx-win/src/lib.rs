@@ -14,7 +14,7 @@ pub mod sort;
 pub mod volume;
 
 pub use enumerate::{BATCH, FIRST_BATCH, RawEntry, enumerate};
-pub use error::WinError;
+pub use error::{WinError, win32_code};
 pub use known::{KnownFolder, known_folder};
 pub use os::{BUILD_SYSTEM_BACKDROP, os_build, ui_language};
 pub use path::{to_wide, win32_path};

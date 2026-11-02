@@ -82,7 +82,7 @@ fn main() -> anyhow::Result<()> {
     let (requests_tx, requests) = mpsc::unbounded::<OpenRequest>();
     let ipc = server.and_then(|server| single::serve(server, requests_tx));
     gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(sx_ui::Assets)
         .run(move |cx| {
             // GPUI platform start-up (DirectX, DirectWrite) is most of the cold start.
             tracing::debug!(ms = started.elapsed().as_secs_f64() * 1000.0, "app running");

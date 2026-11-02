@@ -20,6 +20,7 @@ use sx_core::Location;
 use sx_theme::Token;
 
 use crate::format;
+use crate::slash;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
 
@@ -175,9 +176,11 @@ impl Workspace {
                         .bottom_0()
                         .left(t.px(Token::SpaceLg))
                         .right(t.px(Token::SpaceLg))
-                        .h(t.px(Token::FocusRingWidth))
-                        .rounded(t.px(Token::RadiusXs))
-                        .bg(t.paint(Token::TabActiveIndicator)),
+                        .h(t.px(Token::SizeTabIndicator))
+                        .child(slash::slanted_bar(
+                            t.paint(Token::TabActiveIndicator),
+                            t.number(Token::SlashAngleDeg),
+                        )),
                 )
             })
     }
@@ -291,6 +294,7 @@ impl Workspace {
 
     fn render_address(&self, cx: &Context<Self>) -> impl IntoElement {
         let t = cx.tokens();
+        let strong = t.color(Token::BorderInputFocus);
         let field = div()
             .id("address")
             .flex()
@@ -310,7 +314,8 @@ impl Workspace {
                 .into_any_element();
         }
         field
-            .border_color(t.color(Token::BorderSubtle))
+            .border_color(t.color(Token::BorderInput))
+            .hover(move |s| s.border_color(strong))
             .overflow_hidden()
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                 this.edit_address(window, cx);

@@ -30,7 +30,7 @@ use crate::tab::{Content, Tab};
 use crate::theme::{ActiveTokens as _, ThemeController};
 
 /// Delay before "Loading…" appears, so fast folders do not flicker (DESIGN.md §11).
-const LOADING_DELAY: Duration = Duration::from_millis(150);
+pub(crate) const LOADING_DELAY: Duration = Duration::from_millis(150);
 
 /// A request from another process (single instance, `OpenPaths`) or the command line.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -322,6 +322,7 @@ impl Workspace {
 
     pub(crate) fn navigate(&mut self, to: Location, cx: &mut Context<Self>) {
         self.notice = None;
+        self.hovered = None;
         if self.tab_mut().history.navigate(to) {
             self.tab_mut().reveal = None;
             self.load(cx);
@@ -437,14 +438,7 @@ impl Workspace {
             }
             Err(err) => {
                 tracing::debug!(error = %err, "folder failed to load");
-                let message = match &err {
-                    LoadError::NotFound(_) => t!("error.not_found"),
-                    LoadError::AccessDenied(_) => t!("error.access_denied"),
-                    LoadError::NotAFolder(_) => t!("error.not_a_folder"),
-                    LoadError::Other(source) => t!("error.other", reason = source.to_string()),
-                    LoadError::Cancelled => return,
-                };
-                tab.content = Content::Failed(message.into());
+                tab.content = Content::Failed(crate::format::load_error(&err));
             }
         }
         cx.notify();
@@ -474,6 +468,7 @@ impl Workspace {
             let drives = task.await;
             let _ = this.update(cx, |this, cx| {
                 this.drives = drives;
+                this.hovered = None;
                 cx.notify();
             });
         })
@@ -598,8 +593,7 @@ impl Workspace {
             {
                 tracing::debug!(error = %err, "open failed");
                 let _ = this.update(cx, |this, cx| {
-                    this.notice =
-                        Some(t!("error.open_failed", name = name, reason = err.to_string()).into());
+                    this.notice = Some(crate::format::open_error(&name, &err));
                     cx.notify();
                 });
             }
@@ -801,6 +795,7 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
                 this.sidebar_visible = !this.sidebar_visible;
+                this.hovered = None;
                 cx.notify();
             }))
             .child(self.render_title_bar(window, cx))

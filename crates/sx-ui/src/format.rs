@@ -17,8 +17,8 @@ pub struct RowText {
 
 pub fn row_text(entry: &EntryView<'_>) -> RowText {
     let kind = match entry.kind {
-        EntryKind::Dir => t!("details.type_folder"),
-        EntryKind::Junction => t!("details.type_link"),
+        // Explorer also calls junctions and folder symlinks "File folder".
+        EntryKind::Dir | EntryKind::Junction => t!("details.type_folder"),
         EntryKind::File | EntryKind::Symlink if entry.ext.is_empty() => t!("details.type_file"),
         EntryKind::File | EntryKind::Symlink => {
             t!("details.type_ext", ext = entry.ext.to_uppercase())
@@ -68,6 +68,42 @@ pub fn drive_space(drive: &Drive) -> SharedString {
         .into(),
         None => t!("this_pc.no_media").into(),
     }
+}
+
+/// Why a folder could not be listed, as a sentence with a fix.
+pub fn load_error(err: &sx_fs::LoadError) -> SharedString {
+    use sx_fs::LoadError;
+    // ERROR_NOT_READY; ERROR_BAD_NETPATH, ERROR_NETNAME_DELETED, ERROR_BAD_NET_NAME,
+    // ERROR_NETWORK_UNREACHABLE.
+    const NOT_READY: u32 = 21;
+    const NETWORK: [u32; 4] = [53, 64, 67, 1231];
+    match err {
+        LoadError::NotFound(_) => t!("error.not_found"),
+        LoadError::AccessDenied(_) => t!("error.access_denied"),
+        LoadError::NotAFolder(_) => t!("error.not_a_folder"),
+        LoadError::Other(source) => match source.win32_code() {
+            Some(NOT_READY) => t!("error.not_ready"),
+            Some(code) if NETWORK.contains(&code) => t!("error.network"),
+            code => t!("error.other", code = code.unwrap_or(0)),
+        },
+        LoadError::Cancelled => t!("error.other", code = 0),
+    }
+    .into()
+}
+
+/// Why an item could not be opened, as a sentence with a fix.
+pub fn open_error(name: &str, err: &sx_shell::ShellError) -> SharedString {
+    // ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SHARING_VIOLATION, ERROR_NO_ASSOCIATION.
+    const MISSING: [u32; 2] = [2, 3];
+    const IN_USE: u32 = 32;
+    const NO_APP: u32 = 1155;
+    match err.win32_code() {
+        Some(NO_APP) => t!("error.open_no_app", name = name),
+        Some(IN_USE) => t!("error.open_in_use", name = name),
+        Some(code) if MISSING.contains(&code) => t!("error.open_missing", name = name),
+        code => t!("error.open_failed", name = name, code = code.unwrap_or(0)),
+    }
+    .into()
 }
 
 pub fn item_count(count: usize) -> SharedString {

@@ -15,8 +15,12 @@ use sx_theme::Token;
 use sx_win::Drive;
 
 use crate::format;
+use crate::slash;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
+
+/// Lucide "trash" from our own assets (`IconName::Delete` is a backspace glyph).
+const TRASH_ICON: &str = "icons/sx/trash.svg";
 
 /// Gauge colours switch at these fill levels (F-SIDE-06).
 const GAUGE_WARNING: f32 = 0.85;
@@ -205,10 +209,21 @@ impl Workspace {
             .px(t.px(Token::SpaceMd))
             .py(t.px(Token::SpaceXs))
             .rounded(t.px(Token::RadiusSm))
+            .relative()
             .when(active, |el| {
-                el.bg(t.paint(Token::NavItemActiveBg))
-                    .text_color(active_fg)
-                    .shadow(t.shadow(Token::ShadowGlow))
+                let mut glow = t.shadow(Token::ShadowGlow);
+                for shadow in &mut glow {
+                    shadow.color = t.color(Token::NavItemActiveGlow);
+                }
+                el.text_color(active_fg)
+                    .shadow(glow)
+                    .child(slash::tide_slash(
+                        t.paint(Token::NavItemActiveBg),
+                        t.color(Token::NavItemActiveEdge),
+                        t.number(Token::SlashAngleDeg),
+                        t.px(Token::RadiusSm),
+                        t.px(Token::SlashEdgeWidth),
+                    ))
             })
             .when(!active, |el| {
                 el.text_color(if lit { hover_fg } else { fg })
@@ -229,7 +244,11 @@ impl Workspace {
                     .when(!active, |d| {
                         d.text_color(if lit { hover_fg } else { icon_fg })
                     })
-                    .child(Icon::new(icon).size(t.px(Token::SizeIconSm))),
+                    .child(
+                        Icon::new(icon)
+                            .when(matches!(id, Item::RecycleBin), |i| i.path(TRASH_ICON))
+                            .size(t.px(Token::SizeIconSm)),
+                    ),
             )
             .child(
                 div()

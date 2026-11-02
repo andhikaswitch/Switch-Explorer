@@ -152,8 +152,7 @@ impl Workspace {
                 && !err.is_cancelled()
             {
                 let _ = this.update(cx, |this, cx| {
-                    this.notice =
-                        Some(t!("error.open_failed", name = name, reason = err.to_string()).into());
+                    this.notice = Some(crate::format::open_error(&name, &err));
                     cx.notify();
                 });
             }

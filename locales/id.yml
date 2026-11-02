@@ -17,6 +17,7 @@ nav:
   back: Kembali
   forward: Maju
   up: Naik
+  go_up: Naik satu tingkat
   refresh: Muat ulang
   address: Alamat
   address_placeholder: Ketik path, %VARIABEL% atau shell:nama
@@ -30,17 +31,21 @@ details:
   type_folder: Folder file
   type_file: File
   type_ext: "File %{ext}"
-  type_link: Pintasan ke folder
   sort_ascending: Urut naik
   sort_descending: Urut turun
-  empty: Folder ini kosong. Seret file ke sini atau tekan Ctrl+Shift+N untuk membuat folder.
+  empty: Folder ini kosong.
   loading: Memuat…
 error:
   not_found: Folder ini sudah tidak ada. Mungkin dipindahkan atau dihapus. Naik satu tingkat atau pilih folder lain.
-  access_denied: Kamu tidak punya izin membuka folder ini. Minta akses ke pemiliknya atau buka sebagai administrator.
-  not_a_folder: Path ini menunjuk ke file, bukan folder.
-  other: "Tidak bisa membuka folder ini: %{reason}"
-  open_failed: "Tidak bisa membuka \"%{name}\": %{reason}"
+  access_denied: Kamu tidak punya izin membuka folder ini. Minta akses ke pemiliknya, lalu tekan F5.
+  not_a_folder: Path ini menunjuk ke file, bukan folder. Ketik folder yang berisi file itu.
+  not_ready: Drive belum siap. Masukkan media atau sambungkan ulang drive, lalu tekan F5.
+  network: Lokasi jaringan ini tidak bisa dijangkau. Periksa koneksi dan path-nya, lalu tekan F5.
+  other: "Tidak bisa membuka folder ini (error %{code}). Tekan F5 untuk mencoba lagi."
+  open_failed: "Tidak bisa membuka \"%{name}\" (error %{code}). Coba lagi, atau buka dari aplikasinya."
+  open_no_app: "Belum ada aplikasi untuk membuka \"%{name}\". Pilih di Pengaturan Windows > Aplikasi > Aplikasi default."
+  open_missing: "\"%{name}\" sudah tidak ada. Tekan F5 untuk memuat ulang folder."
+  open_in_use: "\"%{name}\" sedang dipakai aplikasi lain. Tutup di sana lalu coba lagi."
 home:
   title: Beranda
   body: Folder yang disematkan, drive, dan file terbaru akan tampil di sini. Untuk sekarang, pilih lokasi di kiri.
