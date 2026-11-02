@@ -36,11 +36,15 @@ pub fn open(
 }
 
 fn open_blocking(path: &Path, owner: Option<isize>) -> Result<(), ShellError> {
+    let invalid = |err: sx_win::WinError| ShellError::InvalidPath(err.to_string());
+    // ShellExecute does not accept verbatim paths; the plain form is fine here because the
+    // path came from a listing of an absolute folder.
+    let file = sx_win::to_wide(path.as_os_str()).map_err(invalid)?;
+    let dir = match path.parent() {
+        Some(parent) => sx_win::to_wide(parent.as_os_str()).map_err(invalid)?,
+        None => vec![0],
+    };
     let _com = StaGuard::new()?;
-    let file = sx_win::to_wide(path.as_os_str());
-    let dir = path
-        .parent()
-        .map_or_else(|| vec![0], |p| sx_win::to_wide(p.as_os_str()));
     let mut info = SHELLEXECUTEINFOW {
         cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
         // Wait for DDE conversations to finish before this thread (and its apartment) exits.

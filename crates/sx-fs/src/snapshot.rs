@@ -3,9 +3,13 @@
 //! and filtered orders are `u32` index vectors, so 100k entries stay around 11 MB.
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::ffi::OsString;
+use std::os::windows::ffi::OsStringExt as _;
+use std::path::{Path, PathBuf};
 
 use sx_core::EntryKind;
-use sx_win::RawEntry;
+use sx_win::{RawEntry, SortKeys};
 
 /// Natural sort keys for one sort pass. They come from Windows (linguistic order with digits
 /// by value, exactly Explorer's order) and are dropped after the sort, so they cost no memory
@@ -18,9 +22,10 @@ struct NameKeys {
 impl NameKeys {
     fn build(snapshot: &DirSnapshot) -> Self {
         let mut bytes = Vec::with_capacity(snapshot.names.len() * 3);
+        let mut builder = SortKeys::new();
         let spans = (0..snapshot.entries.len() as u32)
             .map(|ix| {
-                let range = sx_win::natural_sort_key(snapshot.name(ix), &mut bytes);
+                let range = builder.append(snapshot.name(ix), &mut bytes);
                 (range.start as u32, range.end as u32)
             })
             .collect();
@@ -43,6 +48,8 @@ struct EntryRec {
     /// Index into `exts`; 0 = no extension.
     ext: u16,
     kind: EntryKind,
+    /// The display name is a lossy rendering; the exact one is in `lossy_names`.
+    lossy: bool,
     attrs: u32,
     size: u64,
     modified: i64,
@@ -95,18 +102,24 @@ pub struct EntryView<'a> {
     /// Lowercase extension without the dot ("" for none and for folders).
     pub ext: &'a str,
     pub kind: EntryKind,
+    /// `name` is a lossy rendering of a name that is not valid Unicode; build paths with
+    /// [`DirSnapshot::path_of`], never from `name`.
+    pub lossy: bool,
     pub attrs: u32,
     pub size: u64,
     /// FILETIME of the last write.
     pub modified: i64,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DirSnapshot {
     entries: Vec<EntryRec>,
     names: String,
     names_lower: String,
     exts: Vec<String>,
+    ext_index: HashMap<Box<str>, u16>,
+    /// Exact UTF-16 names of lossy entries, by entry index (pushed in index order).
+    lossy_names: Vec<(u32, Box<[u16]>)>,
     /// Entry indices in sort order.
     order: Vec<u32>,
     /// `order` after hidden/system/filter rules.
@@ -122,6 +135,8 @@ impl Default for DirSnapshot {
             names: String::new(),
             names_lower: String::new(),
             exts: vec![String::new()],
+            ext_index: HashMap::new(),
+            lossy_names: Vec::new(),
             order: Vec::new(),
             visible: Vec::new(),
             sort: SortSpec::default(),
@@ -171,11 +186,28 @@ impl DirSnapshot {
         self.sort
     }
 
+    /// The path of an entry inside `dir`, built from its exact name (lossy names included).
+    pub fn path_of(&self, dir: &Path, index: u32) -> Option<PathBuf> {
+        let rec = self.entries.get(index as usize)?;
+        if rec.lossy {
+            let at = self
+                .lossy_names
+                .binary_search_by_key(&index, |(ix, _)| *ix)
+                .ok()?;
+            return Some(dir.join(OsString::from_wide(&self.lossy_names[at].1)));
+        }
+        Some(dir.join(self.name(index)))
+    }
+
     /// Bytes held by the snapshot (for the memory meter).
     pub fn heap_bytes(&self) -> usize {
+        let exts: usize = self.exts.iter().map(|e| e.capacity() * 2).sum();
+        let lossy: usize = self.lossy_names.iter().map(|(_, n)| n.len() * 2 + 8).sum();
         self.entries.capacity() * size_of::<EntryRec>()
             + self.names.capacity()
             + self.names_lower.capacity()
+            + exts
+            + lossy
             + (self.order.capacity() + self.visible.capacity()) * size_of::<u32>()
     }
 
@@ -192,19 +224,23 @@ impl DirSnapshot {
             } else {
                 self.intern_ext(&raw.name)
             };
+            if let Some(exact) = &raw.exact {
+                self.lossy_names.push((index, exact.clone()));
+            }
             self.entries.push(EntryRec {
                 name_at: self.names.len() as u32,
                 name_len: raw.name.len() as u32,
                 ext,
                 kind: raw.kind,
+                lossy: raw.exact.is_some(),
                 attrs: raw.attrs,
                 size: raw.size,
                 modified: raw.modified,
             });
             self.names.push_str(&raw.name);
-            // Same byte length is not guaranteed for lowercase; keep the arenas parallel by
-            // storing lowercase per entry at its own offset map.
-            self.names_lower.push_str(&lowercase_same_len(&raw.name));
+            // Lowercase forms of a different byte length are kept as-is so both arenas share
+            // offsets.
+            push_lowercase_same_len(&mut self.names_lower, &raw.name);
             self.order.push(index);
             if self.passes(index) {
                 self.visible.push(index);
@@ -214,16 +250,34 @@ impl DirSnapshot {
 
     /// Re-sorts all entries (stable) and rebuilds the visible list.
     pub fn sort(&mut self, spec: SortSpec) {
-        self.sort = spec;
+        let order = self.sorted_order(spec);
+        self.apply_order(spec, order);
+    }
+
+    /// The entry order for `spec`, without changing the snapshot. Takes `&self` so a shared
+    /// snapshot can be sorted on a background executor (100k entries take ~70 ms) and the
+    /// result swapped in with [`Self::apply_order`].
+    pub fn sorted_order(&self, spec: SortSpec) -> Vec<u32> {
         let keys = spec.natural.then(|| NameKeys::build(self));
-        let mut order = std::mem::take(&mut self.order);
-        order.sort_by(|&a, &b| self.compare(a, b, keys.as_ref()));
+        let mut order: Vec<u32> = (0..self.entries.len() as u32).collect();
+        order.sort_by(|&a, &b| self.compare(spec, a, b, keys.as_ref()));
+        order
+    }
+
+    /// Installs an order from [`Self::sorted_order`]. Ignored if the entries changed since.
+    pub fn apply_order(&mut self, spec: SortSpec, order: Vec<u32>) {
+        if order.len() != self.entries.len() {
+            return;
+        }
+        self.sort = spec;
         self.order = order;
         self.rebuild_visible();
     }
 
     pub fn set_view(&mut self, mut view: ViewOptions) {
-        view.filter = view.filter.to_lowercase();
+        let mut filter = String::with_capacity(view.filter.len());
+        push_lowercase_same_len(&mut filter, &view.filter);
+        view.filter = filter;
         self.view = view;
         self.rebuild_visible();
     }
@@ -252,9 +306,9 @@ impl DirSnapshot {
         self.view.filter.is_empty() || self.lower(ix).contains(&self.view.filter)
     }
 
-    fn compare(&self, a: u32, b: u32, keys: Option<&NameKeys>) -> Ordering {
+    fn compare(&self, spec: SortSpec, a: u32, b: u32, keys: Option<&NameKeys>) -> Ordering {
         let (ra, rb) = (&self.entries[a as usize], &self.entries[b as usize]);
-        if self.sort.folders_first {
+        if spec.folders_first {
             let folder = |r: &EntryRec| !r.kind.is_container();
             let order = folder(ra).cmp(&folder(rb));
             if order != Ordering::Equal {
@@ -265,13 +319,13 @@ impl DirSnapshot {
             Some(keys) => keys.get(a).cmp(keys.get(b)),
             None => self.lower(a).cmp(self.lower(b)),
         };
-        let primary = match self.sort.column {
+        let primary = match spec.column {
             Column::Name => by_name(),
             Column::Modified => ra.modified.cmp(&rb.modified),
             Column::Size => ra.size.cmp(&rb.size),
             Column::Type => self.exts[ra.ext as usize].cmp(&self.exts[rb.ext as usize]),
         };
-        let primary = if self.sort.descending {
+        let primary = if spec.descending {
             primary.reverse()
         } else {
             primary
@@ -297,6 +351,7 @@ impl DirSnapshot {
             name: self.name(ix),
             ext: &self.exts[rec.ext as usize],
             kind: rec.kind,
+            lossy: rec.lossy,
             attrs: rec.attrs,
             size: rec.size,
             modified: rec.modified,
@@ -312,29 +367,30 @@ impl DirSnapshot {
             return 0;
         }
         let ext = ext.to_lowercase();
-        if let Some(ix) = self.exts.iter().position(|e| *e == ext) {
-            return ix as u16;
+        if let Some(&ix) = self.ext_index.get(ext.as_str()) {
+            return ix;
         }
         if self.exts.len() >= usize::from(u16::MAX) {
             return 0;
         }
+        let ix = self.exts.len() as u16;
+        self.ext_index.insert(ext.as_str().into(), ix);
         self.exts.push(ext);
-        (self.exts.len() - 1) as u16
+        ix
     }
 }
 
-/// Lowercases character by character, keeping a character as-is when its lowercase form has a
-/// different UTF-8 length, so both arenas share offsets.
-fn lowercase_same_len(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            let mut lower = c.to_lowercase();
-            match (lower.next(), lower.next()) {
-                (Some(l), None) if l.len_utf8() == c.len_utf8() => l,
-                _ => c,
-            }
-        })
-        .collect()
+/// Appends `name` lowercased character by character, keeping a character as-is when its
+/// lowercase form has a different UTF-8 length, so both arenas share offsets. The filter text is
+/// folded the same way, so it matches what is stored.
+fn push_lowercase_same_len(out: &mut String, name: &str) {
+    out.extend(name.chars().map(|c| {
+        let mut lower = c.to_lowercase();
+        match (lower.next(), lower.next()) {
+            (Some(l), None) if l.len_utf8() == c.len_utf8() => l,
+            _ => c,
+        }
+    }));
 }
 
 #[cfg(test)]
@@ -344,9 +400,10 @@ mod tests {
     fn raw(name: &str, kind: EntryKind, size: u64, modified: i64, attrs: u32) -> RawEntry {
         RawEntry {
             name: name.into(),
-            lossy: false,
+            exact: None,
             kind,
             attrs,
+            reparse_tag: 0,
             size,
             modified,
             created: 0,
@@ -527,5 +584,48 @@ mod tests {
             .find(|e| e.name == ".hidden")
             .unwrap();
         assert_eq!(hidden.ext, "");
+    }
+
+    #[test]
+    fn filter_folds_like_the_arena() {
+        let mut snap = DirSnapshot::default();
+        snap.push_batch(&[raw("İstanbul.txt", EntryKind::File, 0, 0, 0)]);
+        snap.set_view(ViewOptions {
+            filter: "İstanbul".into(),
+            ..ViewOptions::default()
+        });
+        assert_eq!(names(&snap), ["İstanbul.txt"]);
+    }
+
+    #[test]
+    fn many_distinct_extensions_intern_once_each() {
+        // Rotated logs: every file has its own extension.
+        let batch: Vec<_> = (0..5000)
+            .map(|i| raw(&format!("app.log.{i}"), EntryKind::File, 0, 0, 0))
+            .chain(std::iter::once(raw("other.LOG", EntryKind::File, 0, 0, 0)))
+            .chain(std::iter::once(raw("x.log", EntryKind::File, 0, 0, 0)))
+            .collect();
+        let mut snap = DirSnapshot::default();
+        snap.push_batch(&batch);
+        assert_eq!(snap.exts.len(), 1 + 5000 + 1);
+        assert_eq!(snap.entry(4999).unwrap().ext, "4999");
+        assert_eq!(snap.entry(5000).unwrap().ext, "log");
+        assert_eq!(snap.entry(5001).unwrap().ext, "log");
+    }
+
+    #[test]
+    fn orders_can_be_computed_elsewhere_and_stale_ones_are_ignored() {
+        let mut snap = sample();
+        let spec = SortSpec {
+            column: Column::Size,
+            ..SortSpec::default()
+        };
+        let order = snap.sorted_order(spec);
+        let stale = order[..2].to_vec();
+        snap.apply_order(spec, order);
+        assert_eq!(snap.sort_spec(), spec);
+        assert_eq!(names(&snap)[2], "file2.txt");
+        snap.apply_order(SortSpec::default(), stale);
+        assert_eq!(snap.sort_spec(), spec, "a stale order changes nothing");
     }
 }

@@ -8,7 +8,9 @@ pub enum ShellError {
     Com(windows::core::Error),
     #[error("this thread is already in the multi-threaded apartment")]
     Apartment,
-    #[error("cannot open {path}: {source}")]
+    #[error("invalid path: {0}")]
+    InvalidPath(String),
+    #[error("cannot open the item: {source}")]
     Open {
         path: PathBuf,
         source: windows::core::Error,

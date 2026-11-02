@@ -10,12 +10,15 @@ use thiserror::Error;
 
 use crate::snapshot::{DirSnapshot, SortSpec, ViewOptions};
 
+/// Messages never contain the path (it stays a field), so errors can be logged at any level.
 #[derive(Debug, Error)]
 pub enum LoadError {
-    #[error("folder not found: {0}")]
+    #[error("the folder does not exist")]
     NotFound(PathBuf),
-    #[error("access denied: {0}")]
+    #[error("access to the folder is denied")]
     AccessDenied(PathBuf),
+    #[error("the path is not a folder")]
+    NotAFolder(PathBuf),
     #[error(transparent)]
     Other(sx_win::WinError),
     #[error("cancelled")]
@@ -41,6 +44,7 @@ pub fn load(
         return Err(match err.io_kind() {
             ErrorKind::NotFound => LoadError::NotFound(dir.to_path_buf()),
             ErrorKind::PermissionDenied => LoadError::AccessDenied(dir.to_path_buf()),
+            ErrorKind::NotADirectory => LoadError::NotAFolder(dir.to_path_buf()),
             _ => LoadError::Other(err),
         });
     }
@@ -86,6 +90,32 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, LoadError::NotFound(_)), "{err:?}");
+    }
+
+    #[test]
+    fn lossy_names_resolve_to_the_exact_file() {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        // "lone" + an unpaired surrogate renders as "lone\u{FFFD}", the same as this neighbour.
+        let surrogate = dir
+            .path()
+            .join(OsString::from_wide(&[108, 111, 110, 101, 0xD800]));
+        std::fs::write(&surrogate, b"surrogate").unwrap();
+        std::fs::write(dir.path().join("lone\u{FFFD}"), b"neighbour").unwrap();
+        let snap = load(
+            dir.path(),
+            SortSpec::default(),
+            ViewOptions::default(),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let lossy = (0..snap.len() as u32)
+            .find(|&ix| snap.entry(ix).unwrap().lossy)
+            .unwrap();
+        let path = snap.path_of(dir.path(), lossy).unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), b"surrogate");
     }
 
     #[test]

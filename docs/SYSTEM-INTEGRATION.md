@@ -267,8 +267,18 @@ dialog di proses utilitas terpisah wajib masuk matriks uji (TESTING.md §5).
   Manifest itu tanpa `longPathAware`, dan manifest kedua akan bentrok. Keputusan sementara: path panjang
   ditangani prefix `\\?\` di `sx-win`. Bila `longPathAware` tetap dibutuhkan, manifest diganti
   pasca-link dengan `mt.exe` di `xtask` (bukan fork GPUI).
-- Path > 260 karakter: std Rust menangani prefix verbatim secara otomatis; panggilan Win32 kita sendiri memakai
-  prefix `\\?\` saat perlu (helper di `sx-win`). Tampilan memakai path tanpa prefix.
+- Path > 260 karakter: std Rust menangani prefix verbatim secara otomatis. Panggilan Win32 kita sendiri
+  **selalu** memakai bentuk verbatim (`\\?\C:\…`, `\\?\UNC\server\share\…`) dari path absolut yang
+  dinormalisasi secara leksikal (`/` → `\`, `.`/`..`, pemisah ganda), lewat `sx_win::win32_path`. Alasannya:
+  - tidak ada batas `MAX_PATH`;
+  - nama yang berakhiran titik atau spasi sampai ke file system persis seperti saat didaftar (Win32 biasa
+    memangkasnya dan membuka item **lain**).
+- Path relatif dan relatif-drive (`docs`, `C:`, `\docs`) ditolak, karena akan diselesaikan terhadap CWD proses
+  yang bisa diubah kode lain. Path dengan NUL di tengah ditolak, bukan dipotong.
+- Nama yang bukan UTF-16 valid (surrogate tunggal, mungkin di volume SMB/WSL) ditampilkan secara lossy, tetapi
+  path selalu dibangun dari nama aslinya (`DirSnapshot::path_of`). Teks tampilan tidak pernah dipakai untuk
+  membangun path atau membandingkan identitas.
+- Tampilan memakai path tanpa prefix; `ShellExecuteEx` menerima bentuk biasa.
 
 ## 16. Cleanup & uninstall
 

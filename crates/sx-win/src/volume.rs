@@ -102,7 +102,7 @@ pub fn drives() -> Vec<Drive> {
 pub fn drive(letter: char) -> Option<Drive> {
     let _guard = NoErrorDialogs::new();
     let root = format!("{letter}:\\");
-    let wide = to_wide(root.as_ref());
+    let wide = to_wide(root.as_ref()).ok()?;
     // SAFETY: `wide` is NUL-terminated and outlives the call.
     let kind = match unsafe { GetDriveTypeW(PCWSTR(wide.as_ptr())) } {
         DRIVE_NO_ROOT_DIR => return None,
