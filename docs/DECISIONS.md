@@ -1,0 +1,132 @@
+# Keputusan Teknis (ADR)
+
+Format: Konteks → Keputusan → Konsekuensi. Status: Diterima, Diusulkan, atau Diganti (sebutkan penggantinya).
+Mengubah keputusan = tambah ADR baru yang mengganti, jangan menghapus yang lama.
+
+## ADR-001 — Framework UI: GPUI Kit
+**Status:** Diterima, dengan gerbang go/no-go di Fase 0.
+
+**Konteks.** Targetnya "lebih ringan dari Explorer", tampilan translucent modern, kustomisasi berbasis
+token, widget khas explorer (tabel virtual ratusan ribu baris, tree, dock), dan bisa dikerjakan bersama AI.
+
+| Kriteria | GPUI Kit | Slint | Tauri 2 | egui | Iced |
+|---|---|---|---|---|---|
+| RAM idle (kualitatif) | rendah | sangat rendah | sedang–tinggi (proses WebView2) | rendah | rendah |
+| Backdrop Mica | bawaan (`MicaBackdrop`, `MicaAltBackdrop`) | manual via HWND | bawaan (window effects) | manual | manual |
+| Widget explorer | DataTable & VirtualList virtual, Dock, 75+ komponen | ListView, TableView dasar | apa saja (web) | dasar | dasar |
+| Tema berbasis token | ya (ThemeColor, puluhan tema bawaan) | globals, bangun sendiri | CSS variables | struct Visuals | Theme/Palette |
+| Teks di Windows | DirectWrite | renderer sendiri | Chromium | renderer sendiri | cosmic-text |
+| Aksesibilitas | AccessKit | AccessKit | baik (Chromium) | AccessKit | terbatas |
+| Stabilitas API | pra-1.0, versi dipin | 1.x stabil | 2.x stabil | stabil, immediate mode | sering breaking |
+| Dukungan AI coding | llms-full.txt + skill resmi | baik | sangat baik | baik | sedang |
+| Bahasa | 100% Rust | Rust + DSL `.slint` | Rust + JS/TS | Rust | Rust |
+
+**Keputusan.** GPUI Kit (`gpui-kit`): satu dependency berisi GPUI (Zed), gpui-base (primitif tanpa gaya:
+fokus, seleksi, overlay, virtualisasi, aksesibilitas), dan gpui-component (komponen bergaya). Komponen
+signature dibangun di gpui-base (visual 100% milik kita); komponen kompleks memakai gpui-component.
+
+**Alasan utama.** UI native Rust (tanpa WebView) untuk RAM/startup; Mica bawaan lewat API DWM resmi;
+tabel virtual skala besar; sistem tema semantik dengan banyak tema bawaan (cocok untuk "ricing");
+AccessKit; UI testing (`#[gpui_kit::test]`); dokumentasi untuk AI (llms-full.txt, skill resmi).
+
+**Konsekuensi.** API pra-1.0 → pin versi exact, upgrade di PR khusus. Integrasi shell (OLE DnD, context
+menu native) kita bangun sendiri via HWND. Fitur `gpui-fast` dievaluasi di Fase 0.
+
+**Gerbang Fase 0 (wajib lolos, jika ≥ 2 gagal tanpa jalan keluar wajar → evaluasi Slint):**
+1. Mica Alt + title bar kustom + snap layout saat hover maximize.
+2. Tabel 100k baris scroll ≥ 60 fps (release).
+3. Idle 1 window ≤ 90 MB private working set.
+4. OLE drag-out ke Chrome & Explorer dari HWND GPUI.
+5. Menu native `IContextMenu` tampil & bekerja (dengan forwarding pesan).
+6. Ikut light/dark Windows ≤ 300 ms.
+7. Input teks + IME bekerja.
+
+**Kenapa bukan Tauri walau FariSYNC memakainya.** Tauri menghemat ukuran installer dan backend-nya Rust,
+tapi UI-nya tetap WebView2 (berbasis Chromium, beberapa proses). Untuk target "lebih ringan dari Explorer"
+kita butuh UI yang juga native.
+
+## ADR-002 — Windows-first
+**Status:** Diterima. Fitur inti bergantung pada shell Windows (ikon, thumbnail, context menu, OLE,
+Recycle Bin, dialog). v1 hanya Windows. GPUI Kit mendukung macOS/Linux, dan semua panggilan platform ada di
+balik trait (`ShellServices`, `HotkeyBackend`), jadi port tetap terbuka.
+
+## ADR-003 — Engine operasi file hibrida
+**Status:** Diterima. Copy/move memakai engine sendiri: `CopyFile2` (progress per byte, cancel, pause via
+stop + restartable) dan `MoveFileExW` untuk volume yang sama. `IFileOperation` dipakai untuk Recycle Bin,
+namespace shell (MTP, ZIP), dan elevasi UAC. Alternatif ditolak: `IFileOperation` untuk semuanya (kontrol
+UI/journal kurang), `std::fs` murni (tanpa progress/pause).
+
+## ADR-004 — Format penyimpanan
+**Status:** Diterima. TOML untuk yang diedit manusia (settings, keymap, tema, override), JSON untuk state
+(session, views), JSONL append-only untuk journal. Tanpa SQLite di inti (ukuran & kesederhanaan); boleh
+untuk modul lazy (tags/indeks) nanti.
+
+## ADR-005 — Warna OKLCH & token berlapis
+**Status:** Diterima. Palet digenerate dari satu seed di OKLCH (seragam secara persepsi) sehingga aksen
+kustom tetap harmonis. Tiga lapis: palet → semantik → komponen. Kontras divalidasi otomatis (THEMING.md).
+
+## ADR-006 — File picker: Bridge dulu, Takeover eksperimental
+**Status:** Diterima. Mengganti dialog Open/Save aplikasi lain tidak didukung resmi oleh Windows, dan
+pengembang file manager besar menyatakan pendekatan pengganti rawan merusak aplikasi yang memodifikasi
+dialog. Files (files-community) punya proyek eksperimental yang meng-override `FileOpenDialog`. Keputusan:
+- Level 1 **Picker Bridge** (default saat integrasi diaktifkan): panel pendamping + lompat folder, tanpa injeksi.
+- Level 2 **Picker Takeover** (eksperimental, default mati, butuh Developer Mode): COM proxy yang
+  membungkus dialog asli, fallback otomatis ke dialog native, kill switch.
+
+## ADR-007 — Google Drive via REST + OAuth PKCE loopback
+**Status:** Diterima. `reqwest` + rustls, runtime tokio lazy yang dimatikan saat idle. Dua mode scope:
+penuh (`drive`, untuk build pribadi dengan OAuth client sendiri) dan terbatas (`drive.file`). Google
+Picker API ditolak karena berbasis web (butuh WebView).
+
+## ADR-008 — Tanpa telemetri
+**Status:** Diterima. Tidak ada data yang dikirim keluar. Log & crash report lokal; user yang memutuskan
+membagikannya.
+
+## ADR-009 — Single instance + resident mode opsional
+**Status:** Diterima. Satu proses melayani semua window; proses kedua meneruskan argumen lewat pipe.
+Resident mode (default mati) membuat Win+E/buka folder terasa instan dengan biaya RAM kecil.
+
+## ADR-010 — OLE drag & drop sendiri + Drag Guard
+**Status:** Diterima. Dukungan drop bawaan framework umumnya hanya menangani path. Kita butuh efek
+(copy/move/link), virtual files, drag image, drag-out ke aplikasi lain, dan aturan Drag Guard, jadi OLE
+DnD diimplementasikan di `sx-shell` dengan `IDropSource`/`IDropTarget`/`IDataObject` milik shell.
+
+## ADR-011 — Memakai ulang layanan shell Windows
+**Status:** Diterima. Thumbnail lewat `IShellItemImageFactory` (memakai thumbcache yang sama dengan
+Explorer), ikon lewat system image list, preview Office/PDF lewat preview handler sistem, properti lewat
+property system. Tidak membundel renderer → binary kecil dan RAM rendah.
+
+## ADR-012 — Ikon
+**Status:** Diterima. Chrome UI memakai Fluent UI System Icons (MIT) agar terasa Windows 11, menimpa aset
+ikon default GPUI Kit lewat mekanisme asset. Ikon file berasal dari sistem.
+
+## ADR-013 — i18n
+**Status:** Diterima. Ikuti mekanisme I18N GPUI Kit; `en` dan `id` sejak hari pertama; bahasa awal
+mengikuti bahasa tampilan Windows, bisa diganti di Settings.
+
+## ADR-014 — Hot Switch: chord `Ctrl+K` + OSD milik sendiri
+**Status:** Diterima.
+- Master drag & drop memakai kombinasi tunggal `Ctrl+Shift+D` (paling sering dipakai, bisa global).
+- Switch lain memakai chord mnemonik `Ctrl+K` lalu huruf (F file, D folder/directory, S sidebar, E
+  eksternal, G guard, L lock, H hidden, X extension, T thumbnail, R read-only, K panel).
+- Chord hanya aktif di luar input teks agar tidak "memakan" karakter; scope global hanya untuk
+  kombinasi tunggal (`RegisterHotKey`).
+- OSD memakai window ringan milik sendiri, bukan notifikasi Windows: lebih cepat, tidak menumpuk di
+  Notification Center, tidak butuh registrasi AUMID.
+- Perubahan persisten secara default (`hotswitch.persist`).
+
+Alternatif ditolak: default `Ctrl+Alt+huruf` (bentrok dengan AltGr di banyak layout keyboard), tombol F
+(tidak mnemonik), toast Windows (lambat, menumpuk).
+
+---
+
+## Template ADR
+
+```markdown
+## ADR-0NN — Judul singkat
+**Status:** Diusulkan
+**Konteks.** Masalah dan batasan.
+**Opsi.** A, B, C dengan kelebihan/kekurangan.
+**Keputusan.** Yang dipilih dan alasannya.
+**Konsekuensi.** Dampak, risiko, pekerjaan lanjutan.
+```

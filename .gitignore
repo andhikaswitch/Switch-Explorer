@@ -1,0 +1,11 @@
+# Build output
+/target/
+**/target/
+**/target-*/
+
+# Local tooling
+.claude/settings.local.json
+*.log
+
+# Benchmark raw data (summaries live in docs/benchmarks/)
+spikes/**/out/
