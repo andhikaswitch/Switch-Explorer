@@ -61,6 +61,8 @@ dbg_macro = "deny"
 todo = "warn"
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
+# Pedantic noise on every getter; values that must not be ignored get #[must_use] by hand.
+must_use_candidate = "allow"
 # Numeric casts between UI/pixel/Win32 types are pervasive and checked where it matters.
 cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
