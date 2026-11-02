@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 futures.workspace = true
 gpui-kit.workspace = true
+image.workspace = true
 raw-window-handle.workspace = true
 rust-i18n.workspace = true
 sx-core.workspace = true

@@ -6164,6 +6164,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "gpui-kit",
+ "image",
  "raw-window-handle",
  "rust-i18n",
  "sx-core",

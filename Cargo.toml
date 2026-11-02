@@ -34,6 +34,8 @@ gpui-component = "=0.8.1"
 gpui-kit-assets = "=0.8.1"
 # Already in the tree through gpui-component (no extra weight); same major.
 rust-i18n = "4.2"
+# Already in the tree through GPUI (RenderImage frames); no features of our own.
+image = { version = "0.25", default-features = false }
 raw-window-handle = "0.6"
 
 # Windows — same major as gpui-pre-windows so it compiles once; features chosen per crate.

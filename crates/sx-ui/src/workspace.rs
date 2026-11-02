@@ -95,6 +95,7 @@ pub struct Workspace {
     pub(crate) notice: Option<SharedString>,
     pub(crate) hwnd: Option<isize>,
     pub(crate) ops: crate::ops::OpsState,
+    pub(crate) icons: crate::icons::IconCache,
     pub(crate) dialog_focus: FocusHandle,
     /// Start renaming the selected item on the next render (it needs the window).
     pub(crate) rename_pending: bool,
@@ -142,6 +143,8 @@ impl Workspace {
         let list_focus = cx.focus_handle();
         window.focus(&list_focus, cx);
         let undo_depth = options.features.ops_undo_depth;
+        let (icons, loaded_icons) =
+            crate::icons::IconCache::start(usize::from(options.features.perf_icon_cache_entries));
         let (changes, changed_tabs) = mpsc::unbounded();
 
         let mut this = Self {
@@ -160,6 +163,7 @@ impl Workspace {
             hwnd: hwnd(window),
             ops: crate::ops::OpsState::new(options.journal_dir.as_deref(), usize::from(undo_depth)),
             dialog_focus: cx.focus_handle(),
+            icons,
             rename_pending: false,
             backdrop_supported: options.backdrop_supported,
             appearance: options.appearance,
@@ -182,6 +186,7 @@ impl Workspace {
         this.refresh_drives(cx);
         this.watch_appearance(window, cx);
         this.watch_changes(changed_tabs, cx);
+        this.receive_icons(loaded_icons, cx);
         if let Some(requests) = options.requests {
             this.watch_requests(requests, window, cx);
         }
@@ -530,6 +535,29 @@ impl Workspace {
             entries,
         });
         cx.notify();
+    }
+
+    /// Icons from the worker land in the cache; the rows that wanted them redraw.
+    fn receive_icons(
+        &mut self,
+        mut loaded: mpsc::UnboundedReceiver<(
+            sx_shell::icons::IconKey,
+            Option<sx_shell::icons::IconBitmap>,
+        )>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |this, cx| {
+            while let Some((key, icon)) = loaded.next().await {
+                let alive = this.update(cx, |this, cx| {
+                    this.icons.insert(key, icon);
+                    cx.notify();
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     /// Reloads tabs whose folder changed, at most once per `WATCH_DEBOUNCE`.

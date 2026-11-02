@@ -9,6 +9,7 @@ pub mod com;
 pub mod dwm;
 pub mod error;
 pub mod exec;
+pub mod icons;
 pub mod recycle;
 
 pub use appearance::OsAppearance;

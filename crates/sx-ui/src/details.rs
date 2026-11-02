@@ -374,9 +374,33 @@ impl Workspace {
                 };
                 let text = tab.row_text(row)?;
                 let kind = self.row_kind(row)?;
-                Some(self.render_row(row, kind, text, state, columns, &style, cx))
+                Some((row, kind, text, state))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(row, kind, text, state)| {
+                let icon = self.system_icon(row, kind);
+                self.render_row(row, kind, text, state, columns, icon, &style, cx)
             })
             .collect()
+    }
+
+    /// The system icon of a row: files always, folders only without themed folder icons
+    /// (`view.themed_folder_icons`).
+    fn system_icon(
+        &mut self,
+        row: usize,
+        kind: EntryKind,
+    ) -> Option<std::sync::Arc<gpui_kit::RenderImage>> {
+        let folder = kind.is_container();
+        if folder && self.features.view_themed_folder_icons {
+            return None;
+        }
+        let tab = self.tab();
+        let snapshot = tab.snapshot()?;
+        let entry = snapshot.row(row)?;
+        let path = snapshot.path_of(tab.location().as_path()?, entry.index)?;
+        self.icons.get(&path, folder)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -387,6 +411,7 @@ impl Workspace {
         text: crate::format::RowText,
         state: RowState,
         columns: Columns,
+        system_icon: Option<std::sync::Arc<gpui_kit::RenderImage>>,
         s: &RowStyle,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -448,12 +473,17 @@ impl Workspace {
                     .items_center()
                     .gap(s.space_sm)
                     .px(s.space_sm)
-                    .child(
-                        Icon::new(icon)
+                    .child(match system_icon {
+                        Some(image) => gpui_kit::img(image)
                             .size(s.icon)
                             .flex_none()
-                            .text_color(icon_color),
-                    )
+                            .into_any_element(),
+                        None => Icon::new(icon)
+                            .size(s.icon)
+                            .flex_none()
+                            .text_color(icon_color)
+                            .into_any_element(),
+                    })
                     .child(match self.rename_field(row, cx) {
                         Some(field) => field,
                         None => div()
