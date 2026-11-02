@@ -3,6 +3,7 @@
 
 use std::ops::Range;
 
+use gpui_kit::component::input::Input;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -453,13 +454,15 @@ impl Workspace {
                             .flex_none()
                             .text_color(icon_color),
                     )
-                    .child(
-                        div()
+                    .child(match self.rename_field(row, cx) {
+                        Some(field) => field,
+                        None => div()
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .child(text.name),
-                    ),
+                            .child(text.name)
+                            .into_any_element(),
+                    }),
             )
             .when_some(columns.modified, |el, w| {
                 el.child(cell(w).child(text.modified))
@@ -467,6 +470,41 @@ impl Workspace {
             .when_some(columns.kind, |el, w| el.child(cell(w).child(text.kind)))
             .child(cell(columns.size).flex().justify_end().child(text.size))
             .into_any_element()
+    }
+}
+
+impl Workspace {
+    /// The inline rename field when `row` is the item being renamed (F-OPS-03). Escape
+    /// cancels; Enter or leaving the field commits.
+    fn rename_field(&self, row: usize, cx: &Context<Self>) -> Option<AnyElement> {
+        let renaming = self.ops.renaming.as_ref()?;
+        let tab = self.tab();
+        let entry = tab.snapshot()?.row(row)?;
+        if renaming.tab_id != tab.id || renaming.index != entry.index {
+            return None;
+        }
+        let t = cx.tokens();
+        Some(
+            div()
+                .flex_1()
+                .min_w_0()
+                .h(t.px(Token::RowHeightCompact))
+                .px(t.px(Token::SpaceXs))
+                .rounded(t.px(Token::RadiusXs))
+                .bg(t.paint(Token::SurfaceInput))
+                .border_1()
+                .border_color(t.color(Token::BorderInputFocus))
+                .capture_key_down(cx.listener(
+                    |this, event: &gpui_kit::KeyDownEvent, window, cx| {
+                        if event.keystroke.key == "escape" {
+                            cx.stop_propagation();
+                            this.cancel_rename(window, cx);
+                        }
+                    },
+                ))
+                .child(Input::new(&renaming.input).appearance(false).h_full())
+                .into_any_element(),
+        )
     }
 }
 

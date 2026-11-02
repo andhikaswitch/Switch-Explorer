@@ -6168,6 +6168,7 @@ dependencies = [
  "rust-i18n",
  "sx-core",
  "sx-fs",
+ "sx-ops",
  "sx-settings",
  "sx-shell",
  "sx-theme",

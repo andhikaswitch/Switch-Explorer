@@ -148,6 +148,9 @@ fn open_main_window(
         forced_light: args.light,
         bench_started: args.bench_open.is_some().then_some(started),
         requests: Some(requests),
+        journal_dir: (!args.safe_mode)
+            .then(|| data_dir("LOCALAPPDATA").map(|d| d.join("journal")))
+            .flatten(),
     };
     let window_options = WindowOptions {
         window_bounds: Some(WindowBounds::centered(

@@ -72,3 +72,73 @@ status:
   free: "%{drive} sisa %{free}"
 size:
   bytes: "%{n} byte"
+ops:
+  working_one: Memproses
+  undoing_one: Mengurungkan
+  copying_one: "Menyalin 1 item"
+  moving_one: "Memindahkan 1 item"
+  recycling_one: "Memindahkan 1 item ke Recycle Bin"
+  restoring_one: "Memulihkan 1 item"
+  deleting_one: "Menghapus 1 item"
+  done_copy_one: "1 item disalin."
+  done_move_one: "1 item dipindahkan."
+  done_recycle_one: "1 item dipindahkan ke Recycle Bin."
+  done_restore_one: "1 item dipulihkan."
+  done_delete_one: "1 item dihapus permanen."
+  new_folder_name: Folder baru
+  copying: "Menyalin %{count} item"
+  moving: "Memindahkan %{count} item"
+  recycling: "Memindahkan %{count} item ke Recycle Bin"
+  restoring: "Memulihkan %{count} item"
+  deleting: "Menghapus %{count} item"
+  undoing: Mengurungkan
+  working: Memproses
+  done: Selesai.
+  done_copy: "%{count} item disalin."
+  done_move: "%{count} item dipindahkan."
+  done_recycle: "%{count} item dipindahkan ke Recycle Bin."
+  done_restore: "%{count} item dipulihkan."
+  done_delete: "%{count} item dihapus permanen."
+  done_rename: "Diganti nama menjadi \"%{name}\"."
+  undone: Diurungkan.
+  cancelled: Dibatalkan. Item yang sudah selesai tetap di tempatnya.
+  undo: Urungkan
+  nothing_to_undo: Tidak ada yang bisa diurungkan.
+  cancel: Batal
+  recycle: Pindahkan ke Recycle Bin
+  delete_permanently: Hapus permanen
+  confirm_recycle_one: "Pindahkan \"%{name}\" ke Recycle Bin?"
+  confirm_recycle_many: "Pindahkan %{count} item ke Recycle Bin?"
+  confirm_delete_one: "Hapus \"%{name}\" secara permanen? Item tidak masuk Recycle Bin."
+  confirm_delete_many: "Hapus %{count} item secara permanen? Item tidak masuk Recycle Bin."
+  readonly: Mode baca-saja aktif. Matikan dulu untuk mengubah file.
+  clipboard_busy: Clipboard sedang dipakai aplikasi lain. Coba lagi sebentar lagi.
+  exists: "Sudah ada item bernama \"%{name}\" di sini. Pilih nama lain."
+  into_itself: "\"%{name}\" tidak bisa dimasukkan ke dalam dirinya sendiri. Pilih folder lain."
+  verify_failed: "Salinan \"%{name}\" tidak sama dengan aslinya, jadi yang asli tetap disimpan. Coba lagi."
+  not_in_bin: "\"%{name}\" sudah tidak ada di Recycle Bin, jadi tidak bisa dipulihkan."
+  access_denied: "Kamu tidak punya izin mengubah \"%{name}\". Minta akses ke pemiliknya."
+  missing: "\"%{name}\" sudah tidak ada. Tekan F5 untuk memuat ulang."
+  failed: "Tidak bisa menyelesaikan \"%{name}\" (error %{code}). Coba lagi."
+  name_empty: Ketik sebuah nama.
+  name_invalid_char: "Nama tidak boleh berisi %{char}. Hapus karakter itu lalu coba lagi."
+  name_reserved: "%{name} dipakai oleh Windows. Pilih nama lain."
+  name_trailing: Nama tidak boleh diakhiri titik atau spasi.
+  name_too_long: Nama paling panjang 255 karakter.
+  interrupted: "%{count} operasi file terhenti saat aplikasi tertutup. Buka Transfer (Ctrl+J) untuk memeriksanya."
+  interrupted_title: Terhenti
+  interrupted_item: "%{count} item"
+  open_folder: Buka folder
+  dismiss: Tutup
+  transfer_title: Transfer
+  transfer_empty: Tidak ada transfer.
+  transfer_done: Selesai
+conflict:
+  title: "\"%{name}\" sudah ada di folder ini"
+  incoming: "Yang masuk: %{size}, %{date}"
+  existing: "Yang ada: %{size}, %{date}"
+  replace: Ganti
+  skip: Lewati
+  keep_both: Simpan keduanya
+  replace_newer: Ganti jika lebih baru
+  apply_all: "Lakukan ini untuk semua (%{count} item)"

@@ -49,6 +49,10 @@ pub struct Tab {
     pub page_rows: Cell<usize>,
     /// Watches the listed folder (`perf.watcher`); dropped when the tab navigates away.
     pub watcher: Option<sx_win::DirWatcher>,
+    /// A folder just created here: select it and start renaming once it is listed.
+    pub rename_after_load: Option<String>,
+    /// An item just renamed here: select it once it is listed.
+    pub reveal_after_refresh: Option<String>,
 }
 
 impl Tab {
@@ -67,6 +71,8 @@ impl Tab {
             typed_at: None,
             page_rows: Cell::new(10),
             watcher: None,
+            rename_after_load: None,
+            reveal_after_refresh: None,
         }
     }
 

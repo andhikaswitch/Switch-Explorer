@@ -62,6 +62,8 @@ pub struct WorkspaceOptions {
     pub bench_started: Option<Instant>,
     /// Requests forwarded by later launches (single instance).
     pub requests: Option<mpsc::UnboundedReceiver<OpenRequest>>,
+    /// Where the operation journal lives (`%LOCALAPPDATA%\SwitchExplorer\journal`).
+    pub journal_dir: Option<PathBuf>,
 }
 
 /// A pinned sidebar item.
@@ -71,6 +73,9 @@ pub struct Pin {
     pub path: PathBuf,
 }
 
+// The flags are independent UI states (address editing, sidebar, backdrop support, pending
+// rename), not a mode that an enum would describe better.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct Workspace {
     pub(crate) tabs: Vec<Tab>,
@@ -88,7 +93,11 @@ pub struct Workspace {
     pub(crate) features: Arc<Features>,
     /// One-line message about the last failed action (cause + fix, DESIGN.md §10).
     pub(crate) notice: Option<SharedString>,
-    hwnd: Option<isize>,
+    pub(crate) hwnd: Option<isize>,
+    pub(crate) ops: crate::ops::OpsState,
+    pub(crate) dialog_focus: FocusHandle,
+    /// Start renaming the selected item on the next render (it needs the window).
+    pub(crate) rename_pending: bool,
     backdrop_supported: bool,
     appearance: OsAppearance,
     forced_light: Option<bool>,
@@ -132,6 +141,7 @@ impl Workspace {
         let subscriptions = vec![cx.subscribe_in(&address, window, Self::on_address_event)];
         let list_focus = cx.focus_handle();
         window.focus(&list_focus, cx);
+        let undo_depth = options.features.ops_undo_depth;
         let (changes, changed_tabs) = mpsc::unbounded();
 
         let mut this = Self {
@@ -148,6 +158,9 @@ impl Workspace {
             features: options.features,
             notice: None,
             hwnd: hwnd(window),
+            ops: crate::ops::OpsState::new(options.journal_dir.as_deref(), usize::from(undo_depth)),
+            dialog_focus: cx.focus_handle(),
+            rename_pending: false,
             backdrop_supported: options.backdrop_supported,
             appearance: options.appearance,
             forced_light: options.forced_light,
@@ -173,6 +186,7 @@ impl Workspace {
             this.watch_requests(requests, window, cx);
         }
         this.sync_window(window);
+        this.report_interrupted();
         this
     }
 
@@ -443,20 +457,35 @@ impl Workspace {
                 let entries = snapshot.len();
                 if refresh {
                     restore_selection(tab, snapshot);
-                } else {
-                    let reveal = tab.reveal.take();
-                    let row = reveal.and_then(|name| {
-                        (0..snapshot.visible_len())
-                            .find(|&r| snapshot.row(r).is_some_and(|e| e.name == name))
-                    });
-                    tab.set_snapshot(Arc::new(snapshot));
-                    tab.selection.clear();
-                    if let Some(row) = row {
-                        tab.selection.select_only(row as u32);
-                        tab.scroll.scroll_to_item(row, ScrollStrategy::Center);
-                    } else {
-                        tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
+                    if reveal_pending(tab) {
+                        self.rename_pending = true;
                     }
+                    let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
+                        return;
+                    };
+                    if watch && tab.watcher.is_none() {
+                        tab.watcher =
+                            sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
+                                .map_err(
+                                    |err| tracing::debug!(error = %err, "folder watch unavailable"),
+                                )
+                                .ok();
+                    }
+                    cx.notify();
+                    return;
+                }
+                let reveal = tab.reveal.take();
+                let row = reveal.and_then(|name| {
+                    (0..snapshot.visible_len())
+                        .find(|&r| snapshot.row(r).is_some_and(|e| e.name == name))
+                });
+                tab.set_snapshot(Arc::new(snapshot));
+                tab.selection.clear();
+                if let Some(row) = row {
+                    tab.selection.select_only(row as u32);
+                    tab.scroll.scroll_to_item(row, ScrollStrategy::Center);
+                } else {
+                    tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
                 }
                 if watch && tab.watcher.is_none() {
                     tab.watcher =
@@ -774,6 +803,33 @@ impl Workspace {
     }
 }
 
+/// After a refresh: selects an item that was just renamed or created. Returns `true` when the
+/// new item should go into rename mode.
+fn reveal_pending(tab: &mut Tab) -> bool {
+    let find = |tab: &Tab, name: &str| {
+        let snapshot = tab.snapshot()?;
+        (0..snapshot.visible_len()).find(|&r| snapshot.row(r).is_some_and(|e| e.name == name))
+    };
+    let mut rename = false;
+    for (name, start_rename) in [
+        (tab.rename_after_load.clone(), true),
+        (tab.reveal_after_refresh.clone(), false),
+    ] {
+        let Some(name) = name else { continue };
+        if let Some(row) = find(tab, &name) {
+            tab.selection.select_only(row as u32);
+            tab.scroll.scroll_to_item(row, ScrollStrategy::Nearest);
+            if start_rename {
+                tab.rename_after_load = None;
+                rename = true;
+            } else {
+                tab.reveal_after_refresh = None;
+            }
+        }
+    }
+    rename
+}
+
 /// Installs a reloaded listing, keeping the selected and focused entries by name.
 fn restore_selection(tab: &mut Tab, snapshot: sx_fs::DirSnapshot) {
     let (selected, focus): (HashSet<String>, Option<String>) = match tab.snapshot() {
@@ -826,6 +882,14 @@ fn hwnd(window: &Window) -> Option<isize> {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.rename_pending) {
+            self.begin_rename(window, cx);
+        }
+        // A closed dialog leaves focus on an element that is gone; give it back to the list so
+        // shortcuts (Ctrl+Z right after confirming) keep working.
+        if self.ops.dialog.is_none() && self.dialog_focus.is_focused(window) {
+            window.focus(&self.list_focus, cx);
+        }
         if let Some(report) = self.bench_report.take() {
             window.on_next_frame(move |_, cx| {
                 report.print();
@@ -839,9 +903,11 @@ impl Render for Workspace {
             tokens.px(Token::FontSizeBody),
             tokens.px(Token::FontLineBody),
         );
-        div()
+        let overlays = self.render_overlays(window, cx);
+        let root = div()
             .id("workspace")
             .key_context(WORKSPACE_CONTEXT)
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -901,6 +967,40 @@ impl Render for Workspace {
                     .child(self.render_content(window, cx)),
             )
             .child(self.render_status_bar(cx))
+            .children(overlays);
+        self.file_actions(root, cx)
+    }
+}
+
+impl Workspace {
+    /// File operation commands (F-OPS), bound from the `CommandRegistry`.
+    fn file_actions(
+        &self,
+        root: gpui_kit::Stateful<gpui_kit::Div>,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
+        root.on_action(cx.listener(|this, _: &actions::FileDelete, _, cx| {
+            this.delete_selection(false, cx);
+        }))
+        .on_action(
+            cx.listener(|this, _: &actions::FileDeletePermanent, _, cx| {
+                this.delete_selection(true, cx);
+            }),
+        )
+        .on_action(cx.listener(|this, _: &actions::FileRename, window, cx| {
+            this.begin_rename(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::FileNewFolder, _, cx| this.new_folder(cx)))
+        .on_action(cx.listener(|this, _: &actions::FileCopy, _, cx| this.copy_selection(false, cx)))
+        .on_action(cx.listener(|this, _: &actions::FileCut, _, cx| this.copy_selection(true, cx)))
+        .on_action(cx.listener(|this, _: &actions::FilePaste, _, cx| this.paste(cx)))
+        .on_action(cx.listener(|this, _: &actions::FileCopyPath, _, cx| this.copy_paths(cx)))
+        .on_action(cx.listener(|this, _: &actions::EditUndo, _, cx| this.undo(cx)))
+        .on_action(cx.listener(|this, _: &actions::EditRedo, _, cx| this.redo(cx)))
+        .on_action(cx.listener(|this, _: &actions::TransferPanel, _, cx| {
+            this.ops.transfer_panel = !this.ops.transfer_panel;
+            cx.notify();
+        }))
     }
 }
 

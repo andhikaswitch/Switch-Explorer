@@ -72,3 +72,73 @@ status:
   free: "%{drive} %{free} free"
 size:
   bytes: "%{n} bytes"
+ops:
+  working_one: Working
+  undoing_one: Undoing
+  copying_one: "Copying 1 item"
+  moving_one: "Moving 1 item"
+  recycling_one: "Moving 1 item to the Recycle Bin"
+  restoring_one: "Restoring 1 item"
+  deleting_one: "Deleting 1 item"
+  done_copy_one: "Copied 1 item."
+  done_move_one: "Moved 1 item."
+  done_recycle_one: "Moved 1 item to the Recycle Bin."
+  done_restore_one: "Restored 1 item."
+  done_delete_one: "Deleted 1 item permanently."
+  new_folder_name: New folder
+  copying: "Copying %{count} items"
+  moving: "Moving %{count} items"
+  recycling: "Moving %{count} items to the Recycle Bin"
+  restoring: "Restoring %{count} items"
+  deleting: "Deleting %{count} items"
+  undoing: Undoing
+  working: Working
+  done: Done.
+  done_copy: "Copied %{count} items."
+  done_move: "Moved %{count} items."
+  done_recycle: "Moved %{count} items to the Recycle Bin."
+  done_restore: "Restored %{count} items."
+  done_delete: "Deleted %{count} items permanently."
+  done_rename: "Renamed to \"%{name}\"."
+  undone: Undone.
+  cancelled: Cancelled. Items already done stay where they are.
+  undo: Undo
+  nothing_to_undo: Nothing to undo.
+  cancel: Cancel
+  recycle: Move to Recycle Bin
+  delete_permanently: Delete permanently
+  confirm_recycle_one: "Move \"%{name}\" to the Recycle Bin?"
+  confirm_recycle_many: "Move %{count} items to the Recycle Bin?"
+  confirm_delete_one: "Permanently delete \"%{name}\"? It won't go to the Recycle Bin."
+  confirm_delete_many: "Permanently delete %{count} items? They won't go to the Recycle Bin."
+  readonly: Read-only mode is on. Turn it off to change files.
+  clipboard_busy: Another app is using the clipboard. Try again in a moment.
+  exists: "An item named \"%{name}\" already exists here. Pick another name."
+  into_itself: "\"%{name}\" can't go inside itself. Pick a different folder."
+  verify_failed: "The copy of \"%{name}\" doesn't match the original, so the original was kept. Try again."
+  not_in_bin: "\"%{name}\" is no longer in the Recycle Bin, so it can't be restored."
+  access_denied: "You don't have permission to change \"%{name}\". Ask its owner for access."
+  missing: "\"%{name}\" no longer exists. Press F5 to refresh."
+  failed: "Couldn't finish with \"%{name}\" (error %{code}). Try again."
+  name_empty: Type a name.
+  name_invalid_char: "Names can't contain %{char}. Remove it and try again."
+  name_reserved: "%{name} is reserved by Windows. Pick another name."
+  name_trailing: Names can't end with a dot or a space.
+  name_too_long: Names can be at most 255 characters.
+  interrupted: "%{count} file operations stopped when the app closed. Open Transfers (Ctrl+J) to check them."
+  interrupted_title: Interrupted
+  interrupted_item: "%{count} items"
+  open_folder: Open folder
+  dismiss: Dismiss
+  transfer_title: Transfers
+  transfer_empty: No transfers.
+  transfer_done: Finished
+conflict:
+  title: "\"%{name}\" already exists in this folder"
+  incoming: "Incoming: %{size}, %{date}"
+  existing: "Existing: %{size}, %{date}"
+  replace: Replace
+  skip: Skip
+  keep_both: Keep both
+  replace_newer: Replace if newer
+  apply_all: "Do this for all %{count} items"

@@ -11,6 +11,8 @@ mod assets;
 mod chrome;
 mod details;
 mod format;
+mod ops;
+mod overlays;
 mod pages;
 mod sidebar;
 mod slash;

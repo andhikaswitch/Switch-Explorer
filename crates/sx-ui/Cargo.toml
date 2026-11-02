@@ -14,6 +14,7 @@ raw-window-handle.workspace = true
 rust-i18n.workspace = true
 sx-core.workspace = true
 sx-fs.workspace = true
+sx-ops.workspace = true
 sx-settings.workspace = true
 sx-shell.workspace = true
 sx-theme.workspace = true

@@ -36,6 +36,17 @@ actions!(
         MoveFocusPrevious,
         MoveFocusNext,
         ToggleFocused,
+        FileDelete,
+        FileDeletePermanent,
+        FileRename,
+        FileNewFolder,
+        FileCopy,
+        FileCut,
+        FilePaste,
+        FileCopyPath,
+        EditUndo,
+        EditRedo,
+        TransferPanel,
     ]
 );
 
@@ -59,6 +70,17 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "edit.select_all" => Box::new(SelectAll),
         "edit.toggle_focused" => Box::new(ToggleFocused),
         "view.toggle_sidebar" => Box::new(ToggleSidebar),
+        "file.delete" => Box::new(FileDelete),
+        "file.delete_permanent" => Box::new(FileDeletePermanent),
+        "file.rename" => Box::new(FileRename),
+        "file.new_folder" => Box::new(FileNewFolder),
+        "file.copy" => Box::new(FileCopy),
+        "file.cut" => Box::new(FileCut),
+        "file.paste" => Box::new(FilePaste),
+        "file.copy_path" => Box::new(FileCopyPath),
+        "edit.undo" => Box::new(EditUndo),
+        "edit.redo" => Box::new(EditRedo),
+        "app.transfer_panel" => Box::new(TransferPanel),
         _ => return None,
     })
 }
