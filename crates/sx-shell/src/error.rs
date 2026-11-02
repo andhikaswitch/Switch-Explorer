@@ -19,6 +19,12 @@ pub enum ShellError {
     Thread(std::io::Error),
     #[error("the shell worker stopped before answering")]
     WorkerGone,
+    #[error("the operation was cancelled")]
+    Aborted,
+    #[error("the item is not in the Recycle Bin")]
+    NotRecycled(PathBuf),
+    #[error("{0}")]
+    Io(std::io::Error),
 }
 
 impl ShellError {
