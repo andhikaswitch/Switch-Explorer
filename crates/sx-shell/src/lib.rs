@@ -2,3 +2,13 @@
 //!
 //! Platform crate: `unsafe` is allowed here, with a `// SAFETY:` comment on every block
 //! (docs/CODING-STANDARDS.md §5).
+
+pub mod appearance;
+pub mod com;
+pub mod dwm;
+pub mod error;
+pub mod exec;
+
+pub use appearance::OsAppearance;
+pub use com::StaGuard;
+pub use error::ShellError;

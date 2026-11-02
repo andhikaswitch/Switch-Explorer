@@ -5,6 +5,7 @@ pub mod command;
 pub mod entry;
 pub mod error;
 pub mod event;
+pub mod history;
 pub mod location;
 pub mod selection;
 
@@ -12,5 +13,6 @@ pub use command::{CommandContext, CommandId, CommandRegistry, CommandSpec};
 pub use entry::EntryKind;
 pub use error::CoreError;
 pub use event::{ChangeSource, SystemAppearance};
+pub use history::History;
 pub use location::Location;
 pub use selection::Selection;

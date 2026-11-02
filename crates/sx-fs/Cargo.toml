@@ -10,6 +10,10 @@ publish.workspace = true
 [dependencies]
 sx-core.workspace = true
 sx-win.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
