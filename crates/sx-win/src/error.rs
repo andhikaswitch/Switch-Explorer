@@ -16,14 +16,23 @@ pub enum WinError {
         path: PathBuf,
         source: windows::core::Error,
     },
+    #[error("cannot watch the folder: {source}")]
+    Watch {
+        path: PathBuf,
+        source: windows::core::Error,
+    },
+    #[error("cannot start a worker thread")]
+    Thread,
 }
 
 impl WinError {
     /// The Win32 error code (`ERROR_*`) behind the failure, when there is one.
     pub fn win32_code(&self) -> Option<u32> {
         match self {
-            Self::RelativePath | Self::NulInPath => None,
-            Self::Enumerate { source, .. } => win32_code(source.code().0 as u32),
+            Self::RelativePath | Self::NulInPath | Self::Thread => None,
+            Self::Enumerate { source, .. } | Self::Watch { source, .. } => {
+                win32_code(source.code().0 as u32)
+            }
         }
     }
 
@@ -32,7 +41,10 @@ impl WinError {
     pub fn io_kind(&self) -> ErrorKind {
         match self {
             Self::RelativePath | Self::NulInPath => ErrorKind::InvalidInput,
-            Self::Enumerate { source, .. } => hresult_kind(source.code().0 as u32),
+            Self::Thread => ErrorKind::Other,
+            Self::Enumerate { source, .. } | Self::Watch { source, .. } => {
+                hresult_kind(source.code().0 as u32)
+            }
         }
     }
 }

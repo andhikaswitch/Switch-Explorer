@@ -29,6 +29,10 @@ use crate::actions::{self, WORKSPACE_CONTEXT};
 use crate::tab::{Content, Tab};
 use crate::theme::{ActiveTokens as _, ThemeController};
 
+/// Folder changes are collected for this long before the listing reloads, so a burst of
+/// changes (an extraction, a copy) costs one reload.
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(250);
+
 /// Delay before "Loading…" appears, so fast folders do not flicker (DESIGN.md §11).
 pub(crate) const LOADING_DELAY: Duration = Duration::from_millis(150);
 
@@ -90,6 +94,9 @@ pub struct Workspace {
     forced_light: Option<bool>,
     bench_started: Option<Instant>,
     bench_report: Option<BenchReport>,
+    /// Watchers report changed tabs here; `pending_refresh` debounces them.
+    changes: mpsc::UnboundedSender<u64>,
+    pending_refresh: HashSet<u64>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -125,6 +132,7 @@ impl Workspace {
         let subscriptions = vec![cx.subscribe_in(&address, window, Self::on_address_event)];
         let list_focus = cx.focus_handle();
         window.focus(&list_focus, cx);
+        let (changes, changed_tabs) = mpsc::unbounded();
 
         let mut this = Self {
             tabs: Vec::new(),
@@ -145,6 +153,8 @@ impl Workspace {
             forced_light: options.forced_light,
             bench_started: options.bench_started,
             bench_report: None,
+            changes,
+            pending_refresh: HashSet::new(),
             _subscriptions: subscriptions,
         };
         let locations = if options.locations.is_empty() {
@@ -158,6 +168,7 @@ impl Workspace {
         this.active = 0;
         this.refresh_drives(cx);
         this.watch_appearance(window, cx);
+        this.watch_changes(changed_tabs, cx);
         if let Some(requests) = options.requests {
             this.watch_requests(requests, window, cx);
         }
@@ -344,19 +355,34 @@ impl Workspace {
 
     /// (Re)loads the active tab's location on a background executor.
     pub(crate) fn load(&mut self, cx: &mut Context<Self>) {
+        let id = self.tab().id;
+        self.load_tab(id, false, cx);
+    }
+
+    /// Loads a tab's location. A `refresh` keeps the current listing on screen until the new
+    /// one is ready and then keeps the selection by name (watcher changes, F5 after an
+    /// operation).
+    pub(crate) fn load_tab(&mut self, tab_id: u64, refresh: bool, cx: &mut Context<Self>) {
         let features = self.features.clone();
-        let tab = self.tab_mut();
+        let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
+            return;
+        };
+        let refresh = refresh && matches!(tab.content, Content::Folder(_));
+        if !refresh {
+            tab.watcher = None;
+        }
         let cancel = tab.begin_load();
-        let tab_id = tab.id;
         let Location::Path(path) = tab.location().clone() else {
             tab.content = Content::Page;
             tab.selection.clear();
             cx.notify();
             return;
         };
-        tab.content = Content::Loading {
-            since: Instant::now(),
-        };
+        if !refresh {
+            tab.content = Content::Loading {
+                since: Instant::now(),
+            };
+        }
         let sort = SortSpec {
             folders_first: features.view_folders_first,
             natural: features.view_natural_sort,
@@ -383,7 +409,7 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             let result = listing.await;
             let _ = this.update(cx, |this, cx| {
-                this.on_loaded(tab_id, &path, result, started, cx);
+                this.on_loaded(tab_id, &path, result, started, refresh, cx);
             });
         })
         .detach();
@@ -395,8 +421,11 @@ impl Workspace {
         path: &std::path::Path,
         result: Result<sx_fs::DirSnapshot, LoadError>,
         started: Instant,
+        refresh: bool,
         cx: &mut Context<Self>,
     ) {
+        let watch = self.features.perf_watcher;
+        let changes = self.changes.clone();
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
             return;
         };
@@ -411,19 +440,31 @@ impl Workspace {
                     ms = started.elapsed().as_secs_f64() * 1000.0,
                     "folder loaded"
                 );
-                let reveal = tab.reveal.take();
-                let row = reveal.and_then(|name| {
-                    (0..snapshot.visible_len())
-                        .find(|&r| snapshot.row(r).is_some_and(|e| e.name == name))
-                });
                 let entries = snapshot.len();
-                tab.set_snapshot(Arc::new(snapshot));
-                tab.selection.clear();
-                if let Some(row) = row {
-                    tab.selection.select_only(row as u32);
-                    tab.scroll.scroll_to_item(row, ScrollStrategy::Center);
+                if refresh {
+                    restore_selection(tab, snapshot);
                 } else {
-                    tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
+                    let reveal = tab.reveal.take();
+                    let row = reveal.and_then(|name| {
+                        (0..snapshot.visible_len())
+                            .find(|&r| snapshot.row(r).is_some_and(|e| e.name == name))
+                    });
+                    tab.set_snapshot(Arc::new(snapshot));
+                    tab.selection.clear();
+                    if let Some(row) = row {
+                        tab.selection.select_only(row as u32);
+                        tab.scroll.scroll_to_item(row, ScrollStrategy::Center);
+                    } else {
+                        tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
+                    }
+                }
+                if watch && tab.watcher.is_none() {
+                    tab.watcher =
+                        sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
+                            .map_err(
+                                |err| tracing::debug!(error = %err, "folder watch unavailable"),
+                            )
+                            .ok();
                 }
                 if let Some(process) = self.bench_started.take() {
                     self.finish_bench(process, started, entries, cx);
@@ -460,6 +501,31 @@ impl Workspace {
             entries,
         });
         cx.notify();
+    }
+
+    /// Reloads tabs whose folder changed, at most once per `WATCH_DEBOUNCE`.
+    fn watch_changes(&mut self, mut changed: mpsc::UnboundedReceiver<u64>, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            while let Some(tab_id) = changed.next().await {
+                let start = this.update(cx, |this, _| this.pending_refresh.insert(tab_id));
+                match start {
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    Err(_) => break,
+                }
+                let timer = cx.background_executor().timer(WATCH_DEBOUNCE);
+                let this = this.clone();
+                cx.spawn(async move |cx| {
+                    timer.await;
+                    let _ = this.update(cx, |this, cx| {
+                        this.pending_refresh.remove(&tab_id);
+                        this.load_tab(tab_id, true, cx);
+                    });
+                })
+                .detach();
+            }
+        })
+        .detach();
     }
 
     pub(crate) fn refresh_drives(&mut self, cx: &mut Context<Self>) {
@@ -708,6 +774,31 @@ impl Workspace {
     }
 }
 
+/// Installs a reloaded listing, keeping the selected and focused entries by name.
+fn restore_selection(tab: &mut Tab, snapshot: sx_fs::DirSnapshot) {
+    let (selected, focus): (HashSet<String>, Option<String>) = match tab.snapshot() {
+        Some(old) => (
+            tab.selection
+                .iter()
+                .filter_map(|row| old.row(row as usize).map(|e| e.name.to_string()))
+                .collect(),
+            tab.selection
+                .focus()
+                .and_then(|row| old.row(row as usize).map(|e| e.name.to_string())),
+        ),
+        None => (HashSet::new(), None),
+    };
+    let rows: Vec<u32> = (0..snapshot.visible_len())
+        .filter(|&r| snapshot.row(r).is_some_and(|e| selected.contains(e.name)))
+        .map(|r| r as u32)
+        .collect();
+    let focus_row = focus.and_then(|name| {
+        (0..snapshot.visible_len()).find(|&r| snapshot.row(r).is_some_and(|e| e.name == name))
+    });
+    tab.set_snapshot(Arc::new(snapshot));
+    tab.selection.restore(rows, focus_row.map(|r| r as u32));
+}
+
 fn default_pins() -> Vec<Pin> {
     KnownFolder::PINNED_DEFAULTS
         .iter()
@@ -772,7 +863,8 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|this, _: &actions::NavUp, _, cx| this.go_up(cx)))
             .on_action(cx.listener(|this, _: &actions::NavRefresh, _, cx| {
-                this.load(cx);
+                let id = this.tab().id;
+                this.load_tab(id, true, cx);
                 this.refresh_drives(cx);
             }))
             .on_action(cx.listener(|this, _: &actions::FocusAddress, window, cx| {

@@ -12,6 +12,7 @@ pub mod os;
 pub mod path;
 pub mod sort;
 pub mod volume;
+pub mod watch;
 
 pub use enumerate::{BATCH, FIRST_BATCH, RawEntry, enumerate};
 pub use error::{WinError, win32_code};
@@ -20,3 +21,4 @@ pub use os::{BUILD_SYSTEM_BACKDROP, os_build, ui_language};
 pub use path::{to_wide, win32_path};
 pub use sort::{SortKeys, natural_sort_key, str_cmp_logical};
 pub use volume::{Drive, DriveKind, Space, drives};
+pub use watch::{DirWatcher, watch};

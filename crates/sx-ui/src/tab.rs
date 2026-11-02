@@ -47,6 +47,8 @@ pub struct Tab {
     typed_at: Option<Instant>,
     /// Rows that fit the viewport, measured during the last render (for Page Up/Down).
     pub page_rows: Cell<usize>,
+    /// Watches the listed folder (`perf.watcher`); dropped when the tab navigates away.
+    pub watcher: Option<sx_win::DirWatcher>,
 }
 
 impl Tab {
@@ -64,6 +66,7 @@ impl Tab {
             type_ahead: String::new(),
             typed_at: None,
             page_rows: Cell::new(10),
+            watcher: None,
         }
     }
 
