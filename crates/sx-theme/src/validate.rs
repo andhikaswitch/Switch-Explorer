@@ -1,14 +1,23 @@
-//! Contrast validation (THEMING.md §11). Translucent backgrounds are composited onto the worst
-//! backdrop of the variant and every gradient stop is checked; the lowest ratio counts.
+//! Contrast validation (THEMING.md §11). Each pair is checked over the worst backdrops of the
+//! variant: the `under` layers are composited first (e.g. a selected row sits on `bg.content`),
+//! then every stop of the background, then every stop of the foreground; the lowest ratio counts.
+//! Text needs 4.5:1, state indicators and control boundaries 3:1 (WCAG 1.4.3 / 1.4.11).
 
 use crate::color::{Rgba, contrast};
 use crate::resolve::{Mode, ResolvedTheme};
 use crate::schema::Token::{
-    self, AccentSolid, AccentSolidHover, AccentSolidPressed, AccentText, BgContent, BorderInput,
-    BorderInputFocus, ButtonDangerBg, ButtonDangerBgHover, ButtonDangerFg, ButtonPrimaryBg,
-    ButtonPrimaryBgHover, ButtonPrimaryBgPressed, ButtonPrimaryFg, FgLink, FgMuted, FgOnSolid,
-    FgPrimary, FgSecondary, FocusRing, NavItemActiveBg, NavItemActiveFg, OsdIconOn, OsdStateOn,
-    SurfaceCard, SurfaceInput, SurfaceOverlay,
+    self, AccentSolid, AccentSolidHover, AccentSolidPressed, AccentText, BgContent, BgSidebar,
+    BgStatusbar, BgTitlebar, BgWindow, BorderInput, BorderInputFocus, BreadcrumbCurrentFg,
+    BreadcrumbFg, ButtonDangerBg, ButtonDangerBgHover, ButtonDangerFg, ButtonPrimaryBg,
+    ButtonPrimaryBgHover, ButtonPrimaryBgPressed, ButtonPrimaryFg, ButtonSecondaryBg,
+    ButtonSecondaryBgHover, ButtonSecondaryFg, CheckboxBorder, CheckboxCheck, CheckboxCheckedBg,
+    DangerText, DropBlockedBorder, DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary,
+    FgSecondary, FocusRing, HeaderFg, InfoText, InputPlaceholder, NavItemActiveBg, NavItemActiveFg,
+    NavItemFg, NavSectionFg, OsdBg, OsdFg, OsdIconOff, OsdIconOn, OsdStateOff, OsdStateOn,
+    ProgressFill, RowSelectedBg, RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff,
+    StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard, SurfaceChip, SurfaceInput,
+    SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg, ToastFg,
+    ToggleOffBorder, ToggleOnBg, ToggleOnThumb, WarningText,
 };
 
 /// A foreground/background requirement.
@@ -16,54 +25,135 @@ use crate::schema::Token::{
 pub struct ContrastPair {
     pub fg: &'static [Token],
     pub bg: &'static [Token],
+    /// Layers below `bg`, bottom first (composited over the backdrop before `bg`).
+    pub under: &'static [Token],
     pub min: f32,
 }
 
+const TEXT: f32 = 4.5;
+const NON_TEXT: f32 = 3.0;
+
+const fn pair(
+    fg: &'static [Token],
+    bg: &'static [Token],
+    under: &'static [Token],
+    min: f32,
+) -> ContrastPair {
+    ContrastPair { fg, bg, under, min }
+}
+
 pub const PAIRS: &[ContrastPair] = &[
-    ContrastPair {
-        fg: &[FgPrimary, FgSecondary, FgMuted],
-        bg: &[BgContent, SurfaceCard, SurfaceOverlay],
-        min: 4.5,
-    },
-    ContrastPair {
-        fg: &[NavItemActiveFg],
-        bg: &[NavItemActiveBg],
-        min: 4.5,
-    },
-    ContrastPair {
-        fg: &[ButtonPrimaryFg],
-        bg: &[
+    // Text on surfaces.
+    pair(
+        &[FgPrimary, FgSecondary, FgMuted],
+        &[BgContent, SurfaceCard, SurfaceOverlay],
+        &[],
+        TEXT,
+    ),
+    pair(
+        &[FgPrimary, FgSecondary, FgMuted],
+        &[RowSelectedBg, RowSelectedInactiveBg],
+        &[BgContent],
+        TEXT,
+    ),
+    pair(&[HeaderFg], &[BgContent], &[], TEXT),
+    pair(&[NavItemFg, NavSectionFg], &[BgSidebar], &[], TEXT),
+    pair(&[NavItemActiveFg], &[NavItemActiveBg], &[BgSidebar], TEXT),
+    pair(&[TabFg], &[BgTitlebar], &[], TEXT),
+    pair(&[TabActiveFg], &[TabActiveBg], &[], TEXT),
+    pair(&[BreadcrumbFg, BreadcrumbCurrentFg], &[BgWindow], &[], TEXT),
+    pair(
+        &[StatuschipOn, StatuschipPartial, StatuschipOff],
+        &[BgStatusbar],
+        &[],
+        TEXT,
+    ),
+    pair(
+        &[StatuschipOn, StatuschipPartial, StatuschipOff],
+        &[SurfaceChip],
+        &[BgStatusbar],
+        TEXT,
+    ),
+    pair(&[OsdFg], &[OsdBg], &[], TEXT),
+    pair(&[ToastFg], &[ToastBg], &[], TEXT),
+    pair(&[InputPlaceholder], &[SurfaceInput], &[], TEXT),
+    pair(
+        &[
+            AccentText,
+            FgLink,
+            SuccessText,
+            WarningText,
+            DangerText,
+            InfoText,
+        ],
+        &[BgContent],
+        &[],
+        TEXT,
+    ),
+    // Text on filled controls.
+    pair(
+        &[ButtonPrimaryFg],
+        &[
             ButtonPrimaryBg,
             ButtonPrimaryBgHover,
             ButtonPrimaryBgPressed,
         ],
-        min: 4.5,
-    },
-    ContrastPair {
-        fg: &[FgOnSolid],
-        bg: &[AccentSolid, AccentSolidHover, AccentSolidPressed],
-        min: 4.5,
-    },
-    ContrastPair {
-        fg: &[ButtonDangerFg],
-        bg: &[ButtonDangerBg, ButtonDangerBgHover],
-        min: 4.5,
-    },
-    ContrastPair {
-        fg: &[AccentText, FgLink],
-        bg: &[BgContent],
-        min: 4.5,
-    },
-    ContrastPair {
-        fg: &[FocusRing, BorderInput, BorderInputFocus],
-        bg: &[BgContent, SurfaceInput],
-        min: 3.0,
-    },
-    ContrastPair {
-        fg: &[OsdIconOn],
-        bg: &[OsdStateOn],
-        min: 3.0,
-    },
+        &[],
+        TEXT,
+    ),
+    pair(
+        &[ButtonSecondaryFg],
+        &[ButtonSecondaryBg, ButtonSecondaryBgHover],
+        &[BgContent],
+        TEXT,
+    ),
+    pair(
+        &[FgOnSolid],
+        &[AccentSolid, AccentSolidHover, AccentSolidPressed],
+        &[],
+        TEXT,
+    ),
+    pair(
+        &[ButtonDangerFg],
+        &[ButtonDangerBg, ButtonDangerBgHover],
+        &[],
+        TEXT,
+    ),
+    // Boundaries and state indicators (WCAG 1.4.11).
+    pair(
+        &[FocusRing, BorderInput, BorderInputFocus],
+        &[BgContent, SurfaceInput],
+        &[],
+        NON_TEXT,
+    ),
+    pair(
+        &[CheckboxBorder, ToggleOffBorder, SelectionBorder],
+        &[BgContent],
+        &[],
+        NON_TEXT,
+    ),
+    pair(
+        &[DropTargetBorder, DropBlockedBorder],
+        &[BgContent],
+        &[],
+        NON_TEXT,
+    ),
+    pair(
+        &[SliderFill, ProgressFill, ToggleOnBg],
+        &[BgContent],
+        &[],
+        NON_TEXT,
+    ),
+    pair(&[TabActiveIndicator], &[BgTitlebar], &[], NON_TEXT),
+    pair(
+        &[CheckboxCheck],
+        &[CheckboxCheckedBg],
+        &[BgContent],
+        NON_TEXT,
+    ),
+    pair(&[ToggleOnThumb], &[ToggleOnBg], &[BgContent], NON_TEXT),
+    pair(&[OsdIconOn], &[OsdStateOn], &[OsdBg], NON_TEXT),
+    pair(&[OsdIconOff], &[OsdStateOff], &[OsdBg], NON_TEXT),
 ];
 
 /// Worst-case backdrops behind a translucent window (Mica can be anywhere in this range).
@@ -82,14 +172,18 @@ pub struct ContrastIssue {
     pub min: f32,
 }
 
-/// The lowest contrast of `fg` over `bg` across backdrops and gradient stops.
-pub fn worst_contrast(theme: &ResolvedTheme, fg: Token, bg: Token) -> f32 {
-    let text = theme.color(fg);
+/// The lowest contrast of `fg` over `bg` (itself over `under`) across backdrops and stops.
+pub fn worst_contrast(theme: &ResolvedTheme, fg: Token, bg: Token, under: &[Token]) -> f32 {
     let mut worst = f32::INFINITY;
     for backdrop in backdrops(theme.mode) {
+        let base = under.iter().fold(backdrop, |base, layer| {
+            theme.paint(*layer).average().over(base)
+        });
         for stop in theme.paint(bg).colors() {
-            let surface = stop.over(backdrop);
-            worst = worst.min(contrast(text.over(surface), surface));
+            let surface = stop.over(base);
+            for text in theme.paint(fg).colors() {
+                worst = worst.min(contrast(text.over(surface), surface));
+            }
         }
     }
     worst
@@ -101,7 +195,7 @@ pub fn check(theme: &ResolvedTheme) -> Vec<ContrastIssue> {
     for pair in PAIRS {
         for &fg in pair.fg {
             for &bg in pair.bg {
-                let ratio = worst_contrast(theme, fg, bg);
+                let ratio = worst_contrast(theme, fg, bg, pair.under);
                 if ratio + 1e-3 < pair.min {
                     issues.push(ContrastIssue {
                         fg,
@@ -144,6 +238,18 @@ mod tests {
             "gradient(120deg, #5CE1FF, #101010)".into(),
         );
         let theme = resolve(&file, Mode::Light, &ResolveOptions::default()).unwrap();
-        assert!(worst_contrast(&theme, NavItemActiveFg, NavItemActiveBg) < 2.0);
+        assert!(worst_contrast(&theme, NavItemActiveFg, NavItemActiveBg, &[]) < 2.0);
+    }
+
+    #[test]
+    fn layers_below_change_the_result() {
+        let mut file = ThemeFile::parse(builtin::CERULEAN).unwrap();
+        // A translucent black selection darkens whatever is under it.
+        file.light
+            .insert("row.selected.bg".into(), "alpha(#000000, 0.5)".into());
+        let theme = resolve(&file, Mode::Light, &ResolveOptions::default()).unwrap();
+        let alone = worst_contrast(&theme, FgPrimary, RowSelectedBg, &[]);
+        let on_content = worst_contrast(&theme, FgPrimary, RowSelectedBg, &[BgContent]);
+        assert!((alone - on_content).abs() > 0.01);
     }
 }

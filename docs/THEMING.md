@@ -81,8 +81,13 @@ bayangan := shadow(x, y, blur, spread, nilai)              hanya untuk token Sha
 
 ## 5. File tema — Cerulean (tema bawaan)
 
-Salin isi ini ke `themes/cerulean.toml` saat Fase 1. Kunci bertitik **wajib** diberi tanda kutip agar
-TOML tidak membuatnya menjadi tabel bersarang.
+Isi ini identik dengan `themes/cerulean.toml` (file itu sumber kebenarannya; perbarui keduanya
+bersamaan). Kunci bertitik **wajib** diberi tanda kutip agar TOML tidak membuatnya menjadi tabel bersarang.
+
+Di light, indikator status (`toggle.on.bg`, `slider.fill`, `progress.fill`, `tab.active.indicator`)
+memakai `{accent.solid}` karena gradien lagoon hanya ~1.5:1 di atas latar hampir putih; di dark gradien
+highlight tetap dipakai. Chip status light memakai `pal.accent.800` dan amber `#92400E` karena
+`surface.chip` menggelapkan latar status bar.
 
 ```toml
 [meta]
@@ -237,7 +242,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "scrim" = "alpha(#0A1A2F, 0.32)"
 "fg.primary" = "#0A1A2F"
 "fg.secondary" = "#3E5068"
-"fg.muted" = "#607389"
+"fg.muted" = "#55687E"
 "fg.disabled" = "#A3B1C2"
 "fg.link" = "{pal.accent.700}"
 "border.subtle" = "alpha({pal.accent.700}, 0.10)"
@@ -251,11 +256,11 @@ mono = ["Cascadia Mono", "Consolas"]
 "hover.bg" = "alpha({pal.accent.700}, 0.06)"
 "pressed.bg" = "alpha({pal.accent.700}, 0.10)"
 "selection.bg" = "alpha({pal.accent.500}, 0.16)"
-"selection.border" = "alpha({pal.accent.700}, 0.45)"
+"selection.border" = "alpha({pal.accent.700}, 0.80)"
 "selection.inactive_bg" = "alpha(#607389, 0.12)"
 "focus.ring" = "{pal.accent.700}"
 "drop_target.bg" = "alpha({pal.lagoon}, 0.18)"
-"drop_target.border" = "{pal.accent.500}"
+"drop_target.border" = "{pal.accent.700}"
 "drop_blocked.border" = "#B45309"
 "button.secondary.bg_hover" = "alpha({pal.accent.500}, 0.12)"
 "slider.track" = "alpha(#607389, 0.30)"
@@ -270,6 +275,13 @@ mono = ["Cascadia Mono", "Consolas"]
 "danger.solid" = "#C42B1C"
 "danger.text" = "#B42318"
 "info.text" = "{pal.accent.700}"
+"statuschip.on" = "{pal.accent.800}"
+"statuschip.partial" = "#92400E"
+"tab.active.indicator" = "{accent.solid}"
+"toggle.on.bg" = "{accent.solid}"
+"toggle.on.thumb" = "{fg.on_solid}"
+"slider.fill" = "{accent.solid}"
+"progress.fill" = "{accent.solid}"
 "icon.folder.back" = "#7CC8FF"
 "icon.folder.front" = "{pal.accent.500}"
 "icon.default" = "{fg.secondary}"
@@ -291,7 +303,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "scrim" = "alpha(#000000, 0.50)"
 "fg.primary" = "#EAF4FF"
 "fg.secondary" = "#A9BCD3"
-"fg.muted" = "#7A8FA8"
+"fg.muted" = "#94A8C0"
 "fg.disabled" = "#4A5B70"
 "fg.link" = "{pal.accent.400}"
 "border.subtle" = "alpha({pal.accent.400}, 0.12)"
@@ -305,7 +317,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "hover.bg" = "alpha({pal.accent.300}, 0.07)"
 "pressed.bg" = "alpha({pal.accent.300}, 0.11)"
 "selection.bg" = "alpha({pal.accent.500}, 0.22)"
-"selection.border" = "alpha({pal.lagoon}, 0.55)"
+"selection.border" = "alpha({pal.lagoon}, 0.80)"
 "selection.inactive_bg" = "alpha(#A9BCD3, 0.12)"
 "focus.ring" = "{pal.lagoon}"
 "drop_target.bg" = "alpha({pal.lagoon}, 0.16)"
@@ -437,19 +449,40 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 
 ## 11. Validasi & keselamatan
 
-| Elemen depan | Latar | Minimum |
+| Elemen depan | Latar (di atas lapisan) | Minimum |
 |---|---|---|
 | `fg.primary`, `fg.secondary`, `fg.muted` | `bg.content`, `surface.card`, `surface.overlay` | 4.5:1 |
-| `nav.item.active.fg` | `nav.item.active.bg` (semua stop gradien) | 4.5:1 |
+| `fg.primary`, `fg.secondary`, `fg.muted` | `row.selected.bg`, `row.selected_inactive.bg` (di atas `bg.content`) | 4.5:1 |
+| `header.fg` | `bg.content` | 4.5:1 |
+| `nav.item.fg`, `nav.section.fg` | `bg.sidebar` | 4.5:1 |
+| `nav.item.active.fg` | `nav.item.active.bg` (semua stop gradien, di atas `bg.sidebar`) | 4.5:1 |
+| `tab.fg` | `bg.titlebar` | 4.5:1 |
+| `tab.active.fg` | `tab.active.bg` | 4.5:1 |
+| `breadcrumb.fg`, `breadcrumb.current.fg` | `bg.window` | 4.5:1 |
+| `statuschip.on`, `…partial`, `…off` | `bg.statusbar`; `surface.chip` (di atas `bg.statusbar`) | 4.5:1 |
+| `osd.fg` | `osd.bg` | 4.5:1 |
+| `toast.fg` | `toast.bg` | 4.5:1 |
+| `input.placeholder` | `surface.input` | 4.5:1 |
+| `accent.text`, `fg.link`, `success.text`, `warning.text`, `danger.text`, `info.text` | `bg.content` | 4.5:1 |
 | `button.primary.fg` | `button.primary.bg`, `…bg_hover`, `…bg_pressed` | 4.5:1 |
+| `button.secondary.fg` | `button.secondary.bg`, `…bg_hover` (di atas `bg.content`) | 4.5:1 |
 | `fg.on_solid` | `accent.solid` & variannya | 4.5:1 |
 | `button.danger.fg` | `button.danger.bg`, `…bg_hover` | 4.5:1 |
-| `accent.text`, `fg.link` | `bg.content` | 4.5:1 |
 | `focus.ring`, `border.input`, `border.input_focus` | `bg.content`, `surface.input` | 3:1 |
-| `osd.icon_on` | `osd.state_on` | 3:1 |
+| `checkbox.border`, `toggle.off.border`, `selection.border` | `bg.content` | 3:1 |
+| `drop_target.border`, `drop_blocked.border` | `bg.content` | 3:1 |
+| `slider.fill`, `progress.fill`, `toggle.on.bg` | `bg.content` | 3:1 |
+| `tab.active.indicator` | `bg.titlebar` | 3:1 |
+| `checkbox.check` | `checkbox.checked.bg` (di atas `bg.content`) | 3:1 |
+| `toggle.on.thumb` | `toggle.on.bg` (di atas `bg.content`) | 3:1 |
+| `osd.icon_on` / `osd.icon_off` | `osd.state_on` / `osd.state_off` (di atas `osd.bg`) | 3:1 |
 
 - Latar transparan dikomposit di atas backdrop terburuk (light: `#FFFFFF` dan `#E9E9E9`; dark: `#000000`
-  dan `#2B2B2B`); nilai terendah yang dipakai.
+  dan `#2B2B2B`), lalu lapisan di bawahnya (rata-rata OKLab bila gradien), lalu setiap stop latar dan
+  setiap stop warna depan; nilai terendah yang dipakai. Teks 4.5:1 (WCAG 1.4.3), batas kontrol dan
+  indikator status 3:1 (WCAG 1.4.11). `gauge.fill` tidak diuji karena kapasitas selalu juga tertulis
+  sebagai teks.
+- CI juga menjalankan tabel ini untuk sapuan 36 aksen di §9.
 - Hasil: lulus atau peringatan (tidak memblokir). "Perbaiki otomatis" menggeser L warna depan seminimal
   mungkin sampai lulus.
 - CI gagal jika ada tema **bawaan** yang tidak lulus.
