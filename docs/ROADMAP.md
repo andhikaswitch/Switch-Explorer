@@ -20,18 +20,21 @@ acceptance criteria tercentang. Fase boleh digeser, tetapi Fase 0 wajib lolos se
 **Tujuan:** membuktikan GPUI Kit memenuhi kebutuhan sebelum membangun di atasnya (ADR-001).
 **Deliverable:** `spikes/phase0/` (app minimal, boleh dibuang) + laporan `docs/benchmarks/phase0.md`.
 
-- [ ] Window Mica Alt + title bar kustom + snap layout saat hover tombol maximize (Win11 22H2+); di Windows 10
-      fallback solid tanpa crash.
-- [ ] Tabel/VirtualList 100k baris: scroll ≥ 60 fps di release; RAM dicatat.
-- [ ] Idle 1 window ≤ 90 MB private working set; angka aktual dicatat sebagai baseline.
-- [ ] OLE drag-out file dari window GPUI ke Chrome (area upload) dan ke Explorer berhasil.
-- [ ] Drop dari Explorer ke window: path diterima; putuskan pakai drop target bawaan GPUI atau milik sendiri.
-- [ ] Menu native `IContextMenu` tampil, submenu "Send to" berikon, perintah berjalan.
-- [ ] Windows light ↔ dark → app ikut ≤ 300 ms tanpa restart.
-- [ ] Input teks + IME (Microsoft IME Jepang) bekerja.
-- [ ] Hotkey chord `Ctrl+K, D` dan `RegisterHotKey` global bekerja berdampingan dengan loop GPUI.
-- [ ] Bandingkan default vs fitur `gpui-fast` (fps & RAM) → putuskan.
-- [ ] Keputusan go/no-go tertulis di laporan; jika ≥ 2 kriteria gagal tanpa jalan keluar wajar → evaluasi Slint.
+Hasil: [`docs/benchmarks/phase0.md`](benchmarks/phase0.md). Rekomendasi: **GO dengan syarat**.
+
+- [x] Window Mica Alt + title bar kustom + snap layout saat hover tombol maximize (Win11 22H2+).
+- [ ] Di Windows 10, fallback solid tanpa crash. Kode memilih `Opaque` di build < 22621; perlu verifikasi
+      di VM.
+- [x] Tabel/VirtualList 100k baris: scroll ≥ 60 fps di release; RAM dicatat (p99 7.7 ms @165 Hz, 57–61 MB).
+- [x] Idle 1 window ≤ 90 MB private working set; baseline 36.8 MB.
+- [x] OLE drag-out file dari window GPUI ke Chrome (area upload) dan ke Explorer berhasil (ADR-015).
+- [x] Drop dari Explorer ke window: path diterima; diputuskan drop target milik sendiri (ADR-016).
+- [x] Menu native `IContextMenu` tampil, submenu "Send to" berikon, perintah berjalan (ADR-015).
+- [x] Windows light ↔ dark → app ikut ≤ 300 ms tanpa restart (7–17 ms lewat pemicu registry).
+- [ ] Input teks + IME (Microsoft IME Jepang) bekerja. Otomasi tidak mungkin; menunggu verifikasi manual.
+- [x] Hotkey chord `Ctrl+K, D` dan `RegisterHotKey` global bekerja berdampingan dengan loop GPUI.
+- [x] Bandingkan default vs fitur `gpui-fast` (fps & RAM) → default (ADR-017).
+- [x] Keputusan go/no-go tertulis di laporan; tidak ada kriteria yang gagal.
 
 ## Fase 1 — Fondasi & explorer MVP
 

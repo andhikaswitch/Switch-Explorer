@@ -1,0 +1,3 @@
+# Mirror the production build settings (CODING-STANDARDS.md §2) so measurements match.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

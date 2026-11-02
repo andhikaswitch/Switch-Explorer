@@ -1,0 +1,66 @@
+# Phase 0 spike (ADR-001 go/no-go). Throwaway code: kept as a regression harness
+# for GPUI Kit upgrades, never imported by the production workspace.
+[package]
+name = "sx-spike-phase0"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Standalone workspace so the spike keeps its own Cargo.lock and profiles.
+[workspace]
+
+[features]
+default = []
+# Compare GPUI Fast (retained renderer) against the default upstream snapshot.
+gpui-fast = ["gpui-kit/gpui-fast"]
+
+[dependencies]
+gpui-kit = { version = "=0.8.1", features = ["profiler"] }
+# gpui-kit itself only requires ^0.8.1 for these; pin them exactly (ADR-001: exact pins).
+gpui-base = "=0.8.1"
+gpui-component = "=0.8.1"
+gpui-kit-assets = "=0.8.1"
+raw-window-handle = "0.6"
+anyhow = "1"
+futures = "0.3"
+log = "0.4"
+# `#[implement]` expands to `windows_core::` paths.
+windows-core = "0.62"
+
+# Same major version as gpui-pre-windows so the crate is compiled once (gpui-base and
+# gpui-component still pull windows 0.58 on their own).
+[dependencies.windows]
+version = "0.62"
+features = [
+    "Wdk_System_SystemServices",
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Performance",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = "symbols"
+panic = "unwind"
+
+[profile.dev.package."*"]
+opt-level = 2

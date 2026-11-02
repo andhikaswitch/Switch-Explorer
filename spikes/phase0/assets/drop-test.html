@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Spike drop test</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; background: #f4f7fb; color: #12324a; }
+  #zone { border: 3px dashed #2a7ab0; border-radius: 12px; padding: 40px; text-align: center; background: #fff; }
+  #zone.over { background: #dceefa; }
+  li { margin: 4px 0; }
+  img { max-height: 64px; vertical-align: middle; margin-left: 8px; border: 1px solid #ccc; }
+  code { background: #e8eef4; padding: 1px 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>Switch Explorer — uji drag-out (Fase 0)</h1>
+<p>Drag file dari spike ke kotak di bawah, atau pilih lewat tombol upload. Halaman ini lokal dan tidak mengirim apa pun.</p>
+<div id="zone">Lepas file di sini<br><br><input type="file" id="picker" multiple></div>
+<h2 id="status">Belum ada file.</h2>
+<ul id="list"></ul>
+<p>Tipe data terakhir: <code id="types">-</code></p>
+<script>
+  const zone = document.getElementById('zone');
+  const list = document.getElementById('list');
+  const status = document.getElementById('status');
+  function show(files, source) {
+    list.innerHTML = '';
+    for (const f of files) {
+      const li = document.createElement('li');
+      li.textContent = `${f.name} — ${f.size} byte — ${f.type || 'tipe tidak diketahui'}`;
+      if (f.type.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(f);
+        li.appendChild(img);
+      }
+      list.appendChild(li);
+    }
+    status.textContent = `${files.length} file diterima lewat ${source}.`;
+  }
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('over');
+    document.getElementById('types').textContent = [...e.dataTransfer.types].join(', ');
+    show(e.dataTransfer.files, 'drag & drop');
+  });
+  document.getElementById('picker').addEventListener('change', e => show(e.target.files, 'tombol upload'));
+</script>
+</body>
+</html>

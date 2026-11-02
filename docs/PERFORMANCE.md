@@ -27,6 +27,21 @@ bawah adalah target awal; baseline final dikunci setelah Fase 0.
 RAM = *private working set* (kolom "Memory (active private working set)" di Task Manager), diukur sama
 untuk Switch Explorer dan Explorer.
 
+**Baseline Fase 0** (spike, iGPU, 165 Hz, release; rinci di `docs/benchmarks/phase0.md`):
+
+| Metrik | Terukur |
+|---|---|
+| Cold start → frame pertama | 194.9 ms |
+| Idle 1 window | 36.8 MB |
+| Dengan 100k baris | 57–61 MB |
+| Scroll 100k, p99 | 7.0–7.7 ms |
+| Ukuran exe | 21.75 MB |
+
+Budget di atas tetap berlaku. Dua catatan:
+- **CPU idle 0% belum tercapai:** thread vsync GPUI mengirim `RedrawWindow` tiap refresh, terukur
+  ~2–3% satu core di 165 Hz. Ini dikecualikan sampai ada perbaikan upstream.
+- **Startup di dGPU 346 ms** (melewati batas keras), jadi pengukuran resmi memakai GPU default (iGPU).
+
 ## 2. Budget memori per subsistem
 
 | Subsistem | Budget | Catatan |

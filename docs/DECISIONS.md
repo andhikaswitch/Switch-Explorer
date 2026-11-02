@@ -118,6 +118,73 @@ mengikuti bahasa tampilan Windows, bisa diganti di Settings.
 Alternatif ditolak: default `Ctrl+Alt+huruf` (bentrok dengan AltGr di banyak layout keyboard), tombol F
 (tidak mnemonik), toast Windows (lambat, menumpuk).
 
+## ADR-015 — Loop modal OS dijalankan dari window host milik sendiri
+**Status:** Diterima (dibuktikan di spike Fase 0, `docs/benchmarks/phase0.md`).
+
+**Konteks.** `DoDragDrop`, `TrackPopupMenuEx`, dan dialog shell menjalankan loop pesan bersarang. Pola
+gpui-kit `NativeMenu` menjalankan loop itu di dalam task foreground. Dengan fitur `profiler` GPUI aktif
+(dibutuhkan Perf HUD), cara itu **panic**: loop bersarang mengeksekusi task lain di dalam task pembuka,
+padahal `ThreadTimings::save_task_timing` hanya punya satu slot "task berjalan" per thread
+(`gpui-pre 0.3.10`, `profiler.rs:602`). Di spike, UI langsung beku setelah menu ditutup.
+
+**Keputusan.** Semua loop modal OS dijalankan dari window message-only milik `sx-shell` ("modal host"):
+1. Handler GPUI hanya mem-post job ke window itu.
+2. Wndproc window itu menjalankan job dari loop pesan biasa, di luar borrow GPUI maupun executor.
+3. Hasilnya dikirim balik lewat channel `oneshot` yang ditunggu task foreground.
+
+**Konsekuensi.**
+- Tidak ada panic, dan task GPUI tetap berjalan selama loop modal: tick UI tiap ~108 ms terukur saat menu
+  dan drag terbuka.
+- Setelah `DoDragDrop`, kirim `WM_LBUTTONUP` sintetis karena loop modal menelannya.
+- Bug profiler dilaporkan ke upstream; jangan memakai `NativeMenu` gpui-kit bersama fitur `profiler`.
+
+## ADR-016 — Drop target OLE milik sendiri
+**Status:** Diterima (keputusan Fase 0).
+
+**Konteks.** GPUI mendaftarkan `IDropTarget` sendiri. Target itu hanya pernah menjawab
+`DROPEFFECT_COPY` dan hanya meneruskan path, tanpa modifier, tanpa zona, dan tanpa format lain.
+Drag Guard, move/link, dan virtual files tidak bisa dibangun di atasnya.
+
+**Keputusan.** `sx-shell` memanggil `RevokeDragDrop` lalu `RegisterDragDrop` dengan target sendiri:
+efek dari modifier dan zona drop (bounds dicatat per frame lewat `canvas`), plus `IDropTargetHelper`
+untuk drag image. Spike membuktikan ini aman dan menerima drop dari Explorer maupun item shell.
+
+**Konsekuensi.**
+- API `on_drop::<ExternalPaths>` GPUI tidak dipakai di area file.
+- Zona drop harus memakai bounds yang benar: elemen `absolute` wajib diberi `inset_0`, kalau tidak ia
+  jatuh ke posisi statisnya.
+
+## ADR-017 — Tetap memakai snapshot GPUI upstream, bukan `gpui-fast`
+**Status:** Diterima (keputusan Fase 0).
+
+**Konteks.** gpui-kit menawarkan fitur `gpui-fast` (engine retained). Aturan dari rencana Fase 0:
+`gpui-fast` dipilih hanya jika p99 frame ≥ 15% lebih baik atau RAM ≥ 10 MB lebih kecil, tanpa regresi
+fungsional.
+
+**Hasil (iGPU, 165 Hz, `docs/benchmarks/phase0.md`).** Dibanding upstream, `gpui-fast`:
+- startup median 238.6 ms vs 194.9 ms;
+- idle 40–42 MB vs 36.8 MB;
+- RAM saat scroll 100k naik terus hingga 137–179 MB vs 57–61 MB;
+- p99 frame setara atau sedikit lebih buruk, dengan satu frame 30 ms;
+- exe 24.6 MB vs 21.8 MB.
+
+Satu-satunya keunggulannya CPU idle (16–47 ms vs ~250 ms per 10 s).
+
+**Keputusan.** Upstream (default). `gpui-fast` dievaluasi ulang bila masalah RAM-nya selesai, atau bila
+vsync upstream tetap tidak bisa idle.
+
+## ADR-018 — OSD: overlay in-app, window OSD dipakai ulang (amandemen ADR-014)
+**Status:** Diusulkan (butuh persetujuan pemilik proyek).
+
+**Konteks.** ADR-014 memakai window ringan untuk OSD. Di spike, setiap window GPUI tambahan menambah
+**+13.5 MB** private working set (swap chain + sumber daya), walau frame pertamanya cepat (12.8 ms).
+
+**Usulan.**
+- Perubahan dari dalam app → OSD digambar sebagai overlay di workspace (tanpa window baru).
+- Hotkey global saat app di background → satu window OSD yang dibuat saat pertama dipakai, lalu
+  disembunyikan (`SW_HIDE`) dan dipakai ulang. Window itu dibuang saat minimize/idle panjang.
+- Resident mode tanpa window → window OSD dibuat on-demand dan dibuang setelah tampil.
+
 ---
 
 ## Template ADR

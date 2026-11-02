@@ -140,3 +140,5 @@ xtask/                  otomasi build, fixtures, registry cleanup, packaging
 
 ## Status
 - Fase aktif: **0 — Spike & validasi** (lihat `docs/ROADMAP.md`). Perbarui baris ini saat pindah fase.
+  Spike selesai, rekomendasi GO dengan syarat (`docs/benchmarks/phase0.md`). Menunggu verifikasi manual
+  IME Jepang dan Windows 10 sebelum pindah ke Fase 1.

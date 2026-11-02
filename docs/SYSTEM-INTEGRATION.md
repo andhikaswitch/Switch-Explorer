@@ -33,7 +33,12 @@ Pemantauan dilakukan `ThemeWatcher` (window tersembunyi di `sx-shell`) yang meng
 ## 3. Window chrome & backdrop
 
 - Backdrop lewat GPUI: `WindowBackgroundAppearance::MicaAltBackdrop` (default), `MicaBackdrop`, `Blurred`
-  (acrylic), `Opaque`. GPUI memakai API DWM resmi dan punya fallback di Windows 10.
+  (acrylic), `Opaque`. GPUI memanggil `DWMWA_SYSTEMBACKDROP_TYPE` hanya di build ≥ 22621; di bawah itu
+  permintaan Mica **diam-diam diabaikan** (tanpa fallback). Karena itu aplikasi sendiri yang memilih
+  `Opaque` di Windows 10 dan Windows 11 21H2 (terverifikasi di spike Fase 0).
+- Root gpui-component melukis `theme.background` opak di seluruh window sehingga Mica tertutup. Token
+  latar chrome (background, title bar) harus transparan saat backdrop aktif, dan dipasang ulang setelah
+  setiap pergantian light/dark karena `Theme::change` memuat ulang tema.
 - Title bar kustom dengan tab; area kontrol window ditandai untuk hit-test sehingga **snap layout** muncul
   saat hover tombol maximize (verifikasi di Fase 0).
 - Dark title bar/border mengikuti mode; sudut membulat mengikuti sistem.
@@ -128,12 +133,14 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 - `IDataObject` dari shell untuk item terpilih (`SHCreateDataObject` atau
   `IShellFolder::GetUIObjectOf(IID_IDataObject)`) sehingga aplikasi lain menerima format lengkap.
 - Drag image dari bitmap kita (ikon + badge jumlah) lewat `IDragSourceHelper`.
-- `SHDoDragDrop` di UI thread (STA). Efek yang diizinkan dihitung Drag Guard (DEVELOPER-MODE.md §5).
+- `SHDoDragDrop` di UI thread (STA), dijalankan lewat modal host (ADR-015), **bukan** langsung di handler
+  atau task GPUI. Setelah selesai, kirim `WM_LBUTTONUP` sintetis. Efek yang diizinkan dihitung Drag Guard
+  (DEVELOPER-MODE.md §5).
 
 **Sebagai target (drop masuk):**
-- `IDropTarget` milik kita di HWND window. GPUI sudah punya drop target bawaan untuk path; Fase 0
-  memutuskan: memakai bawaan untuk kasus sederhana, atau `RevokeDragDrop` lalu mendaftarkan milik kita dan
-  meneruskan event ke UI.
+- `IDropTarget` milik kita di HWND window (ADR-016): `RevokeDragDrop` terhadap target bawaan GPUI (yang
+  selalu menjawab COPY dan hanya memberi path), lalu `RegisterDragDrop` milik kita. Event diteruskan ke UI
+  lewat channel.
 - `DragEnter`/`DragOver`: titik layar → koordinat client → registry zona drop (bounds folder/sidebar/tab yang
   dicatat per frame) → target → efek dari modifier (`MK_CONTROL`/`MK_SHIFT`/`MK_ALT`), Drag Guard, dan
   volume sama/beda → `*pdwEffect`; `IDropTargetHelper` untuk drag image.
@@ -255,6 +262,11 @@ dialog di proses utilitas terpisah wajib masuk matriks uji (TESTING.md §5).
 ## 15. Manifest, DPI, path panjang
 
 - Manifest aplikasi: DPI awareness PerMonitorV2, `longPathAware`, supportedOS Windows 10/11, Common Controls v6.
+  **Temuan Fase 0:** `gpui-pre-platform` memaksa fitur `windows-manifest` di Windows, sehingga manifest
+  GPUI (resource ID 1: PerMonitorV2, SegmentHeap, ComCtl v6, asInvoker) selalu tersemat di exe.
+  Manifest itu tanpa `longPathAware`, dan manifest kedua akan bentrok. Keputusan sementara: path panjang
+  ditangani prefix `\\?\` di `sx-win`. Bila `longPathAware` tetap dibutuhkan, manifest diganti
+  pasca-link dengan `mt.exe` di `xtask` (bukan fork GPUI).
 - Path > 260 karakter: std Rust menangani prefix verbatim secara otomatis; panggilan Win32 kita sendiri memakai
   prefix `\\?\` saat perlu (helper di `sx-win`). Tampilan memakai path tanpa prefix.
 

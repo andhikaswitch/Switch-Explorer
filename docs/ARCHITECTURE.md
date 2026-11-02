@@ -164,10 +164,15 @@ Keymap efektif = default bawaan ⊕ `keymap.toml` user. Binding dipasang ke GPUI
 5. Budget: tombol ditekan → OSD tampil ≤ 50 ms.
 
 ### 8.4 Windows berganti ke dark
-1. ThemeWatcher (window tersembunyi di sx-shell) menerima `WM_SETTINGCHANGE` dengan `"ImmersiveColorSet"`
-   → baca `AppsUseLightTheme` → kirim `SystemAppearanceChanged { dark: true }` ke UI thread.
-2. ThemeStore me-resolve ulang (< 1 ms) → bridge memperbarui tema gpui-component → semua window refresh →
-   flag dark backdrop diperbarui.
+1. ThemeWatcher (thread di sx-shell) menunggu `RegNotifyChangeKeyValue` pada
+   `HKCU\...\Themes\Personalize` (baca saja) → baca `AppsUseLightTheme` → kirim
+   `SystemAppearanceChanged { dark: true }` ke UI thread.
+   - `WM_SETTINGCHANGE "ImmersiveColorSet"` hanya cadangan: di Fase 0, broadcast itu terukur tiba
+     ~600 ms setelah registry berubah, sedangkan pemicu registry → present 7–17 ms.
+2. ThemeStore me-resolve ulang (< 1 ms) → bridge memperbarui tema gpui-component → semua window refresh.
+   - `DWMWA_USE_IMMERSIVE_DARK_MODE` diset sendiri di tiap HWND, karena GPUI baru mengubahnya saat
+     callback appearance-nya datang.
+   - Token latar chrome dibuat transparan lagi agar Mica tetap terlihat.
 
 ### 8.5 Upload ke Google Drive
 1. Context menu "Upload ke Drive" → bila cloud belum aktif: buat runtime tokio, muat refresh token dari
