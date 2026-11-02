@@ -1,3 +1,5 @@
 # unwrap/expect stay forbidden in production paths (CLAUDE.md); tests may use them.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+# Domain words that are not code identifiers ("..": keep clippy's default list).
+doc-valid-idents = ["OKLab", "OKLCH", "DirectWrite", "DirectX", "WinUI", ".."]
