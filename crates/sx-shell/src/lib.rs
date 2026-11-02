@@ -4,6 +4,7 @@
 //! (docs/CODING-STANDARDS.md §5).
 
 pub mod appearance;
+pub mod clipboard;
 pub mod com;
 pub mod dwm;
 pub mod error;
