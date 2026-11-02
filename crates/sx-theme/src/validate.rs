@@ -8,16 +8,19 @@ use crate::resolve::{Mode, ResolvedTheme};
 use crate::schema::Token::{
     self, AccentSolid, AccentSolidHover, AccentSolidPressed, AccentText, BgContent, BgSidebar,
     BgStatusbar, BgTitlebar, BgWindow, BorderInput, BorderInputFocus, BreadcrumbCurrentFg,
-    BreadcrumbFg, ButtonDangerBg, ButtonDangerBgHover, ButtonDangerFg, ButtonPrimaryBg,
-    ButtonPrimaryBgHover, ButtonPrimaryBgPressed, ButtonPrimaryFg, ButtonSecondaryBg,
-    ButtonSecondaryBgHover, ButtonSecondaryFg, CheckboxBorder, CheckboxCheck, CheckboxCheckedBg,
-    DangerText, DropBlockedBorder, DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary,
-    FgSecondary, FocusRing, HeaderFg, InfoText, InputPlaceholder, NavItemActiveBg, NavItemActiveFg,
-    NavItemFg, NavSectionFg, OsdBg, OsdFg, OsdIconOff, OsdIconOn, OsdStateOff, OsdStateOn,
-    ProgressFill, RowSelectedBg, RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff,
-    StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard, SurfaceChip, SurfaceInput,
-    SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg, ToastFg,
-    ToggleOffBorder, ToggleOnBg, ToggleOnThumb, WarningText,
+    BreadcrumbFg, ButtonDangerBg, ButtonDangerBgHover, ButtonDangerFg, ButtonGhostBgHover,
+    ButtonGhostBgPressed, ButtonGhostFgHover, ButtonPrimaryBg, ButtonPrimaryBgHover,
+    ButtonPrimaryBgPressed, ButtonPrimaryFg, ButtonSecondaryBg, ButtonSecondaryBgHover,
+    ButtonSecondaryBgPressed, ButtonSecondaryFg, ButtonSecondaryFgHover, CardHoverFg,
+    CheckboxBorder, CheckboxCheck, CheckboxCheckedBg, DangerText, DropBlockedBorder,
+    DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing, HeaderFg,
+    InfoText, InputPlaceholder, NavItemActiveBg, NavItemActiveFg, NavItemFg, NavItemHoverBg,
+    NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg, OsdIconOff, OsdIconOn,
+    OsdStateOff, OsdStateOn, ProgressFill, RowSelectedBg, RowSelectedInactiveBg, SelectionBorder,
+    SliderFill, StatuschipOff, StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard,
+    SurfaceCardHover, SurfaceChip, SurfaceInput, SurfaceOverlay, TabActiveBg, TabActiveFg,
+    TabActiveIndicator, TabFg, ToastBg, ToastFg, ToggleOffBorder, ToggleOnBg, ToggleOnThumb,
+    WarningText,
 };
 
 /// A foreground/background requirement.
@@ -111,10 +114,30 @@ pub const PAIRS: &[ContrastPair] = &[
     ),
     pair(
         &[ButtonSecondaryFg],
-        &[ButtonSecondaryBg, ButtonSecondaryBgHover],
+        &[ButtonSecondaryBg],
         &[BgContent],
         TEXT,
     ),
+    // Pointer over and pressed: the highlight gradient with Ink text.
+    pair(
+        &[ButtonSecondaryFgHover],
+        &[ButtonSecondaryBgHover, ButtonSecondaryBgPressed],
+        &[BgContent],
+        TEXT,
+    ),
+    pair(
+        &[ButtonGhostFgHover],
+        &[ButtonGhostBgHover, ButtonGhostBgPressed],
+        &[BgWindow],
+        TEXT,
+    ),
+    pair(
+        &[NavItemHoverFg],
+        &[NavItemHoverBg, NavItemPressedBg],
+        &[BgSidebar],
+        TEXT,
+    ),
+    pair(&[CardHoverFg], &[SurfaceCardHover], &[BgContent], TEXT),
     pair(
         &[FgOnSolid],
         &[AccentSolid, AccentSolidHover, AccentSolidPressed],

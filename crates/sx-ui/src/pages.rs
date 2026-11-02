@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use gpui_kit::component::{Icon, IconName};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     ClickEvent, Context, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
     SharedString, StatefulInteractiveElement as _, Styled as _, div, relative,
@@ -63,7 +64,10 @@ impl Workspace {
 
     pub(crate) fn render_this_pc(&self, cx: &Context<Self>) -> impl IntoElement {
         let t = cx.tokens();
-        let hover = t.color(Token::SurfaceCardHover);
+        let (hover, hover_fg) = (
+            t.paint(Token::SurfaceCardHover),
+            t.color(Token::CardHoverFg),
+        );
         let tile_w = t.px(Token::SizeSidebar);
         self.page(t!("this_pc.title").into(), cx).child(
             div()
@@ -73,11 +77,11 @@ impl Workspace {
                 .children(self.drives.iter().map(|drive| {
                     let used = drive.space.map_or(0.0, sx_win::Space::used_fraction);
                     let root = drive.root.clone();
+                    let id = ElementId::NamedInteger("pc-drive".into(), u64::from(drive.letter));
+                    let lit = self.hovered.as_ref() == Some(&id);
+                    let tint = |normal| if lit { hover_fg } else { normal };
                     div()
-                        .id(ElementId::NamedInteger(
-                            "pc-drive".into(),
-                            u64::from(drive.letter),
-                        ))
+                        .id(id.clone())
                         .flex()
                         .gap(t.px(Token::SpaceLg))
                         .w(tile_w)
@@ -85,14 +89,19 @@ impl Workspace {
                         .rounded(t.px(Token::RadiusLg))
                         .bg(t.paint(Token::SurfaceCard))
                         .shadow(t.shadow(Token::ShadowCard))
-                        .hover(move |s| s.bg(hover))
+                        .when(lit, |el| el.bg(hover).text_color(hover_fg))
+                        .hover(move |s| s.bg(hover).text_color(hover_fg))
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            this.set_hovered(&id, *hovered, cx);
+                        }))
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.navigate(Location::Path(root.clone()), cx);
                         }))
                         .child(
-                            Icon::new(IconName::HardDrive)
-                                .size(t.px(Token::SizeIcon))
-                                .text_color(t.color(Token::NavItemIcon)),
+                            div()
+                                .flex_none()
+                                .text_color(tint(t.color(Token::NavItemIcon)))
+                                .child(Icon::new(IconName::HardDrive).size(t.px(Token::SizeIcon))),
                         )
                         .child(
                             div()
@@ -113,14 +122,20 @@ impl Workspace {
                                                 .h_full()
                                                 .w(relative(used))
                                                 .rounded(t.px(Token::RadiusXs))
-                                                .bg(t.paint(Token::GaugeFill)),
+                                                .map(|bar| {
+                                                    if lit {
+                                                        bar.bg(hover_fg)
+                                                    } else {
+                                                        bar.bg(t.paint(Token::GaugeFill))
+                                                    }
+                                                }),
                                         ),
                                 )
                                 .child(
                                     div()
                                         .text_size(t.px(Token::FontSizeCaption))
                                         .line_height(t.px(Token::FontLineCaption))
-                                        .text_color(t.color(Token::FgSecondary))
+                                        .text_color(tint(t.color(Token::FgSecondary)))
                                         .child(format::drive_space(drive)),
                                 ),
                         )

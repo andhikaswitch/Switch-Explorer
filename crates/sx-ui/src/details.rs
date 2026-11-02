@@ -138,10 +138,12 @@ impl Workspace {
         on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
         let t = cx.tokens();
-        let (hover, pressed) = (
-            t.color(Token::ButtonSecondaryBgHover),
-            t.color(Token::PressedBg),
+        let (hover, pressed, hover_fg) = (
+            t.paint(Token::ButtonSecondaryBgHover),
+            t.paint(Token::ButtonSecondaryBgPressed),
+            t.color(Token::ButtonSecondaryFgHover),
         );
+        let clear = gpui_kit::transparent_black();
         div()
             .id(id)
             .flex()
@@ -153,8 +155,8 @@ impl Workspace {
             .border_1()
             .border_color(t.color(Token::ButtonSecondaryBorder))
             .text_color(t.color(Token::ButtonSecondaryFg))
-            .hover(move |s| s.bg(hover))
-            .active(move |s| s.bg(pressed))
+            .hover(move |s| s.bg(hover).text_color(hover_fg).border_color(clear))
+            .active(move |s| s.bg(pressed).text_color(hover_fg).border_color(clear))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| on_click(this, cx)))
             .child(label)
     }

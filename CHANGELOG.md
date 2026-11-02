@@ -17,6 +17,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   `sx-settings` (registry flag, Hot Switch, preset, store TOML), `sx-theme` (OKLCH, parser nilai, palet,
   resolver berlapis, gerbang kontras), `sx-win` (enumerasi cepat, sort natural OS), `sx-fs` (snapshot
   direktori), `xtask` (fixtures, cleanup-registry aman, shim).
+- Window pertama (Fase 1): tab di title bar, command bar dengan breadcrumb/alamat, sidebar (Home,
+  Pinned, drive + gauge, Recycle Bin), details view tervirtualisasi dengan sort, seleksi keyboard,
+  type-to-select, buka file/folder, status bar; ikut light/dark dan transparansi Windows; i18n en + id.
+- Tombol, item sidebar, dan kartu menyala dengan gradien biru muda saat disorot (DESIGN §11).
 - Gerbang kontras mencakup lapisan di bawah latar dan 27 kelompok pasangan, termasuk indikator non-teks
   3:1 (THEMING §11).
 

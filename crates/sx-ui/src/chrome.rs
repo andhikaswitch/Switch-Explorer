@@ -184,7 +184,11 @@ impl Workspace {
 
     fn render_new_tab_button(&self, cx: &Context<Self>) -> impl IntoElement {
         let t = cx.tokens();
-        let hover = t.color(Token::TabHoverBg);
+        let (hover, pressed, hover_fg) = (
+            t.paint(Token::ButtonGhostBgHover),
+            t.paint(Token::ButtonGhostBgPressed),
+            t.color(Token::ButtonGhostFgHover),
+        );
         let control = t.px(Token::SizeControl);
         div()
             .id("tab-new")
@@ -197,7 +201,8 @@ impl Workspace {
             .mb(t.px(Token::SpaceXxs))
             .rounded(t.px(Token::RadiusSm))
             .text_color(t.color(Token::TabFg))
-            .hover(move |s| s.bg(hover))
+            .hover(move |s| s.bg(hover).text_color(hover_fg))
+            .active(move |s| s.bg(pressed).text_color(hover_fg))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.open_tab(Location::Home, cx);
             }))
@@ -261,7 +266,11 @@ impl Workspace {
         on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
         let t = cx.tokens();
-        let (hover, pressed) = (t.color(Token::HoverBg), t.color(Token::PressedBg));
+        let (hover, pressed, hover_fg) = (
+            t.paint(Token::ButtonGhostBgHover),
+            t.paint(Token::ButtonGhostBgPressed),
+            t.color(Token::ButtonGhostFgHover),
+        );
         div()
             .id(id)
             .flex()
@@ -273,8 +282,8 @@ impl Workspace {
             .text_color(t.color(Token::FgSecondary))
             .when(!enabled, |el| el.opacity(t.number(Token::OpacityDisabled)))
             .when(enabled, |el| {
-                el.hover(move |s| s.bg(hover))
-                    .active(move |s| s.bg(pressed))
+                el.hover(move |s| s.bg(hover).text_color(hover_fg))
+                    .active(move |s| s.bg(pressed).text_color(hover_fg))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| on_click(this, cx)))
             })
             .child(Icon::new(icon).size(t.px(Token::SizeIconSm)))

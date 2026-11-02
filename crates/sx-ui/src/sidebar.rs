@@ -6,7 +6,7 @@ use std::path::Path;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    ClickEvent, Context, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
+    ClickEvent, Context, Div, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
     SharedString, StatefulInteractiveElement as _, Styled as _, div, relative,
 };
 use rust_i18n::t;
@@ -124,6 +124,44 @@ impl Workspace {
             .child(label)
     }
 
+    /// The capacity bar of a drive item. The normal fill is the highlight gradient, which would
+    /// vanish on a highlighted item, so there it takes the item's text colour; warning and danger
+    /// keep their colours.
+    fn drive_gauge(&self, drive: &Drive, highlighted: bool, cx: &Context<Self>) -> Option<Div> {
+        let t = cx.tokens();
+        let used = drive.space?.used_fraction();
+        let fill = if used >= GAUGE_DANGER {
+            Token::GaugeFillDanger
+        } else if used >= GAUGE_WARNING {
+            Token::GaugeFillWarning
+        } else {
+            Token::GaugeFill
+        };
+        let normal = fill == Token::GaugeFill;
+        let on_highlight = t.color(Token::NavItemActiveFg);
+        Some(
+            div()
+                .mt(t.px(Token::SpaceXxs))
+                .h(t.px(Token::SpaceXs))
+                .w_full()
+                .rounded(t.px(Token::RadiusXs))
+                .bg(t.color(Token::GaugeTrack))
+                .child(
+                    div()
+                        .h_full()
+                        .w(relative(used))
+                        .rounded(t.px(Token::RadiusXs))
+                        .map(|bar| {
+                            if normal && highlighted {
+                                bar.bg(on_highlight)
+                            } else {
+                                bar.bg(t.paint(fill))
+                            }
+                        }),
+                ),
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn sidebar_item(
         &self,
@@ -143,39 +181,23 @@ impl Workspace {
             Item::Drive(letter) => ElementId::NamedInteger("side-drive".into(), u64::from(letter)),
             Item::RecycleBin => ElementId::Name("side-bin".into()),
         };
-        let (fg, active_fg, hover, icon_fg) = (
+        let (fg, active_fg, icon_fg, muted) = (
             t.color(Token::NavItemFg),
             t.color(Token::NavItemActiveFg),
-            t.color(Token::NavItemHoverBg),
             t.color(Token::NavItemIcon),
+            t.color(Token::FgMuted),
         );
-        let gauge = drive.and_then(|d| d.space).map(|space| {
-            let used = space.used_fraction();
-            let fill = if used >= GAUGE_DANGER {
-                Token::GaugeFillDanger
-            } else if used >= GAUGE_WARNING {
-                Token::GaugeFillWarning
-            } else {
-                Token::GaugeFill
-            };
-            div()
-                .mt(t.px(Token::SpaceXxs))
-                .h(t.px(Token::SpaceXs))
-                .w_full()
-                .rounded(t.px(Token::RadiusXs))
-                .bg(t.color(Token::GaugeTrack))
-                .child(
-                    div()
-                        .h_full()
-                        .w(relative(used))
-                        .rounded(t.px(Token::RadiusXs))
-                        .bg(t.paint(fill)),
-                )
-        });
+        let (hover, pressed, hover_fg) = (
+            t.paint(Token::NavItemHoverBg),
+            t.paint(Token::NavItemPressedBg),
+            t.color(Token::NavItemHoverFg),
+        );
+        let lit = !active && self.hovered.as_ref() == Some(&element_id);
+        let gauge = drive.and_then(|d| self.drive_gauge(d, active || lit, cx));
         let detail = drive.map(format::drive_space);
         let control = t.px(Token::SizeControl);
         div()
-            .id(element_id)
+            .id(element_id.clone())
             .flex()
             .items_center()
             .gap(t.px(Token::SpaceMd))
@@ -188,15 +210,26 @@ impl Workspace {
                     .text_color(active_fg)
                     .shadow(t.shadow(Token::ShadowGlow))
             })
-            .when(!active, |el| el.text_color(fg).hover(move |s| s.bg(hover)))
+            .when(!active, |el| {
+                el.text_color(if lit { hover_fg } else { fg })
+                    .when(lit, |el| el.bg(hover))
+                    .hover(move |s| s.bg(hover).text_color(hover_fg))
+                    .active(move |s| s.bg(pressed).text_color(hover_fg))
+            })
+            .on_hover(cx.listener({
+                let id = element_id.clone();
+                move |this, hovered: &bool, _, cx| this.set_hovered(&id, *hovered, cx)
+            }))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.navigate(to.clone(), cx);
             }))
             .child(
-                Icon::new(icon)
-                    .size(t.px(Token::SizeIconSm))
+                div()
                     .flex_none()
-                    .when(!active, |i| i.text_color(icon_fg)),
+                    .when(!active, |d| {
+                        d.text_color(if lit { hover_fg } else { icon_fg })
+                    })
+                    .child(Icon::new(icon).size(t.px(Token::SizeIconSm))),
             )
             .child(
                 div()
@@ -216,7 +249,9 @@ impl Workspace {
                         div()
                             .text_size(t.px(Token::FontSizeCaption))
                             .line_height(t.px(Token::FontLineCaption))
-                            .when(!active, |el| el.text_color(t.color(Token::FgMuted)))
+                            .when(!active, |el| {
+                                el.text_color(if lit { hover_fg } else { muted })
+                            })
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()

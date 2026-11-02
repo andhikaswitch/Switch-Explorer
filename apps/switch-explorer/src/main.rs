@@ -65,8 +65,11 @@ fn main() -> anyhow::Result<()> {
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
+            // GPUI platform start-up (DirectX, DirectWrite) is most of the cold start.
+            tracing::debug!(ms = started.elapsed().as_secs_f64() * 1000.0, "app running");
             gpui_kit::init(cx);
             sx_ui::actions::bind(&registry, cx);
+            tracing::debug!(ms = started.elapsed().as_secs_f64() * 1000.0, "kit ready");
             open_main_window(&args, features, os_build, started, cx);
         });
     Ok(())

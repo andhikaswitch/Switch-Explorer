@@ -40,11 +40,12 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Aksen (bidang) | `accent.highlight`, `accent.highlight_hover`, `accent.highlight_pressed`, `accent.solid`, `accent.solid_hover`, `accent.solid_pressed` | Paint |
 | Aksen (garis/teks) | `accent.text`, `accent.glow`, `accent.edge` | Color |
 | State | `hover.bg`, `pressed.bg`, `selection.bg`, `selection.border`, `selection.inactive_bg`, `focus.ring`, `drop_target.bg`, `drop_target.border`, `drop_blocked.border` | Color |
-| Navigasi | `nav.item.fg`, `nav.item.icon`, `nav.item.hover.bg`, `nav.item.active.bg`*, `nav.item.active.fg`, `nav.item.active.edge`, `nav.item.active.glow`, `nav.section.fg` | Color (*Paint) |
+| Navigasi | `nav.item.fg`, `nav.item.icon`, `nav.item.hover.bg`*, `nav.item.hover.fg`, `nav.item.pressed.bg`*, `nav.item.active.bg`*, `nav.item.active.fg`, `nav.item.active.edge`, `nav.item.active.glow`, `nav.section.fg` | Color (*Paint) |
 | Tab | `tab.fg`, `tab.hover.bg`, `tab.active.bg`*, `tab.active.fg`, `tab.active.indicator`* | Color (*Paint) |
 | Breadcrumb | `breadcrumb.fg`, `breadcrumb.current.fg`, `breadcrumb.hover.bg`, `breadcrumb.separator` | Color |
 | Daftar & grid | `header.fg`, `header.hover.bg`, `row.hover.bg`, `row.selected.bg`, `row.selected.border`, `row.selected_inactive.bg`, `tile.hover.bg`, `tile.selected.bg` | Color |
-| Tombol | `button.primary.{bg,bg_hover,bg_pressed,fg}`, `button.secondary.{bg,bg_hover,border,fg}`, `button.ghost.{bg_hover,fg}`, `button.danger.{bg,bg_hover,fg}` | Paint/Color |
+| Tombol | `button.primary.{bg,bg_hover,bg_pressed,fg}`, `button.secondary.{bg,bg_hover,bg_pressed,border,fg,fg_hover}`, `button.ghost.{bg_hover,bg_pressed,fg,fg_hover}`, `button.danger.{bg,bg_hover,fg}` | Paint/Color |
+| Kartu | `surface.card_hover`* (latar), `card.hover.fg` | Paint/Color |
 | Kontrol | `toggle.on.bg`, `toggle.on.thumb`, `toggle.off.border`, `toggle.off.thumb`, `checkbox.checked.bg`, `checkbox.check`, `checkbox.border`, `slider.fill`, `slider.track`, `input.placeholder` | Paint/Color |
 | Umpan balik | `success.*`, `warning.*`, `danger.*`, `info.*` (`solid`, `text`), `toast.bg`*, `toast.fg`, `progress.fill`*, `progress.track` | Color (*Paint) |
 | Hot Switch | `osd.bg`*, `osd.fg`, `osd.border`, `osd.state_on`*, `osd.state_off`, `osd.icon_on`, `osd.icon_off`, `statuschip.on`, `statuschip.partial`, `statuschip.off` | Color (*Paint) |
@@ -178,7 +179,9 @@ mono = ["Cascadia Mono", "Consolas"]
 "accent.solid_pressed" = "gradient(135deg, darken({pal.accent.700}, 0.05), darken({pal.accent.800}, 0.05))"
 "nav.item.fg" = "{fg.secondary}"
 "nav.item.icon" = "{fg.secondary}"
-"nav.item.hover.bg" = "{hover.bg}"
+"nav.item.hover.bg" = "{accent.highlight_hover}"
+"nav.item.hover.fg" = "{fg.on_highlight}"
+"nav.item.pressed.bg" = "{accent.highlight_pressed}"
 "nav.item.active.bg" = "{accent.highlight}"
 "nav.item.active.fg" = "{fg.on_highlight}"
 "nav.item.active.edge" = "{accent.edge}"
@@ -208,8 +211,14 @@ mono = ["Cascadia Mono", "Consolas"]
 "button.secondary.bg" = "{surface.input}"
 "button.secondary.border" = "{border.strong}"
 "button.secondary.fg" = "{fg.primary}"
-"button.ghost.bg_hover" = "{hover.bg}"
+"button.secondary.bg_hover" = "{accent.highlight_hover}"
+"button.secondary.bg_pressed" = "{accent.highlight_pressed}"
+"button.secondary.fg_hover" = "{fg.on_highlight}"
+"button.ghost.bg_hover" = "{accent.highlight_hover}"
+"button.ghost.bg_pressed" = "{accent.highlight_pressed}"
 "button.ghost.fg" = "{fg.primary}"
+"button.ghost.fg_hover" = "{fg.on_highlight}"
+"card.hover.fg" = "{fg.on_highlight}"
 "button.danger.bg" = "#C42B1C"
 "button.danger.bg_hover" = "#D13A2B"
 "button.danger.fg" = "#FFFFFF"
@@ -257,7 +266,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "bg.content" = "alpha(#FFFFFF, 0.84)"
 "bg.statusbar" = "alpha(#FFFFFF, 0.55)"
 "surface.card" = "alpha(#FFFFFF, 0.78)"
-"surface.card_hover" = "alpha(#FFFFFF, 0.92)"
+"surface.card_hover" = "{accent.highlight_hover}"
 "surface.overlay" = "alpha(#FFFFFF, 0.96)"
 "surface.input" = "alpha(#FFFFFF, 0.90)"
 "surface.chip" = "alpha({pal.accent.500}, 0.10)"
@@ -284,7 +293,6 @@ mono = ["Cascadia Mono", "Consolas"]
 "drop_target.bg" = "alpha({pal.lagoon}, 0.18)"
 "drop_target.border" = "{pal.accent.700}"
 "drop_blocked.border" = "#B45309"
-"button.secondary.bg_hover" = "alpha({pal.accent.500}, 0.12)"
 "slider.track" = "alpha(#607389, 0.30)"
 "progress.track" = "alpha(#607389, 0.20)"
 "gauge.track" = "alpha(#607389, 0.18)"
@@ -318,7 +326,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "bg.content" = "alpha(#0A1628, 0.86)"
 "bg.statusbar" = "alpha(#081322, 0.70)"
 "surface.card" = "alpha(#0F1E35, 0.80)"
-"surface.card_hover" = "alpha(#14294A, 0.92)"
+"surface.card_hover" = "{accent.highlight_hover}"
 "surface.overlay" = "alpha(#0C1A2E, 0.96)"
 "surface.input" = "alpha(#0A1628, 0.90)"
 "surface.chip" = "alpha({pal.accent.400}, 0.14)"
@@ -345,7 +353,6 @@ mono = ["Cascadia Mono", "Consolas"]
 "drop_target.bg" = "alpha({pal.lagoon}, 0.16)"
 "drop_target.border" = "{pal.lagoon}"
 "drop_blocked.border" = "#F59E0B"
-"button.secondary.bg_hover" = "alpha({pal.accent.500}, 0.16)"
 "slider.track" = "alpha(#A9BCD3, 0.24)"
 "progress.track" = "alpha(#A9BCD3, 0.16)"
 "gauge.track" = "alpha(#A9BCD3, 0.14)"

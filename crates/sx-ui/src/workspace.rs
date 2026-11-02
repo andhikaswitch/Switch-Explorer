@@ -65,6 +65,9 @@ pub struct Workspace {
     pub(crate) drives: Vec<Drive>,
     pub(crate) pins: Vec<Pin>,
     pub(crate) sidebar_visible: bool,
+    /// The sidebar item or card under the pointer. Their children (icon, caption, gauge) take
+    /// the highlight colours from this; GPUI group hover is not known yet when text is laid out.
+    pub(crate) hovered: Option<gpui_kit::ElementId>,
     pub(crate) features: Arc<Features>,
     /// One-line message about the last failed action (cause + fix, DESIGN.md §10).
     pub(crate) notice: Option<SharedString>,
@@ -120,6 +123,7 @@ impl Workspace {
             drives: Vec::new(),
             pins: default_pins(),
             sidebar_visible: true,
+            hovered: None,
             features: options.features,
             notice: None,
             hwnd: hwnd(window),
@@ -143,6 +147,24 @@ impl Workspace {
         this.watch_appearance(window, cx);
         this.sync_window(window);
         this
+    }
+
+    /// Records the hovered sidebar item or card (see `hovered`).
+    pub(crate) fn set_hovered(
+        &mut self,
+        id: &gpui_kit::ElementId,
+        hovered: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if hovered {
+            if self.hovered.as_ref() != Some(id) {
+                self.hovered = Some(id.clone());
+                cx.notify();
+            }
+        } else if self.hovered.as_ref() == Some(id) {
+            self.hovered = None;
+            cx.notify();
+        }
     }
 
     pub(crate) fn tab(&self) -> &Tab {

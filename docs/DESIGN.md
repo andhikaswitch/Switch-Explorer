@@ -330,13 +330,15 @@ dengan bahasa Windows pengguna.
 
 | Komponen | Default | Hover | Pressed/aktif | Fokus | Disabled |
 |---|---|---|---|---|---|
-| Item sidebar | `nav.item.fg` | `nav.item.hover.bg` | Tide Slash (`nav.item.active.*`) | `focus.ring` | `fg.disabled` |
+| Item sidebar | `nav.item.fg` | `nav.item.hover.bg` (gradien highlight) + `nav.item.hover.fg`; ditekan `nav.item.pressed.bg` | Tide Slash (`nav.item.active.*`) | `focus.ring` | `fg.disabled` |
 | Tab | `tab.fg` | `tab.hover.bg` | `tab.active.bg` + indikator miring | `focus.ring` | — |
 | Segmen breadcrumb | `breadcrumb.fg` | `breadcrumb.hover.bg` | `breadcrumb.current.fg` | `focus.ring` | — |
 | Baris daftar | transparan | `row.hover.bg` | `row.selected.bg` + `row.selected.border` | ring di dalam baris | `fg.disabled` |
 | Tile grid | transparan | `tile.hover.bg` | `tile.selected.bg` | ring | — |
 | Tombol primer | `button.primary.bg` | `…bg_hover` | `…bg_pressed` | ring + glow | opasitas 40% |
-| Tombol sekunder | `button.secondary.bg` + border | `…bg_hover` | `pressed.bg` | ring | opasitas 40% |
+| Tombol sekunder | `button.secondary.bg` + border | `…bg_hover` (gradien highlight) + `…fg_hover` | `…bg_pressed` | ring | opasitas 40% |
+| Tombol ikon/ghost | transparan, `button.ghost.fg` | `button.ghost.bg_hover` (gradien highlight) + `…fg_hover` | `…bg_pressed` | ring | opasitas 40% |
+| Kartu (drive, Home) | `surface.card` + `shadow.card` | `surface.card_hover` (gradien highlight) + `card.hover.fg` | — | ring | — |
 | Tombol bahaya | `button.danger.bg` | `…bg_hover` | gelap 5% | ring | opasitas 40% |
 | Toggle | off: border `toggle.off.border` | +`hover.bg` | on: `toggle.on.bg`, thumb `toggle.on.thumb` | ring | opasitas 40% |
 | Checkbox | border `checkbox.border` | +`hover.bg` | `checkbox.checked.bg` + `checkbox.check` | ring | opasitas 40% |
@@ -348,6 +350,11 @@ dengan bahasa Windows pengguna.
 | Drop target | — | `drop_target.bg` + `drop_target.border` | — | — | `drop_blocked.border` |
 | Scrollbar | `scrollbar.thumb` | `scrollbar.thumb_hover` | — | — | — |
 
+- **Biru modern saat disorot.** Tombol, item sidebar, dan kartu berubah menjadi gradien highlight
+  biru muda dengan teks Ink saat kursor di atasnya (seperti FariSYNC), lebih terang dari item aktif dan
+  tanpa glow. Ikon, keterangan, dan gauge di dalamnya ikut berganti warna. Baris daftar, tab,
+  breadcrumb, dan header kolom tetap memakai hover halus (`*.hover.bg`) agar daftar panjang tidak
+  berkedip saat kursor lewat. Tombol jendela (minimize/maximize/close) mengikuti standar Windows.
 - Empty state: ilustrasi garis tipis monokrom + satu kalimat ajakan + satu tombol.
 - Loading: skeleton baris statis (tanpa shimmer bergerak) setelah 150 ms; sebelum itu tidak menampilkan
   apa-apa agar tidak berkedip.
