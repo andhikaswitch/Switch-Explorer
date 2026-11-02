@@ -281,3 +281,12 @@ dialog di proses utilitas terpisah wajib masuk matriks uji (TESTING.md §5).
 - Semua hotkey global dilepas otomatis saat proses berakhir
 
 Uninstaller menjalankan langkah yang sama **sebelum** menghapus file.
+
+Aturan keamanan `cleanup-registry` (`xtask/src/registry.rs`):
+- Key yang hanya dibuat Switch Explorer (verb `switchexplorer*`, value `Run\SwitchExplorer`) dihapus bila
+  ada.
+- Key bersama (CLSID Win+E, proxy dialog termasuk tampilan WOW64) dihapus **hanya** bila nilainya masih
+  menunjuk `switch-explorer.exe` atau `sx_picker_shim`. Registrasi aplikasi lain tidak pernah disentuh.
+- `--dry-run` hanya melaporkan.
+- Pemulihan nilai dari `integration-backup.json` ditambahkan bersama `sx_integration::registry`
+  (Fase 5).
