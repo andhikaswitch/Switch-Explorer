@@ -1,7 +1,7 @@
 //! Palette generator (THEMING.md §9): accent and neutral ramps from one seed each, in OKLCH,
 //! gamut-mapped to sRGB, with automatic contrast constraints.
 
-use crate::color::{INK, Oklch, Rgba, WHITE, contrast};
+use crate::color::{INK, Oklch, Rgba, contrast};
 
 /// Step names of a ramp (`pal.accent.500`).
 pub const STEPS: [u16; 11] = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
@@ -25,6 +25,11 @@ const CHROMA_FACTOR: [f32; 11] = [
 ];
 const STEP_500: usize = 5;
 const STEP_700: usize = 7;
+/// Darkest background behind text in a light window (Windows' Mica fallback colour).
+const LIGHT_SURFACE: Rgba = Rgba::rgb(0xF3, 0xF3, 0xF3);
+/// Ink on 500/lagoon: `darken(…, 0.05)` pressed states lose about a fifth of their luminance,
+/// so 5.5:1 keeps them at 4.5:1 or better.
+const INK_ON_ACCENT: f32 = 5.5;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Palette {
@@ -37,21 +42,32 @@ impl Palette {
     pub fn generate(accent_seed: Rgba, neutral_seed: Rgba) -> Self {
         let seed = accent_seed.to_oklch();
         let mut accent = ramp(seed);
-        // 700 carries text on white: at least 4.5:1, lowering L until it passes.
-        accent[STEP_700] = adjust_l(accent[STEP_700], -0.01, |c| contrast(c, WHITE) >= 4.5);
-        // 500 sits under Ink text: at least 4.5:1, raising L until it passes.
-        accent[STEP_500] = adjust_l(accent[STEP_500], 0.01, |c| contrast(c, INK) >= 4.5);
+        // 700 carries text on light backgrounds: at least 4.5:1 against the darkest one a light
+        // window can show (solid base / Mica fallback), lowering L until it passes.
+        accent[STEP_700] = adjust_l(accent[STEP_700], -0.01, |c| {
+            contrast(c, LIGHT_SURFACE) >= 4.5
+        });
+        // 500 sits under Ink text, also in its darkened pressed state.
+        accent[STEP_500] = adjust_l(accent[STEP_500], 0.01, |c| {
+            contrast(c, INK) >= INK_ON_ACCENT
+        });
         let lagoon = Oklch {
             l: (seed.l + 0.08).min(0.98),
             c: seed.c * 0.9,
             h: (seed.h - 12.0).rem_euclid(360.0),
         }
         .to_rgba(1.0);
-        let lagoon = adjust_l(lagoon, 0.01, |c| contrast(c, INK) >= 4.5);
+        let lagoon = adjust_l(lagoon, 0.01, |c| contrast(c, INK) >= INK_ON_ACCENT);
 
+        // Neutrals carry a hint of their seed's hue; a grey seed stays grey (no hue to tint).
         let neutral_seed = neutral_seed.to_oklch();
+        let chroma = if neutral_seed.c < 0.01 {
+            neutral_seed.c
+        } else {
+            neutral_seed.c.clamp(0.02, 0.03)
+        };
         let neutral = ramp(Oklch {
-            c: neutral_seed.c.clamp(0.02, 0.03),
+            c: chroma,
             ..neutral_seed
         });
         Self {
@@ -130,6 +146,7 @@ fn adjust_l(color: Rgba, step: f32, ok: impl Fn(Rgba) -> bool) -> Rgba {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::WHITE;
 
     #[test]
     fn constraints_hold_for_many_seeds() {

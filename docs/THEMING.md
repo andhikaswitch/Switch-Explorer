@@ -41,13 +41,13 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Aksen (garis/teks) | `accent.text`, `accent.glow`, `accent.edge` | Color |
 | State | `hover.bg`, `pressed.bg`, `selection.bg`, `selection.border`, `selection.inactive_bg`, `focus.ring`, `drop_target.bg`, `drop_target.border`, `drop_blocked.border` | Color |
 | Navigasi | `nav.item.fg`, `nav.item.icon`, `nav.item.hover.bg`, `nav.item.active.bg`*, `nav.item.active.fg`, `nav.item.active.edge`, `nav.item.active.glow`, `nav.section.fg` | Color (*Paint) |
-| Tab | `tab.fg`, `tab.hover.bg`, `tab.active.bg`, `tab.active.fg`, `tab.active.indicator`* | Color (*Paint) |
+| Tab | `tab.fg`, `tab.hover.bg`, `tab.active.bg`*, `tab.active.fg`, `tab.active.indicator`* | Color (*Paint) |
 | Breadcrumb | `breadcrumb.fg`, `breadcrumb.current.fg`, `breadcrumb.hover.bg`, `breadcrumb.separator` | Color |
 | Daftar & grid | `header.fg`, `header.hover.bg`, `row.hover.bg`, `row.selected.bg`, `row.selected.border`, `row.selected_inactive.bg`, `tile.hover.bg`, `tile.selected.bg` | Color |
 | Tombol | `button.primary.{bg,bg_hover,bg_pressed,fg}`, `button.secondary.{bg,bg_hover,border,fg}`, `button.ghost.{bg_hover,fg}`, `button.danger.{bg,bg_hover,fg}` | Paint/Color |
 | Kontrol | `toggle.on.bg`, `toggle.on.thumb`, `toggle.off.border`, `toggle.off.thumb`, `checkbox.checked.bg`, `checkbox.check`, `checkbox.border`, `slider.fill`, `slider.track`, `input.placeholder` | Paint/Color |
-| Umpan balik | `success.*`, `warning.*`, `danger.*`, `info.*` (`solid`, `text`), `toast.bg`, `toast.fg`, `progress.fill`*, `progress.track` | Color (*Paint) |
-| Hot Switch | `osd.bg`, `osd.fg`, `osd.border`, `osd.state_on`*, `osd.state_off`, `osd.icon_on`, `osd.icon_off`, `statuschip.on`, `statuschip.partial`, `statuschip.off` | Color (*Paint) |
+| Umpan balik | `success.*`, `warning.*`, `danger.*`, `info.*` (`solid`, `text`), `toast.bg`*, `toast.fg`, `progress.fill`*, `progress.track` | Color (*Paint) |
+| Hot Switch | `osd.bg`*, `osd.fg`, `osd.border`, `osd.state_on`*, `osd.state_off`, `osd.icon_on`, `osd.icon_off`, `statuschip.on`, `statuschip.partial`, `statuschip.off` | Color (*Paint) |
 | Gauge | `gauge.fill`, `gauge.fill_warning`, `gauge.fill_danger`, `gauge.track` | Paint/Color |
 | Scrollbar | `scrollbar.thumb`, `scrollbar.thumb_hover`, `scrollbar.track` | Color |
 | Kategori | `category.{documents,audio,pictures,videos,archives,code,apps,other}` | Color |
@@ -65,8 +65,8 @@ pasangan kontras). File tema hanya memberi nilai.
 nilai    := warna | ref | fungsi | gradien | bayangan | angka | transparent
 warna    := #RRGGBB | #RRGGBBAA | rgb(r, g, b) | rgba(r, g, b, a) | oklch(L C h [/ a])
 ref      := {token.id} | {pal.accent.500} | {pal.neutral.900} | {pal.lagoon}
-fungsi   := alpha(nilai, 0..1)
-          | mix(nilai, nilai, 0..100%)        campuran di ruang OKLab
+fungsi   := alpha(nilai, 0..1)                   di luar rentang → peringatan
+          | mix(nilai, nilai, 0..100%)        campuran di ruang OKLab; tanda % wajib
           | lighten(nilai, n) | darken(nilai, n)       ubah L OKLCH sebesar n
           | saturate(nilai, n) | desaturate(nilai, n)  ubah chroma
           | shift_hue(nilai, derajat)
@@ -412,9 +412,18 @@ Generator (OKLCH, gamut-mapped ke sRGB dengan menurunkan chroma):
 | 600 / 700 / 800 | 0.62 / 0.55 / 0.47 | 0.95 / 0.85 / 0.75 |
 | 900 / 950 | 0.38 / 0.28 | 0.60 / 0.45 |
 
-Batasan otomatis: `700` harus ≥ 4.5:1 dengan putih (turunkan L sampai lolos); `500` dan `lagoon` harus
-≥ 4.5:1 dengan Ink (naikkan L sampai lolos). `lagoon` = seed dengan L +0.08, hue −12° (ke arah cyan),
-chroma ×0.9. Palet netral digenerate dari seed netral dengan chroma rendah (0.02–0.03).
+Batasan otomatis:
+- `700` harus ≥ 4.5:1 dengan latar terang tergelap `#F3F3F3` (base solid / fallback Mica); L diturunkan
+  sampai lolos.
+- `500` dan `lagoon` harus ≥ 5.5:1 dengan Ink; L dinaikkan sampai lolos. Angka 5.5:1 memberi ruang agar
+  state pressed `darken(…, 0.05)` tetap ≥ 4.5:1.
+- `lagoon` = seed dengan L +0.08, hue −12° (ke arah cyan), chroma ×0.9.
+
+Palet netral digenerate dari seed netral dengan chroma rendah (0.02–0.03). Seed abu-abu (chroma < 0.01)
+tetap abu-abu.
+
+CI menyapu 36 aksen (12 hue × 3 kombinasi L/chroma) untuk setiap tema bawaan, di kedua mode, dan semuanya
+harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 
 ## 10. Light/dark & adaptasi otomatis
 
@@ -444,8 +453,12 @@ chroma ×0.9. Palet netral digenerate dari seed netral dengan chroma rendah (0.0
 - Hasil: lulus atau peringatan (tidak memblokir). "Perbaiki otomatis" menggeser L warna depan seminimal
   mungkin sampai lulus.
 - CI gagal jika ada tema **bawaan** yang tidak lulus.
-- Nilai tidak valid → fallback ke nilai tema dasar + daftar peringatan. File gagal parse → tema terakhir
-  yang valid tetap dipakai + toast berisi baris/kolom error.
+- Nilai tidak valid → lapisan di bawahnya dicoba (override → varian tema → `[common]`) sampai nilai tema
+  dasar, dengan satu peringatan per kegagalan. Token tidak pernah menjadi transparan karena satu nilai
+  rusak. File gagal parse → tema terakhir yang valid tetap dipakai + toast berisi baris/kolom error.
+- Material solid mengkomposit token `bg.*`/`surface.*` (kecuali `scrim`) di titik definisinya, sehingga
+  token turunan seperti `osd.bg` ikut opak. Warna dasarnya `[material].solid_light`/`solid_dark`
+  (default `#F3F3F3`/`#202020`).
 - Reset darurat: `Ctrl+Alt+Shift+T` atau `--reset-theme`; `--safe-mode` memakai Cerulean tanpa override.
 
 ## 12. Hot reload

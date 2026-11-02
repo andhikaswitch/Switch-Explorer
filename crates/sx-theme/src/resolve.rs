@@ -1,14 +1,19 @@
-//! Resolution pipeline (THEMING.md §8): palette → `[common]` → `[light]`/`[dark]` → topological
-//! evaluation with cycle detection → environment adjustments. The result is a flat array
-//! indexed by [`Token`], so lookups at render time cost nothing.
+//! Resolution pipeline (THEMING.md §8): palette → `[common]` → `[light]`/`[dark]` → overrides,
+//! evaluated topologically with cycle detection, then environment adjustments. The result is a
+//! flat array indexed by [`Token`], so lookups at render time cost nothing.
+//!
+//! A value that fails (bad syntax, wrong type, cycle, unknown reference) never blanks a token:
+//! the next lower layer is tried, down to the theme's own value (THEMING.md §11), and each
+//! failure becomes one warning.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::color::{self, INK, Oklch, Rgba, TRANSPARENT, WHITE, contrast};
+use crate::color::{self, INK, Oklab, Oklch, Rgba, TRANSPARENT, WHITE, contrast};
 use crate::error::{ThemeError, ThemeWarning};
 use crate::file::{Fonts, Material, ThemeFile};
 use crate::palette::Palette;
 use crate::schema::{TOKENS, Token, TokenType};
+use crate::validate::backdrops;
 use crate::value::{self, Expr, Func};
 
 /// Maximum reference depth (THEMING.md §4).
@@ -26,12 +31,45 @@ pub enum Paint {
     Linear { angle: f32, stops: Vec<Rgba> },
 }
 
+static NO_PAINT: Paint = Paint::Solid(TRANSPARENT);
+
 impl Paint {
     /// Every colour the paint can show (the stops of a gradient).
     pub fn colors(&self) -> &[Rgba] {
         match self {
             Self::Solid(c) => std::slice::from_ref(c),
             Self::Linear { stops, .. } => stops,
+        }
+    }
+
+    /// The perceptual average (OKLab) of the stops, for places that need one colour.
+    pub fn average(&self) -> Rgba {
+        let colors = self.colors();
+        let n = colors.len().max(1) as f32;
+        let (mut l, mut a, mut b, mut alpha) = (0.0, 0.0, 0.0, 0.0);
+        for c in colors {
+            let lab = c.to_oklab();
+            l += lab.l;
+            a += lab.a;
+            b += lab.b;
+            alpha += c.a;
+        }
+        Oklab {
+            l: l / n,
+            a: a / n,
+            b: b / n,
+        }
+        .to_oklch()
+        .to_rgba(alpha / n)
+    }
+
+    fn map(self, f: impl Fn(Rgba) -> Rgba) -> Self {
+        match self {
+            Self::Solid(c) => Self::Solid(f(c)),
+            Self::Linear { angle, stops } => Self::Linear {
+                angle,
+                stops: stops.into_iter().map(f).collect(),
+            },
         }
     }
 }
@@ -59,7 +97,7 @@ pub struct ResolveOptions {
     /// accent with its `[palette.pin]` values.
     pub accent: Option<Rgba>,
     /// Solid material (Windows 10, transparency off, battery saver): translucent backgrounds
-    /// are composited onto the variant's base colour.
+    /// are composited onto the theme's solid base colour.
     pub solid: bool,
     /// User overrides applied after the theme (`theme-overrides.toml`, Theme Studio).
     pub overrides: BTreeMap<String, String>,
@@ -81,18 +119,19 @@ impl ResolvedTheme {
         &self.values[token as usize]
     }
 
-    /// A paint token, or a colour token as a solid paint.
-    pub fn paint(&self, token: Token) -> Paint {
+    /// A paint or colour token (transparent for other kinds).
+    pub fn paint(&self, token: Token) -> &Paint {
         match self.value(token) {
-            Value::Paint(p) => p.clone(),
-            _ => Paint::Solid(TRANSPARENT),
+            Value::Paint(p) => p,
+            _ => &NO_PAINT,
         }
     }
 
-    /// The colour of a token; for gradients, the first stop.
+    /// The colour of a token; gradients give their average (THEMING.md §14).
     pub fn color(&self, token: Token) -> Rgba {
         match self.value(token) {
-            Value::Paint(p) => p.colors().first().copied().unwrap_or(TRANSPARENT),
+            Value::Paint(Paint::Solid(c)) => *c,
+            Value::Paint(p) => p.average(),
             Value::Shadow(s) => s.color,
             Value::Number(_) => TRANSPARENT,
         }
@@ -113,12 +152,10 @@ impl ResolvedTheme {
     }
 }
 
-/// Base colour under translucent backgrounds in solid mode (the Mica fallback colours).
-pub fn solid_base(mode: Mode) -> Rgba {
-    match mode {
-        Mode::Light => Rgba::rgb(0xF3, 0xF3, 0xF3),
-        Mode::Dark => Rgba::rgb(0x20, 0x20, 0x20),
-    }
+/// Background and surface tokens are what solid material makes opaque. The scrim stays a
+/// translucent dimming layer.
+fn is_background(id: &str) -> bool {
+    (id.starts_with("bg.") || id.starts_with("surface.")) && id != "scrim"
 }
 
 pub fn resolve(
@@ -143,11 +180,17 @@ pub fn resolve(
             }
         }
     }
+    let solid_base = match mode {
+        Mode::Light => &file.material.solid_light,
+        Mode::Dark => &file.material.solid_dark,
+    };
+    let solid_base =
+        Rgba::from_hex(solid_base).ok_or_else(|| ThemeError::BadSeed(solid_base.clone()))?;
 
-    // Layers: numbers → [common] → [light]/[dark] → user overrides (later wins).
-    let mut sources: HashMap<String, String> = HashMap::new();
+    // Layers, lowest first: numbers → [common] → [light]/[dark] → user overrides.
+    let mut layers: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (key, n) in &file.numbers {
-        sources.insert(key.clone(), n.to_string());
+        layers.entry(key.clone()).or_default().push(n.to_string());
     }
     let variant = match mode {
         Mode::Light => &file.light,
@@ -155,10 +198,10 @@ pub fn resolve(
     };
     for layer in [&file.common, variant, &options.overrides] {
         for (key, value) in layer {
-            sources.insert(key.clone(), value.clone());
+            layers.entry(key.clone()).or_default().push(value.clone());
         }
     }
-    for key in sources.keys() {
+    for key in layers.keys() {
         if Token::from_id(key).is_none() {
             warnings.push(ThemeWarning {
                 key: key.clone(),
@@ -168,48 +211,32 @@ pub fn resolve(
     }
 
     let mut resolver = Resolver {
-        sources: &sources,
+        layers: &layers,
         palette: &palette,
-        memo: HashMap::new(),
+        mode,
+        solid: options.solid.then_some(solid_base),
+        memo: BTreeMap::new(),
         stack: Vec::new(),
+        warnings: BTreeMap::new(),
     };
-    let mut values = Vec::with_capacity(TOKENS.len());
-    for meta in TOKENS {
-        let value = match resolver.token(meta.id) {
-            Ok(value) => coerce(meta.ty, value).unwrap_or_else(|message| {
-                warnings.push(ThemeWarning {
-                    key: meta.id.into(),
-                    message,
-                });
+    let values: Vec<Value> = TOKENS
+        .iter()
+        .map(|meta| {
+            resolver.token(meta.id).unwrap_or_else(|message| {
+                resolver.warn(meta.id, message);
                 fallback(meta.ty)
+            })
+        })
+        .collect();
+    warnings.extend(
+        resolver
+            .warnings
+            .into_iter()
+            .map(|(key, messages)| ThemeWarning {
+                key,
+                message: messages.into_iter().collect::<Vec<_>>().join("; "),
             }),
-            Err(message) => {
-                warnings.push(ThemeWarning {
-                    key: meta.id.into(),
-                    message,
-                });
-                fallback(meta.ty)
-            }
-        };
-        values.push(value);
-    }
-
-    if options.solid {
-        let base = solid_base(mode);
-        for meta in TOKENS {
-            let solidify = meta.id.starts_with("bg.") || meta.id.starts_with("surface.");
-            if solidify && let Value::Paint(paint) = &mut values[meta.token as usize] {
-                match paint {
-                    Paint::Solid(c) => *c = c.over(base),
-                    Paint::Linear { stops, .. } => {
-                        for c in stops.iter_mut() {
-                            *c = c.over(base);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    );
 
     // Palette entries are not tokens; the pinned palette is kept for the bridge and Theme Studio.
     Ok(ResolvedTheme {
@@ -224,19 +251,31 @@ pub fn resolve(
 }
 
 struct Resolver<'a> {
-    sources: &'a HashMap<String, String>,
+    layers: &'a BTreeMap<String, Vec<String>>,
     palette: &'a Palette,
-    memo: HashMap<String, Value>,
+    mode: Mode,
+    /// Base colour for solid material, when it is active.
+    solid: Option<Rgba>,
+    /// Final value per token, or the error once every layer failed.
+    memo: BTreeMap<String, Result<Value, String>>,
     stack: Vec<String>,
+    warnings: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Resolver<'_> {
+    fn warn(&mut self, key: &str, message: String) {
+        self.warnings
+            .entry(key.to_string())
+            .or_default()
+            .insert(message);
+    }
+
     fn token(&mut self, id: &str) -> Result<Value, String> {
         if let Some(color) = self.palette.get(id) {
             return Ok(Value::Paint(Paint::Solid(color)));
         }
-        if let Some(value) = self.memo.get(id) {
-            return Ok(value.clone());
+        if let Some(result) = self.memo.get(id) {
+            return result.clone();
         }
         if let Some(start) = self.stack.iter().position(|s| s == id) {
             let mut chain = self.stack[start..].to_vec();
@@ -246,20 +285,51 @@ impl Resolver<'_> {
         if self.stack.len() >= MAX_DEPTH {
             return Err(format!("references nest deeper than {MAX_DEPTH}"));
         }
-        let Some(source) = self.sources.get(id) else {
-            return Err(if Token::from_id(id).is_some() {
-                "no value in this theme".to_string()
-            } else {
-                format!("unknown reference `{{{id}}}`{}", suggestion(id))
-            });
+        let Some(meta) = Token::from_id(id).map(Token::meta) else {
+            return Err(format!("unknown reference `{{{id}}}`{}", suggestion(id)));
         };
-        let expr = value::parse(source).map_err(|e| format!("`{source}`: {e}"))?;
+        let Some(sources) = self.layers.get(id) else {
+            return Err("no value in this theme".into());
+        };
+        // Highest layer first; a failing layer falls back to the one below it.
         self.stack.push(id.to_string());
-        let result = self.eval(&expr);
+        let mut result = Err(String::new());
+        for (depth, source) in sources.iter().enumerate().rev() {
+            let attempt = value::parse(source)
+                .map_err(|e| format!("`{source}`: {e}"))
+                .and_then(|expr| self.eval(&expr))
+                .and_then(|v| coerce(meta.ty, v));
+            match attempt {
+                Ok(value) => {
+                    result = Ok(value);
+                    break;
+                }
+                Err(message) => {
+                    let fallback = if depth > 0 {
+                        "; using the value below it"
+                    } else {
+                        ""
+                    };
+                    self.warn(id, format!("{message}{fallback}"));
+                    result = Err(format!("depends on `{id}`, which has no valid value"));
+                }
+            }
+        }
         self.stack.pop();
-        let value = result?;
-        self.memo.insert(id.to_string(), value.clone());
-        Ok(value)
+        let result = result.map(|value| self.environment(id, value));
+        self.memo.insert(id.to_string(), result.clone());
+        result
+    }
+
+    /// Solid material: backgrounds become opaque where they are defined, so every token that
+    /// refers to them inherits the opaque colour.
+    fn environment(&self, id: &str, value: Value) -> Value {
+        match (self.solid, value) {
+            (Some(base), Value::Paint(paint)) if is_background(id) => {
+                Value::Paint(paint.map(|c| c.over(base)))
+            }
+            (_, value) => value,
+        }
     }
 
     fn eval(&mut self, expr: &Expr) -> Result<Value, String> {
@@ -313,12 +383,14 @@ impl Resolver<'_> {
             return Err("expected a colour or gradient".into());
         };
         if func == Func::On {
-            // Ink or white, whichever reads better on every stop.
+            // Ink or white, whichever reads better on every stop over this mode's backdrops.
+            let backdrops = backdrops(self.mode);
             let worst = |text: Rgba| {
                 input
                     .colors()
                     .iter()
-                    .map(|bg| contrast(text, bg.over(WHITE)))
+                    .flat_map(|bg| backdrops.iter().map(move |b| bg.over(*b)))
+                    .map(|surface| contrast(text, surface))
                     .fold(f32::INFINITY, f32::min)
             };
             let pick = if worst(INK) >= worst(WHITE) {
@@ -333,11 +405,21 @@ impl Resolver<'_> {
                 return Err("mix() takes colours, not gradients".into());
             };
             let b = self.color(&args[1])?;
-            let t = self.number(&args[2])? / 100.0;
-            return Ok(Value::Paint(Paint::Solid(color::mix(a, b, t))));
+            let percent = self.number(&args[2])?;
+            if !(0.0..=100.0).contains(&percent) {
+                return Err(format!("mix() needs 0%–100%, got {percent}%"));
+            }
+            return Ok(Value::Paint(Paint::Solid(color::mix(
+                a,
+                b,
+                percent / 100.0,
+            ))));
         }
         let n = self.number(&args[1])?;
-        let apply = |c: Rgba| -> Rgba {
+        if func == Func::Alpha && !(0.0..=1.0).contains(&n) {
+            return Err(format!("alpha() needs 0–1, got {n}"));
+        }
+        Ok(Value::Paint(input.map(|c| {
             let lch = c.to_oklch();
             let adjusted = |lch: Oklch| lch.to_rgba(c.a);
             match func {
@@ -364,14 +446,7 @@ impl Resolver<'_> {
                 }),
                 Func::On | Func::Mix => c,
             }
-        };
-        Ok(Value::Paint(match input {
-            Paint::Solid(c) => Paint::Solid(apply(c)),
-            Paint::Linear { angle, stops } => Paint::Linear {
-                angle,
-                stops: stops.into_iter().map(apply).collect(),
-            },
-        }))
+        })))
     }
 }
 
@@ -432,76 +507,147 @@ fn edit_distance(a: &str, b: &str) -> usize {
 mod tests {
     use super::*;
 
-    fn theme(common: &[(&str, &str)]) -> ThemeFile {
-        let mut file = ThemeFile::parse(crate::builtin::CERULEAN).unwrap();
-        for (k, v) in common {
-            file.common.insert((*k).into(), (*v).into());
-        }
-        file
+    fn cerulean() -> ThemeFile {
+        ThemeFile::parse(crate::builtin::CERULEAN).unwrap()
     }
 
     fn warning_for<'a>(t: &'a ResolvedTheme, key: &str) -> Option<&'a ThemeWarning> {
         t.warnings.iter().find(|w| w.key == key)
     }
 
+    fn with_overrides(pairs: &[(&str, &str)]) -> ResolveOptions {
+        ResolveOptions {
+            overrides: pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect(),
+            ..ResolveOptions::default()
+        }
+    }
+
+    #[test]
+    fn bad_override_falls_back_to_the_theme_value() {
+        let base = resolve(&cerulean(), Mode::Light, &ResolveOptions::default()).unwrap();
+        let t = resolve(
+            &cerulean(),
+            Mode::Light,
+            &with_overrides(&[("fg.primary", "#12")]),
+        )
+        .unwrap();
+        assert_eq!(t.color(Token::FgPrimary), base.color(Token::FgPrimary));
+        // Tokens built on it are untouched and get no misleading warnings.
+        assert_eq!(t.color(Token::OsdFg), base.color(Token::OsdFg));
+        assert_eq!(t.warnings.len(), 1, "{:?}", t.warnings);
+        assert!(warning_for(&t, "fg.primary").is_some());
+    }
+
     #[test]
     fn cycles_are_reported_with_their_chain() {
-        let mut file = theme(&[]);
+        let mut file = cerulean();
         file.dark.insert("hover.bg".into(), "{pressed.bg}".into());
         file.dark.insert("pressed.bg".into(), "{hover.bg}".into());
         let t = resolve(&file, Mode::Dark, &ResolveOptions::default()).unwrap();
-        let w = warning_for(&t, "hover.bg").unwrap();
-        assert!(w.message.contains("cycle"), "{w}");
+        // The token that closes the loop reports the chain; the other one says what it waits on.
         assert!(
-            w.message.contains("hover.bg → pressed.bg → hover.bg"),
-            "{w}"
+            t.warnings
+                .iter()
+                .any(|w| w.message.contains("hover.bg → pressed.bg → hover.bg")),
+            "{:?}",
+            t.warnings
         );
+        assert!(warning_for(&t, "hover.bg").is_some());
     }
 
     #[test]
     fn gradient_in_colour_token_is_rejected() {
-        let file = theme(&[("fg.link", "gradient(90deg, #000000, #FFFFFF)")]);
-        let mut file = file;
-        file.light.remove("fg.link");
-        let t = resolve(&file, Mode::Light, &ResolveOptions::default()).unwrap();
+        let t = resolve(
+            &cerulean(),
+            Mode::Light,
+            &with_overrides(&[("fg.link", "gradient(90deg, #000000, #FFFFFF)")]),
+        )
+        .unwrap();
         assert!(warning_for(&t, "fg.link").is_some());
-        assert_eq!(t.color(Token::FgLink), TRANSPARENT);
+        assert_ne!(
+            t.color(Token::FgLink),
+            TRANSPARENT,
+            "falls back to the theme value"
+        );
     }
 
     #[test]
     fn unknown_tokens_get_suggestions() {
-        let file = theme(&[("buton.primary.fg", "#FFFFFF")]);
-        let t = resolve(&file, Mode::Light, &ResolveOptions::default()).unwrap();
+        let t = resolve(
+            &cerulean(),
+            Mode::Light,
+            &with_overrides(&[("buton.primary.fg", "#FFFFFF")]),
+        )
+        .unwrap();
         let w = warning_for(&t, "buton.primary.fg").unwrap();
         assert!(w.message.contains("button.primary.fg"), "{w}");
     }
 
     #[test]
     fn overrides_win_and_custom_accent_skips_pins() {
-        let file = theme(&[]);
-        let mut options = ResolveOptions::default();
-        options
-            .overrides
-            .insert("button.primary.bg_hover".into(), "#FF0000".into());
+        let mut options = with_overrides(&[("button.primary.bg_hover", "#FF0000")]);
         options.accent = Some(Rgba::from_hex("#7C3AED").unwrap());
-        let t = resolve(&file, Mode::Light, &options).unwrap();
+        let t = resolve(&cerulean(), Mode::Light, &options).unwrap();
         assert_eq!(t.color(Token::ButtonPrimaryBgHover).to_hex(), "#FF0000");
         assert_ne!(t.palette.accent[5].to_hex(), "#2FA8FF");
     }
 
     #[test]
-    fn solid_material_makes_backgrounds_opaque() {
-        let file = theme(&[]);
+    fn solid_material_reaches_derived_tokens() {
         let options = ResolveOptions {
             solid: true,
             ..ResolveOptions::default()
         };
-        let t = resolve(&file, Mode::Dark, &options).unwrap();
-        assert!((t.color(Token::BgWindow).a - 1.0).abs() < 1e-6);
+        let t = resolve(&cerulean(), Mode::Dark, &options).unwrap();
+        for token in [
+            Token::BgWindow,
+            Token::SurfaceOverlay,
+            Token::OsdBg,
+            Token::ToastBg,
+            Token::TabActiveBg,
+        ] {
+            assert!(
+                (t.color(token).a - 1.0).abs() < 1e-6,
+                "{} is not opaque",
+                token.id()
+            );
+        }
         assert!(
             t.color(Token::SelectionBg).a < 1.0,
-            "only bg/surface are made opaque"
+            "state colours stay translucent"
         );
+        assert!(t.color(Token::Scrim).a < 1.0, "the scrim stays translucent");
+    }
+
+    #[test]
+    fn mix_and_alpha_ranges_are_checked() {
+        let t = resolve(
+            &cerulean(),
+            Mode::Light,
+            &with_overrides(&[
+                ("hover.bg", "alpha(#000000, 2)"),
+                ("pressed.bg", "mix(#000000, #FFFFFF, 150%)"),
+            ]),
+        )
+        .unwrap();
+        assert!(warning_for(&t, "hover.bg").is_some());
+        assert!(warning_for(&t, "pressed.bg").is_some());
+    }
+
+    #[test]
+    fn warnings_are_deterministic() {
+        let options = with_overrides(&[("zz.unknown", "#000000"), ("aa.unknown", "#000000")]);
+        let a = resolve(&cerulean(), Mode::Light, &options)
+            .unwrap()
+            .warnings;
+        let b = resolve(&cerulean(), Mode::Light, &options)
+            .unwrap()
+            .warnings;
+        assert_eq!(a, b);
+        assert_eq!(a[0].key, "aa.unknown");
     }
 
     #[test]

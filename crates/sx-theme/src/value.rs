@@ -200,7 +200,7 @@ impl Parser<'_> {
         })
     }
 
-    /// A number followed by an optional unit (`deg`, `%`), which is checked but not converted.
+    /// A number optionally followed by `unit` (used for `deg`); the unit is not converted.
     fn number_with_unit(&mut self, unit: &str) -> Result<f32, ParseError> {
         let n = self.number()?;
         if self.rest().starts_with(unit) {
@@ -302,12 +302,22 @@ impl Parser<'_> {
         let mut args = vec![self.expr()?];
         for _ in 1..func.arity() {
             self.expect(',')?;
-            let n = if func == Func::Mix && args.len() == 1 {
-                self.expr()?
-            } else {
-                Expr::Number(self.number_with_unit(if func == Func::Mix { "%" } else { "deg" })?)
+            let arg = match (func, args.len()) {
+                // mix(a, b, 50%): the second argument is a colour, the third a percentage.
+                (Func::Mix, 1) => self.expr()?,
+                (Func::Mix, _) => {
+                    let n = self.number()?;
+                    if !self.rest().starts_with('%') {
+                        return Err(self.error("mix() needs a percentage such as 50%"));
+                    }
+                    self.pos += 1;
+                    Expr::Number(n)
+                }
+                (Func::ShiftHue, _) => Expr::Number(self.number_with_unit("deg")?),
+                // alpha/lighten/darken/saturate/desaturate take plain numbers; a unit is an error.
+                _ => Expr::Number(self.number()?),
             };
-            args.push(n);
+            args.push(arg);
         }
         self.expect(')')?;
         Ok(Expr::Func(func, args))
@@ -373,6 +383,14 @@ mod tests {
                 .contains("unknown function")
         );
         assert!(parse("gradient(90deg, #FFFFFF)").is_err());
+        assert!(
+            parse("mix(#000000, #FFFFFF, 50)")
+                .unwrap_err()
+                .message
+                .contains('%')
+        );
+        assert!(parse("alpha(#000000, .5deg)").is_err());
+        assert!(parse("shift_hue(#000000, 30deg)").is_ok());
         assert!(parse("#FFFFFF extra").is_err());
         assert!(parse("{}").is_err());
     }

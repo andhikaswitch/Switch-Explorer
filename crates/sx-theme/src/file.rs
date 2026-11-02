@@ -58,6 +58,10 @@ pub struct Material {
     pub backdrop: String,
     pub tint_strength: f32,
     pub noise: f32,
+    /// Opaque base under translucent backgrounds when the material is solid (Windows 10,
+    /// transparency off, battery saver). Defaults are Windows' own Mica fallback colours.
+    pub solid_light: String,
+    pub solid_dark: String,
 }
 
 impl Default for Material {
@@ -66,6 +70,8 @@ impl Default for Material {
             backdrop: "mica_alt".into(),
             tint_strength: 1.0,
             noise: 0.0,
+            solid_light: "#F3F3F3".into(),
+            solid_dark: "#202020".into(),
         }
     }
 }
