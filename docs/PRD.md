@@ -125,6 +125,6 @@ P0 = wajib agar layak dipakai harian, P1 = yang membuatnya unggul, P2 = nice-to-
 
 ## 10. Pertanyaan terbuka
 
-- Lisensi (MIT atau Apache-2.0).
+- ~~Lisensi (MIT atau Apache-2.0).~~ Diputuskan: `MIT OR Apache-2.0` (ADR-019).
 - Distribusi: installer saja, atau juga portable dan Microsoft Store?
 - Apakah Sync dua arah masuk v1.x atau v2?

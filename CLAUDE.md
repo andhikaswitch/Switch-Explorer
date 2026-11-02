@@ -139,6 +139,6 @@ xtask/                  otomasi build, fixtures, registry cleanup, packaging
 - Skill resmi GPUI Kit (opsional, sangat disarankan): lihat https://gpui-kit.com/skills.
 
 ## Status
-- Fase aktif: **0 — Spike & validasi** (lihat `docs/ROADMAP.md`). Perbarui baris ini saat pindah fase.
-  Spike selesai, rekomendasi GO dengan syarat (`docs/benchmarks/phase0.md`). Menunggu verifikasi manual
-  IME Jepang dan Windows 10 sebelum pindah ke Fase 1.
+- Fase aktif: **1 — Fondasi & explorer MVP** (lihat `docs/ROADMAP.md`). Perbarui baris ini saat pindah fase.
+- Fase 0 selesai dengan keputusan GO (`docs/benchmarks/phase0.md`). Verifikasi manual IME Jepang dan
+  Windows 10 masih terbuka (ADR-020). Pola wajib dari spike: ADR-015 sampai ADR-018.

@@ -182,7 +182,7 @@ Satu-satunya keunggulannya CPU idle (16–47 ms vs ~250 ms per 10 s).
 vsync upstream tetap tidak bisa idle.
 
 ## ADR-018 — OSD: overlay in-app, window OSD dipakai ulang (amandemen ADR-014)
-**Status:** Diusulkan (butuh persetujuan pemilik proyek).
+**Status:** Diterima (2 November 2026, didelegasikan pemilik proyek).
 
 **Konteks.** ADR-014 memakai window ringan untuk OSD. Di spike, setiap window GPUI tambahan menambah
 **+13.5 MB** private working set (swap chain + sumber daya), walau frame pertamanya cepat (12.8 ms).
@@ -192,6 +192,26 @@ vsync upstream tetap tidak bisa idle.
 - Hotkey global saat app di background → satu window OSD yang dibuat saat pertama dipakai, lalu
   disembunyikan (`SW_HIDE`) dan dipakai ulang. Window itu dibuang saat minimize/idle panjang.
 - Resident mode tanpa window → window OSD dibuat on-demand dan dibuang setelah tampil.
+
+## ADR-019 — Lisensi `MIT OR Apache-2.0`
+**Status:** Diterima (menutup pertanyaan terbuka PRD §10).
+
+Lisensi ganda konvensi ekosistem Rust: kompatibel dengan GPUI Kit (Apache-2.0) dan dependency umum,
+serta memberi pengguna pilihan. File `LICENSE-MIT` dan `LICENSE-APACHE` ada di root. Setiap crate
+menulis `license.workspace = true`.
+
+## ADR-020 — Fase 1 dimulai dengan verifikasi Fase 0 yang masih terbuka
+**Status:** Diterima.
+
+Dua item Fase 0 belum bisa diverifikasi otomatis dan menunggu tangan manusia:
+- IME Jepang, karena IME Microsoft menolak input sintetis;
+- fallback Windows 10, karena butuh VM.
+
+Keduanya tidak memblokir Fase 1. Jalur kode IME sama dengan yang dipakai Zed (IMM32 GPUI), dan fallback
+Win10 sudah punya cabang `Opaque`.
+
+Risiko diterima. Keduanya tetap tercatat di ROADMAP dan wajib lulus sebelum rilis (Fase 8). Target
+`i686` ditunda sampai `sx-picker-shim` benar-benar dibangun (Fase 6).
 
 ---
 
