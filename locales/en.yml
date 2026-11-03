@@ -9,6 +9,7 @@ tab:
   new: New tab
   close: Close tab
 nav:
+  unpin: Unpin from sidebar
   shell_unknown: "Windows doesn't know shell:%{name}. Check the name, like shell:Downloads or shell:startup."
   pins_locked: Pinned folders are locked. Turn off sidebar.pins_locked to change them.
   pin: Pin to sidebar

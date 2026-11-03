@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use gpui_kit::component::input::Input;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -19,6 +20,7 @@ use rust_i18n::t;
 use sx_core::Location;
 use sx_theme::Token;
 
+use crate::actions::WORKSPACE_CONTEXT;
 use crate::format;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -206,6 +208,11 @@ impl Workspace {
             .text_color(t.color(Token::ButtonGhostFg))
             .hover(move |s| s.bg(hover).text_color(hover_fg))
             .active(move |s| s.bg(pressed).text_color(hover_fg))
+            .tooltip(|window, cx| {
+                Tooltip::new(SharedString::from(t!("tab.new")))
+                    .action(&crate::actions::TabNew, Some(WORKSPACE_CONTEXT))
+                    .build(window, cx)
+            })
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.open_tab(Location::Home, cx);
             }))
@@ -274,6 +281,27 @@ impl Workspace {
             })
     }
 
+    /// The name and shortcut shown over an icon button (icon-only controls need a text name).
+    fn nav_tooltip(&self, id: &str) -> (SharedString, Option<Box<dyn gpui_kit::Action>>) {
+        use crate::actions::{NavBack, NavForward, NavRefresh, NavUp, SidebarPin, TabNew};
+        let pinned = self
+            .tab()
+            .location()
+            .as_path()
+            .is_some_and(|p| self.is_pinned(p));
+        let (key, action): (&str, Box<dyn gpui_kit::Action>) = match id {
+            "nav-back" => ("nav.back", Box::new(NavBack)),
+            "nav-forward" => ("nav.forward", Box::new(NavForward)),
+            "nav-up" => ("nav.up", Box::new(NavUp)),
+            "nav-refresh" => ("nav.refresh", Box::new(NavRefresh)),
+            "nav-pin" if pinned => ("nav.unpin", Box::new(SidebarPin)),
+            "nav-pin" => ("nav.pin", Box::new(SidebarPin)),
+            "tab-new" => ("tab.new", Box::new(TabNew)),
+            _ => return (SharedString::default(), None),
+        };
+        (t!(key).into(), Some(action))
+    }
+
     fn nav_button(
         &self,
         id: &'static str,
@@ -288,6 +316,7 @@ impl Workspace {
             t.paint(Token::ButtonGhostBgPressed),
             t.color(Token::ButtonGhostFgHover),
         );
+        let (label, action) = self.nav_tooltip(id);
         div()
             .id(id)
             .flex()
@@ -297,6 +326,14 @@ impl Workspace {
             .size(t.px(Token::SizeControl))
             .rounded(t.px(Token::RadiusSm))
             .text_color(t.color(Token::ButtonGhostFg))
+            .tooltip(move |window, cx| {
+                let tip = Tooltip::new(label.clone());
+                match &action {
+                    Some(action) => tip.action(action.as_ref(), Some(WORKSPACE_CONTEXT)),
+                    None => tip,
+                }
+                .build(window, cx)
+            })
             .when(!enabled, |el| el.opacity(t.number(Token::OpacityDisabled)))
             .when(enabled, |el| {
                 el.hover(move |s| s.bg(hover).text_color(hover_fg))
