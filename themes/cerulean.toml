@@ -72,6 +72,10 @@ mono = ["Cascadia Mono", "Consolas"]
 "size.control" = 32
 "size.icon" = 20
 "size.icon_sm" = 16
+"size.osd_height" = 56
+"size.osd_min_width" = 280
+"size.osd_max_width" = 420
+"size.osd_offset" = 72
 "focus.ring_width" = 2
 "opacity.disabled" = 0.4
 

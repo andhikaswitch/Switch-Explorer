@@ -258,6 +258,11 @@ define_tokens! {
     SizeControl = "size.control": Number,
     SizeIcon = "size.icon": Number,
     SizeIconSm = "size.icon_sm": Number,
+    // The Hot Switch OSD (DESIGN.md §9.1): height, width range, distance above the status bar.
+    SizeOsdHeight = "size.osd_height": Number,
+    SizeOsdMinWidth = "size.osd_min_width": Number,
+    SizeOsdMaxWidth = "size.osd_max_width": Number,
+    SizeOsdOffset = "size.osd_offset": Number,
     FocusRingWidth = "focus.ring_width": Number,
     // Opacity of disabled controls (0..1).
     OpacityDisabled = "opacity.disabled": Number,

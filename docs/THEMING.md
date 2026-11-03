@@ -56,7 +56,7 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Bayangan | `shadow.card`, `shadow.popover`, `shadow.dialog`, `shadow.glow` | Shadow |
 | Angka | `radius.*`, `space.*`, `row.height.*`, `row.cut.opacity`, `slash.angle_deg`, `slash.edge_width`, `motion.*` | Number |
 | Tipografi | `font.size.{caption,body,subtitle,title,display}`, `font.line.{…}` (px, DESIGN §4) | Number |
-| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `focus.ring_width`, `opacity.disabled` | Number |
+| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `size.osd_{height,min_width,max_width,offset}` (OSD Hot Switch, DESIGN §9.1), `focus.ring_width`, `opacity.disabled` | Number |
 | Font | `font.ui`, `font.display`, `font.mono` (daftar fallback), `font.scale` | Font/Number |
 
 Setiap token dideklarasikan sekali di `sx-theme` lewat `define_tokens!` (id, tipe, grup, deskripsi i18n,
@@ -167,6 +167,10 @@ mono = ["Cascadia Mono", "Consolas"]
 "size.control" = 32
 "size.icon" = 20
 "size.icon_sm" = 16
+"size.osd_height" = 56
+"size.osd_min_width" = 280
+"size.osd_max_width" = 420
+"size.osd_offset" = 72
 "focus.ring_width" = 2
 "opacity.disabled" = 0.4
 
