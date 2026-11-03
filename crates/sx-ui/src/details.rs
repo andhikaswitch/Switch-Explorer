@@ -27,9 +27,10 @@ use crate::workspace::Workspace;
 const COL_MODIFIED: f32 = 160.0;
 const COL_TYPE: f32 = 140.0;
 const COL_SIZE: f32 = 96.0;
-/// Narrow windows drop Type, then Modified (DESIGN.md §8.8).
-const HIDE_TYPE_BELOW: f32 = 760.0;
-const HIDE_MODIFIED_BELOW: f32 = 600.0;
+/// Narrow content areas drop Type, then Modified (DESIGN.md §8.8): Name keeps at least room
+/// for a readable file name next to the other columns.
+const HIDE_TYPE_BELOW: f32 = 640.0;
+const HIDE_MODIFIED_BELOW: f32 = 480.0;
 
 #[derive(Clone, Copy)]
 struct Columns {
@@ -165,7 +166,12 @@ impl Workspace {
 
     fn render_details(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = cx.tokens();
-        let columns = Columns::for_width(window.viewport_size().width);
+        let sidebar = if self.sidebar_visible {
+            t.px(Token::SizeSidebar)
+        } else {
+            gpui_kit::px(0.0)
+        };
+        let columns = Columns::for_width(window.viewport_size().width - sidebar);
         let count = self.tab().row_count();
         let focused = self.list_focus.is_focused(window);
         let list = div()

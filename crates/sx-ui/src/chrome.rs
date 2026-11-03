@@ -23,6 +23,9 @@ use crate::format;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
 
+/// Segments kept at the end of a collapsed breadcrumb (plus the first one).
+const BREADCRUMB_KEEP: usize = 3;
+
 /// Caption buttons are 46 px wide on a 40 px title bar, as in Windows 11.
 const CAPTION_WIDTH_RATIO: f32 = 1.15;
 
@@ -200,7 +203,7 @@ impl Workspace {
             .size(control)
             .mb(t.px(Token::SpaceXxs))
             .rounded(t.px(Token::RadiusSm))
-            .text_color(t.color(Token::TabFg))
+            .text_color(t.color(Token::ButtonGhostFg))
             .hover(move |s| s.bg(hover).text_color(hover_fg))
             .active(move |s| s.bg(pressed).text_color(hover_fg))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -293,7 +296,7 @@ impl Workspace {
             .justify_center()
             .size(t.px(Token::SizeControl))
             .rounded(t.px(Token::RadiusSm))
-            .text_color(t.color(Token::FgSecondary))
+            .text_color(t.color(Token::ButtonGhostFg))
             .when(!enabled, |el| el.opacity(t.number(Token::OpacityDisabled)))
             .when(enabled, |el| {
                 el.hover(move |s| s.bg(hover).text_color(hover_fg))
@@ -338,7 +341,14 @@ impl Workspace {
     /// `This PC › Local Disk (C:) › Users › Raka`; the last segment is the current folder.
     fn breadcrumb(&self, cx: &Context<Self>) -> Vec<AnyElement> {
         let t = cx.tokens();
-        let segments = self.segments();
+        let mut segments: Vec<Option<(SharedString, Location)>> =
+            self.segments().into_iter().map(Some).collect();
+        if segments.len() > BREADCRUMB_KEEP + 1 {
+            let tail = segments.split_off(segments.len() - BREADCRUMB_KEEP);
+            segments.truncate(1);
+            segments.push(None);
+            segments.extend(tail);
+        }
         let last = segments.len().saturating_sub(1);
         let (fg, current_fg, hover, separator) = (
             t.color(Token::BreadcrumbFg),
@@ -347,7 +357,7 @@ impl Workspace {
             t.color(Token::BreadcrumbSeparator),
         );
         let mut out = Vec::with_capacity(segments.len() * 2);
-        for (ix, (label, location)) in segments.into_iter().enumerate() {
+        for (ix, segment) in segments.into_iter().enumerate() {
             if ix > 0 {
                 out.push(
                     Icon::new(IconName::ChevronRight)
@@ -357,6 +367,25 @@ impl Workspace {
                         .into_any_element(),
                 );
             }
+            let Some((label, location)) = segment else {
+                // The collapsed middle: clicking it shows the whole path to edit.
+                out.push(
+                    div()
+                        .id("crumb-more")
+                        .flex_none()
+                        .px(t.px(Token::SpaceSm))
+                        .rounded(t.px(Token::RadiusXs))
+                        .text_color(fg)
+                        .hover(move |s| s.bg(hover))
+                        .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.edit_address(window, cx);
+                        }))
+                        .child("…")
+                        .into_any_element(),
+                );
+                continue;
+            };
             out.push(
                 div()
                     .id(ElementId::NamedInteger("crumb".into(), ix as u64))
