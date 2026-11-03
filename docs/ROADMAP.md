@@ -80,6 +80,9 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
 - [ ] Grid/gallery + thumbnail dua pass; preview pane (gambar/teks + spike preview handler); details pane;
       Quick Look (`Space`).
 - [ ] Filter instan + pencarian rekursif + integrasi Everything.
+      Progres: mesin pencarian rekursif di `sx-search` (operator `ext:`, `size:`, `modified:`, `kind:`,
+      wildcard, frasa berkutip; hasil streaming, batal, link tidak diikuti, folder tak terbaca dilewati).
+      Belum: kotak cari + kolom Path di UI, filter instan, Everything.
 - [ ] Split view, session restore, mode tampilan per folder, checkbox seleksi, floating action bar.
 - [ ] Home dashboard (gauge, kategori pintar, pinned, terbaru, aktivitas); halaman Aktivitas; Recycle Bin view.
 - [ ] Properties (`Alt+Enter`), copy path, buka terminal/VS Code, mode baca-saja, elevasi via `IFileOperation`.

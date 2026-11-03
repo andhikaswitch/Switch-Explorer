@@ -1,0 +1,221 @@
+//! Recursive search under a folder (FEATURES.md F-SRCH-02): results stream out in batches while
+//! the walk goes on, and it stops as soon as it is cancelled (the query changed).
+//!
+//! Links (junctions, symlinks) are listed but not followed, so a walk cannot loop or wander to
+//! another drive. A folder that cannot be read is counted and skipped; the rest is searched.
+//! Blocking: run it on a background thread.
+
+use std::ffi::OsString;
+use std::ops::ControlFlow;
+use std::os::windows::ffi::OsStringExt as _;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use sx_core::EntryKind;
+
+use crate::query::{Candidate, Query};
+
+/// One match.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hit {
+    pub path: PathBuf,
+    pub kind: EntryKind,
+    pub size: u64,
+    /// FILETIME ticks of the last write.
+    pub modified: i64,
+}
+
+/// How a walk went.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Stats {
+    pub folders: usize,
+    pub entries: usize,
+    pub hits: usize,
+    /// Folders that could not be read (access denied, gone meanwhile).
+    pub skipped: usize,
+    pub cancelled: bool,
+}
+
+/// Options of a walk.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WalkOptions {
+    /// List hidden and system items too (`view.show_hidden`, `view.show_system`).
+    pub hidden: bool,
+}
+
+const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
+
+/// Searches `root` and every folder below it, depth first, handing matches to `sink` in
+/// batches. `now` is the current FILETIME (for `modified:`). `sink` returning `Break`, or
+/// `cancel` being set, stops the walk.
+pub fn search(
+    root: &Path,
+    query: &Query,
+    options: WalkOptions,
+    now: i64,
+    cancel: &AtomicBool,
+    mut sink: impl FnMut(&[Hit]) -> ControlFlow<()>,
+) -> Stats {
+    let mut stats = Stats::default();
+    let mut pending = vec![root.to_path_buf()];
+    let mut batch: Vec<Hit> = Vec::new();
+    let mut stop = false;
+    while let Some(dir) = pending.pop() {
+        if cancel.load(Ordering::Relaxed) || stop {
+            stats.cancelled = true;
+            break;
+        }
+        stats.folders += 1;
+        let mut children = Vec::new();
+        let listed = sx_win::enumerate(&dir, |entries| {
+            for entry in entries {
+                stats.entries += 1;
+                let hidden = entry.attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0;
+                if hidden && !options.hidden {
+                    continue;
+                }
+                // Lossy names are matched as shown, but their path keeps the exact name.
+                let path = match &entry.exact {
+                    Some(exact) => dir.join(OsString::from_wide(exact)),
+                    None => dir.join(&entry.name),
+                };
+                if entry.kind == EntryKind::Dir {
+                    children.push(path.clone());
+                }
+                let candidate = Candidate {
+                    name: &entry.name,
+                    is_folder: entry.kind.is_container(),
+                    size: entry.size,
+                    modified: entry.modified,
+                };
+                if query.matches(&candidate, now) {
+                    stats.hits += 1;
+                    batch.push(Hit {
+                        path,
+                        kind: entry.kind,
+                        size: entry.size,
+                        modified: entry.modified,
+                    });
+                }
+            }
+            // Hand out what this chunk found, so results show while the walk goes on.
+            if !batch.is_empty() {
+                if sink(&batch).is_break() {
+                    stop = true;
+                }
+                batch.clear();
+            }
+            if stop || cancel.load(Ordering::Relaxed) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        });
+        if listed.is_err() {
+            stats.skipped += 1;
+        }
+        // Depth first in listing order: the last child pushed is walked first, so push them
+        // reversed to walk them in name order.
+        pending.extend(children.into_iter().rev());
+    }
+    if !batch.is_empty() && !stop {
+        let _ = sink(&batch);
+    }
+    stats.cancelled |= cancel.load(Ordering::Relaxed) || stop;
+    stats
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    fn tree() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("docs").join("2026")).unwrap();
+        fs::create_dir_all(root.join("music")).unwrap();
+        fs::write(root.join("readme.txt"), b"x").unwrap();
+        fs::write(root.join("docs").join("plan.pdf"), vec![0u8; 4096]).unwrap();
+        fs::write(root.join("docs").join("2026").join("report.pdf"), b"x").unwrap();
+        fs::write(root.join("music").join("song.mp3"), b"x").unwrap();
+        dir
+    }
+
+    fn names(root: &Path, query: &str) -> (Vec<String>, Stats) {
+        let query = Query::parse(query).unwrap();
+        let mut out = Vec::new();
+        let stats = search(
+            root,
+            &query,
+            WalkOptions::default(),
+            i64::MAX,
+            &AtomicBool::new(false),
+            |hits| {
+                out.extend(hits.iter().map(|h| {
+                    h.path
+                        .strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                }));
+                ControlFlow::Continue(())
+            },
+        );
+        out.sort();
+        (out, stats)
+    }
+
+    #[test]
+    fn finds_matches_at_every_depth() {
+        let dir = tree();
+        let (found, stats) = names(dir.path(), "ext:pdf");
+        assert_eq!(found, ["docs/2026/report.pdf", "docs/plan.pdf"]);
+        assert_eq!(stats.folders, 4);
+        assert!(!stats.cancelled);
+        let (found, _) = names(dir.path(), "kind:folder");
+        assert_eq!(found, ["docs", "docs/2026", "music"]);
+        let (found, _) = names(dir.path(), "size:>1kb");
+        assert_eq!(found, ["docs/plan.pdf"]);
+    }
+
+    #[test]
+    fn cancel_and_break_stop_the_walk() {
+        let dir = tree();
+        let query = Query::parse("*").unwrap();
+        let cancel = AtomicBool::new(true);
+        let stats = search(
+            dir.path(),
+            &query,
+            WalkOptions::default(),
+            i64::MAX,
+            &cancel,
+            |_| ControlFlow::Continue(()),
+        );
+        assert!(stats.cancelled && stats.folders == 0);
+        let mut batches = 0;
+        let stats = search(
+            dir.path(),
+            &query,
+            WalkOptions::default(),
+            i64::MAX,
+            &AtomicBool::new(false),
+            |_| {
+                batches += 1;
+                ControlFlow::Break(())
+            },
+        );
+        assert!(stats.cancelled);
+        assert_eq!(batches, 1);
+    }
+
+    #[test]
+    fn a_missing_root_is_skipped_not_fatal() {
+        let dir = tempfile::tempdir().unwrap();
+        let (found, stats) = names(&dir.path().join("nope"), "*");
+        assert_eq!(found, Vec::<String>::new());
+        assert_eq!(stats.skipped, 1);
+    }
+}
