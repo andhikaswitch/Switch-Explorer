@@ -21,6 +21,17 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   Pinned, drive + gauge, Recycle Bin), details view tervirtualisasi dengan sort, seleksi keyboard,
   type-to-select, buka file/folder, status bar; ikut light/dark dan transparansi Windows; i18n en + id.
 - Tombol, item sidebar, dan kartu menyala dengan gradien biru muda saat disorot (DESIGN §11).
+- Tide Slash berbentuk sungguhan (sisi kiri miring 12° + garis `accent.edge`) untuk item sidebar aktif;
+  indikator tab aktif miring.
+- Single instance: peluncuran berikutnya meneruskan path ke window yang sudah terbuka (named pipe per user).
+- Operasi file: Delete ke Recycle Bin (dengan konfirmasi), hapus permanen dengan konfirmasi, rename inline
+  F2, folder baru, copy/cut/paste yang interop dengan File Explorer, sheet konflik (Ganti, Lewati, Simpan
+  keduanya, Ganti jika lebih baru), progress + batal, toast Urungkan, undo/redo, journal write-ahead,
+  laporan operasi yang terputus, panel Transfer (`Ctrl+J`), salin path (`Ctrl+Shift+C`).
+- Watcher folder: daftar diperbarui sendiri saat isi folder berubah.
+- Ikon sistem di daftar (cache terbatas `perf.icon_cache_entries`).
+- Pin/unpin folder di sidebar; nama `shell:` dan `~` di address bar.
+- ADR-021 (engine operasi file Fase 1), ADR-022 (watcher muat ulang debounce).
 - Gerbang kontras mencakup lapisan di bawah latar dan 27 kelompok pasangan, termasuk indikator non-teks
   3:1 (THEMING §11).
 
@@ -32,3 +43,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Cerulean: `fg.muted` light lebih gelap dan dark lebih terang, `selection.border` lebih pekat,
   `drop_target.border` light memakai 700, indikator light (toggle, slider, progress, tab aktif) memakai
   `accent.solid`, chip status light memakai `pal.accent.800`/`#92400E`.
+- Cerulean: `border.input` light `#72869E` (3:1 di atas command bar).
+- Path Win32 selalu verbatim dan dinormalisasi; path relatif ditolak; nama lossy memakai nama asli
+  (SYSTEM-INTEGRATION §15).
+- Pesan error menyebut penyebab + solusi (drive belum siap, jaringan, tidak ada aplikasi, file dipakai).

@@ -37,6 +37,19 @@ untuk Switch Explorer dan Explorer.
 | Scroll 100k, p99 | 7.0–7.7 ms |
 | Ukuran exe | 21.75 MB |
 
+**Baseline Fase 1** (aplikasi lengkap, iGPU, 165 Hz, release; rinci di `docs/benchmarks/phase1.md`):
+
+| Metrik | Terukur |
+|---|---|
+| Folder 10k → baris pertama | 24,6–32,8 ms |
+| `main` → frame berisi baris | 207–304 ms (median 260 ms) |
+| Idle Home / folder 10k | 39,2 / 42,0 MB |
+| Ukuran exe | 23,26 MB |
+
+Aturan dari Fase 1: jangan pakai path GPUI (`paint_path`) di chrome yang selalu terlihat. Path pertama
+membuat tekstur MSAA seukuran window terpakai (+~29 MB di iGPU). Bentuk khusus dirasterisasi di CPU lalu
+dilukis sebagai gambar.
+
 Budget di atas tetap berlaku. Dua catatan:
 - **CPU idle 0% belum tercapai:** thread vsync GPUI mengirim `RedrawWindow` tiap refresh, terukur
   ~2–3% satu core di 165 Hz. Ini dikecualikan sampai ada perbaikan upstream.

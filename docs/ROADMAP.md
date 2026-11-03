@@ -38,20 +38,30 @@ Hasil: [`docs/benchmarks/phase0.md`](benchmarks/phase0.md). Rekomendasi: **GO de
 
 ## Fase 1 — Fondasi & explorer MVP
 
-- [ ] Workspace + semua crate kosong sesuai ARCHITECTURE.md; `xtask` (fixtures, cleanup-registry); CI
+- [x] Workspace + semua crate kosong sesuai ARCHITECTURE.md; `xtask` (fixtures, cleanup-registry); CI
       (fmt, clippy, test) di `windows-latest`.
-- [ ] `sx-settings`: `define_flags!`, snapshot, persistensi `settings.toml` (atomic), lapisan sesi, `--set`.
-- [ ] `sx-theme`: parser, OKLCH, palet, resolver, validator; `themes/cerulean.toml` dari THEMING.md §5;
-      CI memeriksa kontras tema bawaan.
-- [ ] Window: title bar + tab, Mica Alt, ikut light/dark sistem, single instance + `OpenPaths`.
-- [ ] Sidebar: Home (placeholder), Pinned (pin/unpin), This PC + gauge, Recycle Bin (buka di Explorer dulu).
-- [ ] Details view tervirtualisasi: kolom Nama/Diubah/Tipe/Ukuran, sort, folders-first, natural sort.
-- [ ] Navigasi back/forward/up, breadcrumb, address bar (path, `%VAR%`, `shell:`), type-to-select.
-- [ ] Ikon sistem + cache; watcher dengan update inkremental.
-- [ ] Buka file (`ShellExecuteEx`); copy/cut/paste (interop clipboard Explorer), delete ke Recycle Bin, rename F2,
+- [x] `sx-settings`: `define_flags!`, snapshot, persistensi `settings.toml` (atomic), lapisan sesi, `--set`.
+- [x] `sx-theme`: parser, OKLCH, palet, resolver, validator; `themes/cerulean.toml` dari THEMING.md §5;
+      CI memeriksa kontras tema bawaan (termasuk sapuan 36 aksen).
+- [x] Window: title bar + tab, Mica Alt, ikut light/dark sistem, single instance + `OpenPaths`.
+- [x] Sidebar: Home (placeholder), Pinned (pin/unpin lewat bintang di command bar, `pins.json`), This PC +
+      gauge, Recycle Bin (buka di Explorer dulu).
+- [x] Details view tervirtualisasi: kolom Nama/Diubah/Tipe/Ukuran, sort, folders-first, natural sort.
+- [x] Navigasi back/forward/up, breadcrumb, address bar (path, relatif, `%VAR%`, `~`, `shell:`),
+      type-to-select.
+- [x] Ikon sistem + cache; watcher. Catatan: watcher memuat ulang folder secara debounce (250 ms) sambil
+      mempertahankan daftar dan seleksi, belum diff inkremental per entri.
+- [x] Buka file (`ShellExecuteEx`); copy/cut/paste (interop clipboard Explorer), delete ke Recycle Bin, rename F2,
       folder baru; progress toast + panel Transfer dasar; sheet konflik; undo/redo + journal + pemulihan crash.
-- [ ] i18n `en` + `id`; status bar (jumlah, seleksi, sisa ruang).
-- [ ] Budget: cold start ≤ 300 ms, folder 10k baris pertama ≤ 50 ms, RAM idle dicatat.
+      Catatan: copy memakai `std::fs::copy` (CopyFileEx) dengan progress per item; `CopyFile2` dengan
+      progress byte dan pause menyusul (ADR-021).
+- [x] i18n `en` + `id`; status bar (jumlah, seleksi, sisa ruang).
+- [x] Budget: cold start ≤ 300 ms, folder 10k baris pertama ≤ 50 ms, RAM idle dicatat
+      (`docs/benchmarks/phase1.md`).
+
+Belum termasuk Fase 1, dicatat untuk Fase 2 (temuan review): navigasi keyboard di luar daftar (F6, fokus
+tombol/tab/sidebar), tooltip tombol ikon, nama tampilan shell untuk folder pinned, collapse breadcrumb
+panjang, kolom yang bisa diubah lebarnya, progress taskbar.
 
 ## Fase 2 — Paritas Explorer + Drag Guard + Hot Switch
 

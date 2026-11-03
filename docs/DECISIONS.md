@@ -215,6 +215,46 @@ Risiko diterima. Keduanya tetap tercatat di ROADMAP dan wajib lulus sebelum rili
 
 ---
 
+## ADR-021 — Engine operasi file Fase 1: `std::fs` + shell, tanpa `IFileOperation` untuk copy/move
+
+**Status:** Diterima (Fase 1). Ditinjau ulang di Fase 2.
+
+`sx-ops` menjalankan rename, folder baru, copy, dan move lewat `std::fs`:
+- Copy memakai `std::fs::copy` (`CopyFileExW`).
+- Move dalam volume yang sama memakai `rename`. Move antar volume memakai copy → cek ukuran → hapus sumber.
+
+Recycle Bin dan restore lewat shell (`IFileOperation` + enumerasi Recycle Bin).
+
+Alasan:
+- Kebijakan konflik, journal, undo, dan cancel harus milik kita (`.claude/rules/file-ops-safety.md`).
+  `IFileOperation` membawa dialog konflik dan progress-nya sendiri.
+- Engine bisa dites tanpa COM, cukup dengan `Trash` palsu di folder sementara.
+
+Konsekuensi:
+- Progress dilaporkan per item, belum per byte.
+- Pause dan "Lanjutkan sebagai admin" (F-OPS-08) belum ada.
+- `CopyFile2` dengan callback progress dan cancel, serta `IFileOperation` khusus untuk elevasi, masuk Fase 2.
+
+Replace tidak pernah menimpa. Item lama dipindah ke Recycle Bin dulu, sehingga undo bisa memulihkannya.
+Setiap recycle membawa cap waktu, dan restore memilih item paling awal yang dihapus sejak cap itu. Dengan
+begitu, undo Replace mengembalikan item yang benar walau path yang sama ada dua kali di Recycle Bin.
+
+## ADR-022 — Watcher: muat ulang debounce, bukan diff inkremental
+
+**Status:** Diterima (Fase 1).
+
+`FindFirstChangeNotificationW` per tab hanya memberi tahu "ada perubahan". Folder dimuat ulang
+setelah 250 ms tenang. Daftar lama tetap tampil sampai yang baru siap, dan seleksi serta fokus
+dipertahankan berdasarkan nama.
+
+Alasannya, pendekatan ini sederhana, benar untuk semua jenis perubahan, dan murah (10k entri ≈ 20 ms
+di release).
+
+Diff inkremental lewat `ReadDirectoryChangesW` baru dikerjakan kalau pengukuran pada folder besar yang
+sering berubah menunjukkan perlu.
+
+---
+
 ## Template ADR
 
 ```markdown

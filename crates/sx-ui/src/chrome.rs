@@ -20,7 +20,6 @@ use sx_core::Location;
 use sx_theme::Token;
 
 use crate::format;
-use crate::slash;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
 
@@ -177,10 +176,8 @@ impl Workspace {
                         .left(t.px(Token::SpaceLg))
                         .right(t.px(Token::SpaceLg))
                         .h(t.px(Token::SizeTabIndicator))
-                        .child(slash::slanted_bar(
-                            t.paint(Token::TabActiveIndicator),
-                            t.number(Token::SlashAngleDeg),
-                        )),
+                        .rounded(t.px(Token::RadiusXs))
+                        .bg(t.paint(Token::TabActiveIndicator)),
                 )
             })
     }

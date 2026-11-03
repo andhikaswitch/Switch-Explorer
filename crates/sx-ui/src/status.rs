@@ -15,15 +15,8 @@ impl Workspace {
         let mut left: Vec<SharedString> = Vec::new();
         if let Some(snapshot) = tab.snapshot() {
             left.push(format::item_count(snapshot.visible_len()));
-            let count = tab.selection.len();
+            let (count, bytes) = tab.selection_summary();
             if count > 0 {
-                let bytes: u64 = tab
-                    .selection
-                    .iter()
-                    .filter_map(|row| snapshot.row(row as usize))
-                    .filter(|e| !e.kind.is_container())
-                    .map(|e| e.size)
-                    .sum();
                 let mut text = format::selected_count(count).to_string();
                 if bytes > 0 {
                     text.push_str(" (");

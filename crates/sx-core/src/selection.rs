@@ -7,6 +7,8 @@ pub struct Selection {
     items: BTreeSet<u32>,
     anchor: Option<u32>,
     focus: Option<u32>,
+    /// Bumped on every change, so views can cache what they derive from the selection.
+    revision: u64,
 }
 
 impl Selection {
@@ -22,6 +24,10 @@ impl Selection {
         self.items.contains(&ix)
     }
 
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
     pub fn focus(&self) -> Option<u32> {
         self.focus
     }
@@ -32,6 +38,7 @@ impl Selection {
 
     /// Plain click: only `ix` is selected and becomes the anchor.
     pub fn select_only(&mut self, ix: u32) {
+        self.revision += 1;
         self.items.clear();
         self.items.insert(ix);
         self.anchor = Some(ix);
@@ -40,6 +47,7 @@ impl Selection {
 
     /// Ctrl+click / Ctrl+Space: flip `ix`, which becomes the new anchor.
     pub fn toggle(&mut self, ix: u32) {
+        self.revision += 1;
         if !self.items.remove(&ix) {
             self.items.insert(ix);
         }
@@ -50,6 +58,7 @@ impl Selection {
     /// Shift+click: the range from the anchor to `ix` replaces the selection; with Ctrl it is
     /// added to it. Without an anchor this behaves like a plain click.
     pub fn extend_to(&mut self, ix: u32, additive: bool) {
+        self.revision += 1;
         let Some(anchor) = self.anchor else {
             self.select_only(ix);
             return;
@@ -67,11 +76,13 @@ impl Selection {
     }
 
     pub fn select_all(&mut self, len: u32) {
+        self.revision += 1;
         self.items = (0..len).collect();
         self.anchor = (len > 0).then_some(0);
     }
 
     pub fn clear(&mut self) {
+        self.revision += 1;
         self.items.clear();
         self.anchor = None;
         self.focus = None;
@@ -80,12 +91,14 @@ impl Selection {
     /// Moves the keyboard focus without changing what is selected (`Ctrl+↑/↓`); the next
     /// `Shift` extension starts from here.
     pub fn move_focus(&mut self, ix: u32) {
+        self.revision += 1;
         self.focus = Some(ix);
         self.anchor = Some(ix);
     }
 
     /// Replaces the selection with `items` (after a re-sort or a refresh), focusing `focus`.
     pub fn restore(&mut self, items: impl IntoIterator<Item = u32>, focus: Option<u32>) {
+        self.revision += 1;
         self.items = items.into_iter().collect();
         self.focus = focus;
         self.anchor = focus;

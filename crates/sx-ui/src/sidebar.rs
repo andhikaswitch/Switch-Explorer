@@ -217,13 +217,13 @@ impl Workspace {
                 }
                 el.text_color(active_fg)
                     .shadow(glow)
-                    .child(slash::tide_slash(
-                        t.paint(Token::NavItemActiveBg),
-                        t.color(Token::NavItemActiveEdge),
-                        t.number(Token::SlashAngleDeg),
-                        t.px(Token::RadiusSm),
-                        t.px(Token::SlashEdgeWidth),
-                    ))
+                    .child(slash::tide_slash(slash::Slash {
+                        fill: t.resolved().paint(Token::NavItemActiveBg).clone(),
+                        edge: t.resolved().color(Token::NavItemActiveEdge),
+                        angle_deg: t.number(Token::SlashAngleDeg),
+                        radius: t.number(Token::RadiusSm),
+                        edge_width: t.number(Token::SlashEdgeWidth),
+                    }))
             })
             .when(!active, |el| {
                 el.text_color(if lit { hover_fg } else { fg })

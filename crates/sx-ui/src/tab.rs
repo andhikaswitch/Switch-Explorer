@@ -53,6 +53,8 @@ pub struct Tab {
     pub rename_after_load: Option<String>,
     /// An item just renamed here: select it once it is listed.
     pub reveal_after_refresh: Option<String>,
+    /// (selection revision, listing identity) → (selected count, bytes of selected files).
+    selection_summary: Cell<Option<(u64, usize, usize, u64)>>,
 }
 
 impl Tab {
@@ -73,6 +75,7 @@ impl Tab {
             watcher: None,
             rename_after_load: None,
             reveal_after_refresh: None,
+            selection_summary: Cell::new(None),
         }
     }
 
@@ -111,6 +114,33 @@ impl Tab {
     pub fn set_snapshot(&mut self, snapshot: Arc<DirSnapshot>) {
         self.rows.borrow_mut().clear();
         self.content = Content::Folder(snapshot);
+    }
+
+    /// Selected count and the bytes of the selected files, computed once per selection change
+    /// (the status bar asks every frame; Ctrl+A in a 100k folder must not walk 100k rows each time).
+    pub fn selection_summary(&self) -> (usize, u64) {
+        let Some(snapshot) = self.snapshot() else {
+            return (0, 0);
+        };
+        let listing = Arc::as_ptr(snapshot) as usize;
+        let revision = self.selection.revision();
+        if let Some((rev, list, count, bytes)) = self.selection_summary.get()
+            && rev == revision
+            && list == listing
+        {
+            return (count, bytes);
+        }
+        let bytes = self
+            .selection
+            .iter()
+            .filter_map(|row| snapshot.row(row as usize))
+            .filter(|e| !e.kind.is_container())
+            .map(|e| e.size)
+            .sum();
+        let count = self.selection.len();
+        self.selection_summary
+            .set(Some((revision, listing, count, bytes)));
+        (count, bytes)
     }
 
     pub fn clear_row_cache(&self) {

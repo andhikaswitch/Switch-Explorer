@@ -13,7 +13,10 @@ gaya highlight.
 
 1. **File adalah pemeran utama.** Chrome (title bar, sidebar, toolbar) mundur; daftar file maju.
 2. **Satu signature: Tide Slash.** Highlight Lagoon miring 12° dengan glow Cerulean, khusus untuk penanda
-   lokasi/aktif. Karena hanya dipakai di situ, artinya selalu "kamu di sini".
+   lokasi/aktif. Karena bentuknya (sisi kiri terpotong miring + garis `accent.edge` + glow) hanya dipakai
+   di situ, artinya selalu "kamu di sini". Gradien biru yang sama juga menyala saat kursor di atas tombol,
+   item sidebar, atau kartu (§11), sebagai umpan balik sementara: pill membulat tanpa potongan dan tanpa
+   glow. Yang membedakan "aktif" dari "disorot" adalah bentuk, bukan kecerahan.
 3. **Kaca di tepi, padat di tengah.** Transparansi di title bar dan sidebar; area daftar ≥ 84% opak agar
    teks kecil tetap tajam.
 4. **Gerak hanya menjawab aksi.** Tidak ada animasi ambient; semua menghormati "Animation effects" Windows.
@@ -401,7 +404,7 @@ fade opasitas 80 ms untuk OSD/toast agar tidak terasa patah.
 
 | Do | Don't |
 |---|---|
-| Pakai Tide Slash hanya untuk lokasi/aktif | Menempel gradien biru sebagai dekorasi di mana-mana |
+| Pakai Tide Slash (bentuk miring) hanya untuk lokasi/aktif; gradien boleh menyala saat disorot | Menempel gradien biru sebagai dekorasi diam di mana-mana |
 | Biarkan daftar file padat dan opak | Membuat area daftar transparan sampai teks berbayang |
 | Umumkan setiap perubahan switch (OSD + chip) | Mengubah perilaku diam-diam |
 | Radius bertingkat sesuai hierarki | Satu radius & satu bayangan untuk semua elemen |
