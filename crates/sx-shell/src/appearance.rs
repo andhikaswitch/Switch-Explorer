@@ -2,11 +2,12 @@
 //! `HKCU\...\Themes\Personalize` and watched with `RegNotifyChangeKeyValue`, which fires at once;
 //! `WM_SETTINGCHANGE` arrives ~600 ms late (ARCHITECTURE.md §8.4). Read-only: nothing is written.
 
-use windows::Win32::Foundation::ERROR_SUCCESS;
+use windows::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, WAIT_OBJECT_0};
 use windows::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, KEY_QUERY_VALUE, REG_NOTIFY_CHANGE_LAST_SET,
     RRF_RT_REG_DWORD, RegCloseKey, RegGetValueW, RegNotifyChangeKeyValue, RegOpenKeyExW,
 };
+use windows::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
 use windows::core::{PCWSTR, w};
 
 const PERSONALIZE: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
@@ -87,7 +88,8 @@ pub fn current() -> OsAppearance {
 
 /// Calls `on_change` on a dedicated thread every time the appearance changes, until it returns
 /// `false`. The thread sleeps in the kernel between changes (no polling) and notices that it
-/// should stop when `on_change` says so.
+/// should stop when `on_change` says so. The notification is armed before each read, so a change
+/// made while the previous one is handled is not missed.
 pub fn watch(mut on_change: impl FnMut(OsAppearance) -> bool + Send + 'static) {
     let spawned = std::thread::Builder::new()
         .name("sx-appearance".into())
@@ -96,24 +98,41 @@ pub fn watch(mut on_change: impl FnMut(OsAppearance) -> bool + Send + 'static) {
                 tracing::warn!("appearance watch: cannot open the Personalize key");
                 return;
             };
-            let mut last = key.appearance();
+            // SAFETY: an unnamed auto-reset event, closed below when the thread ends.
+            let Ok(changed) = (unsafe { CreateEventW(None, false, false, PCWSTR::null()) }) else {
+                tracing::warn!("appearance watch: cannot create an event");
+                return;
+            };
+            let mut last = None;
             loop {
-                // SAFETY: synchronous wait on our own key handle, which outlives the call.
+                // SAFETY: arms a one-shot notification on our own key handle, signalling our own
+                // event; both outlive the wait below.
                 let status = unsafe {
-                    RegNotifyChangeKeyValue(key.0, false, REG_NOTIFY_CHANGE_LAST_SET, None, false)
+                    RegNotifyChangeKeyValue(
+                        key.0,
+                        false,
+                        REG_NOTIFY_CHANGE_LAST_SET,
+                        Some(changed),
+                        true,
+                    )
                 };
                 if status != ERROR_SUCCESS {
                     tracing::warn!(?status, "appearance watch stopped");
-                    return;
+                    break;
                 }
                 let now = key.appearance();
-                if now != last {
-                    last = now;
-                    if !on_change(now) {
-                        return;
-                    }
+                if last.is_some_and(|last| last != now) && !on_change(now) {
+                    break;
+                }
+                last = Some(now);
+                // SAFETY: waits on our own event.
+                if unsafe { WaitForSingleObject(changed, INFINITE) } != WAIT_OBJECT_0 {
+                    tracing::warn!("appearance watch wait failed");
+                    break;
                 }
             }
+            // SAFETY: our own event, closed once.
+            let _ = unsafe { CloseHandle(changed) };
         });
     if let Err(err) = spawned {
         tracing::error!(error = %err, "appearance watch thread failed to start");

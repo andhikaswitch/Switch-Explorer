@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{
     FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads, FOLDERID_Music, FOLDERID_Pictures,
-    FOLDERID_Profile, FOLDERID_Videos, KF_FLAG_DEFAULT, SHGetKnownFolderPath,
+    FOLDERID_Profile, FOLDERID_Videos, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
 };
 use windows::core::GUID;
 
@@ -45,12 +45,13 @@ impl KnownFolder {
     }
 }
 
-/// The folder's current path (redirected folders included), or `None` if it does not exist.
+/// The folder's current path (redirected folders included), without checking the disk: a folder
+/// redirected to an offline share would otherwise block startup. `None` when the user has none.
 pub fn known_folder(folder: KnownFolder) -> Option<PathBuf> {
     // SAFETY: the GUID is a static; no token means the current user. On success the returned
     // string is owned by us and freed with CoTaskMemFree below, after copying it.
     unsafe {
-        let raw = SHGetKnownFolderPath(folder.id(), KF_FLAG_DEFAULT, None).ok()?;
+        let raw = SHGetKnownFolderPath(folder.id(), KF_FLAG_DONT_VERIFY, None).ok()?;
         let path = PathBuf::from(OsString::from_wide(raw.as_wide()));
         CoTaskMemFree(Some(raw.as_ptr().cast()));
         Some(path)

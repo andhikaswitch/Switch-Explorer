@@ -34,8 +34,15 @@ pub fn init(dir: Option<&Path>, level: &str) -> LogGuard {
     ));
     let _ = builder.with_writer(writer).try_init();
     let default_hook = std::panic::take_hook();
+    // The location goes to the error log; the message may carry user data (a path), so it is
+    // only logged at debug.
     std::panic::set_hook(Box::new(move |info| {
-        tracing::error!(panic = %info, "panic");
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        tracing::error!(%location, "panic");
+        tracing::debug!(panic = %info, "panic");
         default_hook(info);
     }));
     LogGuard {

@@ -362,7 +362,10 @@ impl Workspace {
             .name("sx-op".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let _com = sx_shell::StaGuard::new();
+                    // Without COM the Recycle Bin calls fail and say so; the rest still runs.
+                    let _com = sx_shell::StaGuard::new().map_err(
+                        |err| tracing::warn!(error = %err, "operation thread without COM"),
+                    );
                     let trash = ShellTrash { owner };
                     let progress_tx = tx.clone();
                     sx_ops::run(&planned, &trash, &cancel, &mut |p: &Progress| {

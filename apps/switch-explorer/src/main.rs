@@ -55,6 +55,7 @@ fn main() -> anyhow::Result<()> {
     );
     for warning in &warnings {
         tracing::warn!(error = %warning, "settings");
+        tracing::debug!(?warning, "settings");
     }
     let server = match single::claim(&args) {
         single::Role::Forwarded => {

@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+/// File errors keep the path as a field, out of the message: the message may be logged at any
+/// level, the path (it contains the user name) only at debug.
 #[derive(Debug, Error)]
 pub enum SettingsError {
     #[error("unknown switch `{0}`")]
@@ -18,16 +20,16 @@ pub enum SettingsError {
     NeedsDeveloperMode(&'static str),
     #[error("`--set` expects id=value, got `{0}`")]
     BadAssignment(String),
-    #[error("cannot read {path}: {source}")]
+    #[error("cannot read the settings file: {source}")]
     Read {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("cannot write {path}: {source}")]
+    #[error("cannot write the settings file: {source}")]
     Write {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("{path} is not valid TOML: {message}")]
+    #[error("the settings file is not valid TOML: {message}")]
     Parse { path: PathBuf, message: String },
 }
