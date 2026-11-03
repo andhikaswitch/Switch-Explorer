@@ -14,7 +14,7 @@ use sx_core::Location;
 use sx_theme::Token;
 use sx_win::Drive;
 
-use crate::focus::{self, Ring, TabStop as _};
+use crate::focus::{self, TabStop as _};
 use crate::format;
 use crate::slash;
 use crate::theme::ActiveTokens as _;
@@ -205,7 +205,7 @@ impl Workspace {
         let focus = self.focus_stop(&focus_key, cx);
         div()
             .id(element_id.clone())
-            .tab_stop_ring(&focus, Ring::plain().highlighted(active || lit), cx)
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
             .flex()
             .items_center()
             .gap(t.px(Token::SpaceMd))

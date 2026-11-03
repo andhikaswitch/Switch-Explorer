@@ -21,7 +21,7 @@ use sx_core::Location;
 use sx_theme::Token;
 
 use crate::actions::WORKSPACE_CONTEXT;
-use crate::focus::{self, Ring, TabStop as _};
+use crate::focus::{self, TabStop as _};
 use crate::format;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -129,7 +129,7 @@ impl Workspace {
         let focus = self.focus_stop(&element, cx);
         div()
             .id(element)
-            .tab_stop_ring(&focus, Ring::plain(), cx)
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusMd)), cx)
             .occlude()
             .relative()
             .flex()
@@ -207,7 +207,7 @@ impl Workspace {
         let focus = self.focus_stop(&ElementId::Name("tab-new".into()), cx);
         div()
             .id("tab-new")
-            .tab_stop_ring(&focus, Ring::plain(), cx)
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
             .occlude()
             .flex()
             .flex_none()
@@ -331,7 +331,9 @@ impl Workspace {
         let focus = self.focus_stop(&ElementId::Name(id.into()), cx);
         div()
             .id(id)
-            .when(enabled, |el| el.tab_stop_ring(&focus, Ring::plain(), cx))
+            .when(enabled, |el| {
+                el.tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
+            })
             .flex()
             .flex_none()
             .items_center()
@@ -423,7 +425,7 @@ impl Workspace {
                 out.push(
                     div()
                         .id("crumb-more")
-                        .tab_stop_ring(&focus, Ring::plain(), cx)
+                        .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusXs)), cx)
                         .flex_none()
                         .px(t.px(Token::SpaceSm))
                         .rounded(t.px(Token::RadiusXs))
@@ -446,7 +448,7 @@ impl Workspace {
             out.push(
                 div()
                     .id(ElementId::NamedInteger("crumb".into(), ix as u64))
-                    .tab_stop_ring(&focus, Ring::plain(), cx)
+                    .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusXs)), cx)
                     .flex_none()
                     .px(t.px(Token::SpaceSm))
                     .rounded(t.px(Token::RadiusXs))

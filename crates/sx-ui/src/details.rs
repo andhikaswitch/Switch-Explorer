@@ -19,7 +19,7 @@ use sx_fs::Column;
 use sx_theme::Token;
 
 use crate::actions::{self, LIST_CONTEXT};
-use crate::focus::{Ring, TabStop as _};
+use crate::focus::TabStop as _;
 use crate::tab::Content;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -229,17 +229,15 @@ impl Workspace {
         let focus = self.focus_stop(&ElementId::Name(id.into()), cx);
         div()
             .id(id)
-            .tab_stop_ring(
-                &focus,
-                Ring::over(t.color(Token::ButtonSecondaryBorder)),
-                cx,
-            )
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
             .flex()
             .items_center()
             .h(t.px(Token::SizeControl))
             .px(t.px(Token::SpaceLg))
             .rounded(t.px(Token::RadiusSm))
             .bg(t.paint(Token::ButtonSecondaryBg))
+            .border_1()
+            .border_color(t.color(Token::ButtonSecondaryBorder))
             .text_color(t.color(Token::ButtonSecondaryFg))
             .hover(move |s| s.bg(hover).text_color(hover_fg).border_color(clear))
             .active(move |s| s.bg(pressed).text_color(hover_fg).border_color(clear))

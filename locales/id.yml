@@ -169,18 +169,34 @@ flag:
 preset:
   anti_drag: anti salah drag
 hotswitch:
+  impact:
+    files_still_on: Drag file tetap aktif.
+    folders_still_on: Drag folder tetap aktif.
+    sidebar_off: Item sidebar tidak bisa di-drag keluar.
+    dnd_off: Tidak ada yang bisa di-drag atau di-drop.
+    dnd_on: Drag kembali mengikuti switch-nya.
+    hidden_on: Item tersembunyi ditampilkan.
+    hidden_off: Item tersembunyi tidak ditampilkan.
+    extensions_on: Nama file menampilkan ekstensinya.
+    extensions_off: Nama file tanpa ekstensi.
+    readonly_on: File tidak bisa diubah di sini.
+    readonly_off: File bisa diubah lagi.
+    pins_locked_on: Folder pinned tidak bisa diubah.
+    pins_locked_off: Folder pinned bisa diubah lagi.
+    external_off: Drag di dalam Switch Explorer tetap bisa.
+  restored: Nilai sebelumnya dikembalikan.
   "on": "%{name} diaktifkan"
   "off": "%{name} dinonaktifkan"
   set: "%{name}: %{value}"
   group_on: "%{name} diaktifkan (%{count} switch)"
   group_off: "%{name} dinonaktifkan (%{count} switch)"
   preset_on: "Preset %{name} aktif (%{count} switch diubah)"
-  preset_off: "Preset %{name} dimatikan. Nilai sebelumnya dikembalikan."
+  preset_off: "Preset %{name} dimatikan"
   again: "Balik lagi: %{keys}"
   blocked: "Tidak berlaku: semua drag sedang mati."
   needs_dev: "%{name} butuh Developer Mode"
-  needs_dev_hint: Aktifkan Developer Mode di Settings dulu.
-  failed: Switch ini tidak bisa diubah.
+  needs_dev_hint: Aktifkan Developer Mode di Pengaturan dulu.
+  failed: "Switch ini tidak bisa diubah sekarang. Buka ulang Switch Explorer lalu coba lagi."
   chip_on: "Drag: aktif"
   chip_partial: "Drag: sebagian"
   chip_off: "Drag: mati"

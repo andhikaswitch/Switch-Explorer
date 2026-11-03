@@ -112,6 +112,8 @@ pub struct Workspace {
     pub(crate) sidebar_area: FocusHandle,
     pub(crate) toast_area: FocusHandle,
     pub(crate) focus_stops: crate::focus::FocusStops,
+    /// What has focus in the frame being drawn (rings are drawn from it).
+    pub(crate) focused_now: Option<FocusHandle>,
     /// Start renaming the selected item on the next render (it needs the window).
     pub(crate) rename_pending: bool,
     /// The details column border being dragged.
@@ -196,6 +198,7 @@ impl Workspace {
             sidebar_area: cx.focus_handle(),
             toast_area: cx.focus_handle(),
             focus_stops: crate::focus::FocusStops::default(),
+            focused_now: None,
             icons,
             rename_pending: false,
             column_resize: None,
@@ -1009,6 +1012,9 @@ fn hwnd(window: &Window) -> Option<isize> {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.focus_stops.begin_frame();
+        self.focused_now = window.focused(cx);
+        // The toast holds its timer while it has focus (keyboard users reaching for Undo).
+        self.ops.toast_focused = self.toast_area.contains_focused(window, cx);
         if std::mem::take(&mut self.rename_pending) {
             self.begin_rename(window, cx);
         }
@@ -1094,8 +1100,9 @@ impl Render for Workspace {
                     .child(self.render_content(window, cx)),
             )
             .child(self.render_status_bar(cx))
-            .children(self.render_osd(cx))
-            .children(overlays);
+            .children(overlays)
+            // Above dialogs too: a Hot Switch is never dimmed by a scrim.
+            .children(self.render_osd(cx));
         let root = self.file_actions(root, cx);
         let root = self.hotswitch_actions(root, cx);
         self.focus_actions(root, cx)

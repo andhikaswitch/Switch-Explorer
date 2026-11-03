@@ -13,14 +13,14 @@ use crate::schema::Token::{
     ButtonPrimaryBgPressed, ButtonPrimaryFg, ButtonSecondaryBg, ButtonSecondaryBgHover,
     ButtonSecondaryBgPressed, ButtonSecondaryFg, ButtonSecondaryFgHover, CardHoverFg,
     CheckboxBorder, CheckboxCheck, CheckboxCheckedBg, DangerText, DropBlockedBorder,
-    DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing,
-    FocusRingOnHighlight, HeaderFg, InfoText, InputPlaceholder, NavItemActiveBg, NavItemActiveFg,
-    NavItemFg, NavItemHoverBg, NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg,
-    OsdIconOff, OsdIconOn, OsdStateOff, OsdStateOn, ProgressFill, RowSelectedBg,
-    RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff, StatuschipOn,
-    StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover, SurfaceChip, SurfaceInput,
-    SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg, ToastFg,
-    ToggleOffBorder, ToggleOnBg, ToggleOnThumb, WarningText,
+    DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing, HeaderFg,
+    InfoText, InputPlaceholder, NavItemActiveBg, NavItemActiveFg, NavItemFg, NavItemHoverBg,
+    NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg, OsdIconOff, OsdIconOn,
+    OsdStateOff, OsdStateOn, ProgressFill, RowSelectedBg, RowSelectedInactiveBg, SelectionBorder,
+    SliderFill, StatuschipOff, StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard,
+    SurfaceCardHover, SurfaceChip, SurfaceInput, SurfaceOverlay, TabActiveBg, TabActiveFg,
+    TabActiveIndicator, TabFg, ToastBg, ToastFg, ToggleOffBorder, ToggleOnBg, ToggleOnThumb,
+    WarningText,
 };
 
 /// A foreground/background requirement.
@@ -165,19 +165,16 @@ pub const PAIRS: &[ContrastPair] = &[
         &[],
         NON_TEXT,
     ),
-    // A focused control can be highlighted at the same time (the active item, a stale hover).
+    // The ring goes around controls on dialogs, toasts and cards too.
     pair(
-        &[FocusRingOnHighlight],
-        &[NavItemActiveBg, NavItemHoverBg, NavItemPressedBg],
-        &[BgSidebar],
+        &[FocusRing],
+        &[SurfaceOverlay, ToastBg, SurfaceCard],
+        &[BgContent],
         NON_TEXT,
     ),
-    pair(
-        &[FocusRingOnHighlight],
-        &[ButtonGhostBgHover, ButtonGhostBgPressed],
-        &[BgWindow],
-        NON_TEXT,
-    ),
+    // Hot Switch: the OSD caption, and the "Drag off" badge in the title bar.
+    pair(&[FgSecondary], &[OsdBg], &[BgContent], TEXT),
+    pair(&[StatuschipOff], &[BgTitlebar], &[], TEXT),
     pair(
         &[CheckboxBorder, ToggleOffBorder, SelectionBorder],
         &[BgContent],

@@ -11,9 +11,10 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, Context, Div, ElementId, FocusHandle, Hsla, InteractiveElement as _, Stateful,
-    Styled as _, Window,
+    App, Context, Div, ElementId, FocusHandle, InteractiveElement as _, ParentElement as _, Pixels,
+    Stateful, Styled as _, Window, div,
 };
 use sx_theme::Token;
 
@@ -68,64 +69,39 @@ impl FocusStops {
     }
 }
 
-/// How a stop shows its ring.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Ring {
-    /// The element's own border colour when not focused (transparent for none).
-    rest: Hsla,
-    /// The control is highlighted (active item, hover gradient): the ring needs the dark
-    /// variant to show on it.
-    on_highlight: bool,
-}
-
-impl Ring {
-    /// A control without a border of its own.
-    pub fn plain() -> Self {
-        Self {
-            rest: gpui_kit::transparent_black(),
-            on_highlight: false,
-        }
-    }
-
-    /// A control whose border has this colour when not focused.
-    pub fn over(rest: Hsla) -> Self {
-        Self {
-            rest,
-            on_highlight: false,
-        }
-    }
-
-    pub fn highlighted(self, on_highlight: bool) -> Self {
-        Self {
-            on_highlight,
-            ..self
-        }
-    }
+/// The focus ring: a band of `focus.ring` and `focus.ring_width` just outside the element, as
+/// a child drawn over its edge while it has focus (DESIGN.md §2). Outside, it contrasts with the
+/// surface the control sits on (THEMING §11 pairs), never with the control's own fill, so filled
+/// buttons, the hover gradient and the Tide Slash cannot hide it; it takes no layout space. (A
+/// spread shadow would not do: GPUI paints shadows as a filled shape under the element, which
+/// shows through a transparent control.)
+fn ring(radius: Pixels, cx: &App) -> Div {
+    let t = cx.tokens();
+    let width = t.px(Token::FocusRingWidth);
+    div()
+        .absolute()
+        .top(-width)
+        .left(-width)
+        .right(-width)
+        .bottom(-width)
+        .rounded(radius + width)
+        .border(width)
+        .border_color(t.color(Token::FocusRing))
 }
 
 pub(crate) trait TabStop: Sized {
-    /// Makes this element a keyboard tab stop with the focus ring. The ring is a border of
-    /// `focus.ring_width` (transparent, or the element's own colour, until focused): borders are
-    /// painted over the children, so the Tide Slash cannot cover it, and the width never
-    /// changes, so nothing moves when it shows.
-    fn tab_stop_ring(self, handle: &FocusHandle, ring: Ring, cx: &App) -> Self;
+    /// Makes this element a keyboard tab stop. `ring` is the element's corner radius while it
+    /// has focus (see [`Workspace::ring_for`]), `None` otherwise.
+    fn tab_stop_ring(self, handle: &FocusHandle, ring: Option<Pixels>, cx: &App) -> Self;
 }
 
 impl TabStop for Stateful<Div> {
-    fn tab_stop_ring(self, handle: &FocusHandle, ring: Ring, cx: &App) -> Self {
-        let t = cx.tokens();
-        let color = t.color(if ring.on_highlight {
-            Token::FocusRingOnHighlight
-        } else {
-            Token::FocusRing
-        });
+    fn tab_stop_ring(self, handle: &FocusHandle, ring_radius: Option<Pixels>, cx: &App) -> Self {
         self.track_focus(handle)
-            .border(t.px(Token::FocusRingWidth))
-            .border_color(ring.rest)
             // GPUI focuses a focusable element on any mouse button; a click here keeps focus
             // where it was. The click itself and the pressed style still happen.
             .on_any_mouse_down(|_, window, _| window.prevent_default())
-            .focus(move |s| s.border_color(color))
+            .when_some(ring_radius, |el, radius| el.child(ring(radius, cx)))
     }
 }
 
@@ -139,6 +115,12 @@ pub(crate) fn area(el: Stateful<Div>, handle: &FocusHandle) -> Stateful<Div> {
 impl Workspace {
     pub(crate) fn focus_stop(&self, id: &ElementId, cx: &App) -> FocusHandle {
         self.focus_stops.get(id, cx)
+    }
+
+    /// The ring of a stop with this corner radius, if it has focus. Only the keyboard focuses a
+    /// stop, so a focused stop always shows its ring.
+    pub(crate) fn ring_for(&self, handle: &FocusHandle, radius: Pixels) -> Option<Pixels> {
+        (self.focused_now.as_ref() == Some(handle)).then_some(radius)
     }
 
     /// The areas `F6` cycles through, in screen order.

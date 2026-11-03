@@ -56,7 +56,7 @@ dark `#7A8FA8` di `#0A1628` ≈ 5.5:1.
 | `accent.highlight` | Lagoon → Cerulean (120°) | sama | Tide Slash, tombol primer, toggle on |
 | `accent.solid` | Tide → Deep Tide (135°) | sama | Checkbox, bidang solid bertulisan putih |
 | `selection.bg` | Cerulean 16% | Cerulean 22% | Baris terpilih |
-| `focus.ring` | Tide | Lagoon | `focus.ring_width` (2 px) sebagai border elemen: transparan (atau warna border elemen itu sendiri) saat tidak fokus, jadi tidak ada yang bergeser; dilukis di atas isi elemen (termasuk Tide Slash) dan tidak terpotong container yang meng-clip. Di atas kontrol yang di-highlight (item aktif, gradien hover) memakai `focus.ring_on_highlight` (Ink) |
+| `focus.ring` | Tide | Lagoon | `focus.ring_width` (2 px) tepat di luar tepi elemen (lapisan anak yang digambar saat fokus): kontras dengan permukaan di sekitarnya, bukan dengan isi kontrol, jadi tetap terlihat di tombol berisi warna, gradien hover, dan Tide Slash; hover tidak menghapusnya; tidak memakan ruang layout |
 
 Warna kategori (ikon folder kategori, chip, bar komposisi Organizer): Dokumen `#3B82F6`, Audio `#F43F5E`,
 Gambar `#F59E0B`, Video `#8B5CF6`, Arsip `#10B981`, Kode `#06B6D4`, Aplikasi `#64748B`, Lainnya `#94A3B8`.

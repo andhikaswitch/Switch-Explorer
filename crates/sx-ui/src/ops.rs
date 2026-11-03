@@ -72,6 +72,8 @@ pub(crate) struct Toast {
     pub id: u64,
     pub text: SharedString,
     pub undo: bool,
+    /// The pointer is on it: it stays (DESIGN.md §11).
+    pub hovered: bool,
 }
 
 #[derive(Debug)]
@@ -104,6 +106,8 @@ pub(crate) struct OpsState {
     clipboard: Option<sx_shell::StaWorker>,
     /// Progress on the taskbar button (`ops.taskbar_progress`); `None` when it is off.
     pub taskbar: Option<sx_shell::taskbar::Taskbar>,
+    /// The toast has keyboard focus (updated every frame): it stays.
+    pub toast_focused: bool,
 }
 
 impl OpsState {
@@ -542,12 +546,28 @@ impl Workspace {
     fn show_toast(&mut self, text: SharedString, undo: bool, cx: &mut Context<Self>) {
         let id = self.ops.next_job;
         self.ops.next_job += 1;
-        self.ops.toast = Some(Toast { id, text, undo });
+        self.ops.toast = Some(Toast {
+            id,
+            text,
+            undo,
+            hovered: false,
+        });
+        self.hide_toast_later(id, cx);
+    }
+
+    /// Hides the toast after `TOAST_FOR`; while the pointer or the keyboard focus is on it, it
+    /// waits another round.
+    fn hide_toast_later(&mut self, id: u64, cx: &mut Context<Self>) {
         let timer = cx.background_executor().timer(TOAST_FOR);
         cx.spawn(async move |this, cx| {
             timer.await;
             let _ = this.update(cx, |this, cx| {
-                if this.ops.toast.as_ref().is_some_and(|t| t.id == id) {
+                let Some(toast) = this.ops.toast.as_ref().filter(|t| t.id == id) else {
+                    return;
+                };
+                if toast.hovered || this.ops.toast_focused {
+                    this.hide_toast_later(id, cx);
+                } else {
                     this.ops.toast = None;
                     cx.notify();
                 }

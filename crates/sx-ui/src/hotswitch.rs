@@ -87,6 +87,8 @@ pub(crate) struct Osd {
     detail: SharedString,
     on: bool,
     hovered: bool,
+    /// Fading out; gone after `motion.fast`.
+    leaving: bool,
 }
 
 /// The name of a switch (`flag.<id>`).
@@ -143,6 +145,39 @@ fn group_label(ids: &[&str]) -> String {
         .join(", ")
 }
 
+/// What a switch change means beyond itself, as the OSD's second line says it (DESIGN.md §10:
+/// "Drag file tetap aktif.").
+fn impact(id: &str, on: bool, features: &Features) -> Option<String> {
+    let key = match (id, on) {
+        ("dnd.source.folders", false) if features.dnd_source_files => "files_still_on",
+        ("dnd.source.files", false) if features.dnd_source_folders => "folders_still_on",
+        ("dnd.source.sidebar", false) => "sidebar_off",
+        ("dnd.enabled", false) => "dnd_off",
+        ("dnd.enabled", true) => "dnd_on",
+        ("view.show_hidden", true) => "hidden_on",
+        ("view.show_hidden", false) => "hidden_off",
+        ("view.show_extensions", true) => "extensions_on",
+        ("view.show_extensions", false) => "extensions_off",
+        ("safety.readonly_mode", true) => "readonly_on",
+        ("safety.readonly_mode", false) => "readonly_off",
+        ("sidebar.pins_locked", true) => "pins_locked_on",
+        ("sidebar.pins_locked", false) => "pins_locked_off",
+        ("dnd.external_out", false) => "external_off",
+        _ => return None,
+    };
+    Some(t!(format!("hotswitch.impact.{key}")).into_owned())
+}
+
+/// The OSD's second line: what else it means, then how to switch back.
+fn detail(parts: &[Option<String>]) -> String {
+    parts
+        .iter()
+        .flatten()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// What the OSD says about a binding that ran: (title, detail, on).
 fn describe(
     binding: &HotSwitchBinding,
@@ -162,12 +197,13 @@ fn describe(
                 FlagValue::Bool(false) => t!("hotswitch.off", name = name),
                 other => t!("hotswitch.set", name = name, value = other.to_string()),
             };
-            let detail = if blocked(id, features) {
-                format!("{} {again}", t!("hotswitch.blocked"))
+            let on = is_on(&value);
+            let note = if blocked(id, features) {
+                Some(t!("hotswitch.blocked").into_owned())
             } else {
-                again
+                impact(id, on, features)
             };
-            (title.into_owned(), detail, is_on(&value))
+            (title.into_owned(), detail(&[note, Some(again)]), on)
         }
         HotSwitchAction::Group(ids) => {
             let on = changes.first().is_some_and(|c| is_on(&c.value));
@@ -177,17 +213,25 @@ fn describe(
                 "hotswitch.group_off"
             };
             let title = t!(key, name = group_label(ids), count = ids.len());
-            (title.into_owned(), again, on)
+            let note = ids.first().and_then(|id| impact(id, on, features));
+            (title.into_owned(), detail(&[note, Some(again)]), on)
         }
         HotSwitchAction::Preset(id) => {
             let name = t!(format!("preset.{id}")).into_owned();
             let moved = changes.iter().filter(|c| c.previous != c.value).count();
-            let title = if preset_active {
-                t!("hotswitch.preset_on", name = name, count = moved)
+            let (title, note) = if preset_active {
+                (t!("hotswitch.preset_on", name = name, count = moved), None)
             } else {
-                t!("hotswitch.preset_off", name = name)
+                (
+                    t!("hotswitch.preset_off", name = name),
+                    Some(t!("hotswitch.restored").into_owned()),
+                )
             };
-            (title.into_owned(), again, preset_active)
+            (
+                title.into_owned(),
+                detail(&[note, Some(again)]),
+                preset_active,
+            )
         }
         HotSwitchAction::Panel => (String::new(), String::new(), true),
     }
@@ -292,10 +336,13 @@ impl Workspace {
         self.next_osd += 1;
         let id = self.next_osd;
         let appearance = match &self.osd {
-            Some(shown) => shown.appearance,
-            None => id,
+            Some(shown) if !shown.leaving => shown.appearance,
+            _ => id,
         };
-        let hovered = self.osd.as_ref().is_some_and(|shown| shown.hovered);
+        let hovered = self
+            .osd
+            .as_ref()
+            .is_some_and(|shown| shown.hovered && !shown.leaving);
         self.osd = Some(Osd {
             id,
             appearance,
@@ -303,6 +350,7 @@ impl Workspace {
             detail: detail.into(),
             on,
             hovered,
+            leaving: false,
         });
         self.hide_osd_later(id, cx);
         cx.notify();
@@ -316,10 +364,30 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             timer.await;
             let _ = this.update(cx, |this, cx| {
+                if let Some(osd) = this.osd.as_mut()
+                    && osd.id == id
+                    && !osd.hovered
+                {
+                    osd.leaving = true;
+                    this.remove_osd_later(id, cx);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Removes a fading OSD once its fade is over (unless a switch brought it back).
+    fn remove_osd_later(&mut self, id: u64, cx: &mut Context<Self>) {
+        let fade = Duration::from_millis(cx.tokens().number(Token::MotionFast).max(0.0) as u64);
+        let timer = cx.background_executor().timer(fade);
+        cx.spawn(async move |this, cx| {
+            timer.await;
+            let _ = this.update(cx, |this, cx| {
                 if this
                     .osd
                     .as_ref()
-                    .is_some_and(|osd| osd.id == id && !osd.hovered)
+                    .is_some_and(|osd| osd.id == id && osd.leaving)
                 {
                     this.osd = None;
                     cx.notify();
@@ -330,7 +398,7 @@ impl Workspace {
     }
 
     fn hover_osd(&mut self, hovered: bool, cx: &mut Context<Self>) {
-        let Some(osd) = self.osd.as_mut() else {
+        let Some(osd) = self.osd.as_mut().filter(|osd| !osd.leaving) else {
             return;
         };
         osd.hovered = hovered;
@@ -340,6 +408,37 @@ impl Workspace {
             let id = self.next_osd;
             osd.id = id;
             self.hide_osd_later(id, cx);
+        }
+    }
+
+    /// The OSD's motion: in, a fade and a rise by `space.sm` in `motion.base`; out, a fade in
+    /// `motion.fast`. With reduce motion (`perf.animations = off`) or a zero duration, none.
+    fn animate_osd(&self, card: Stateful<Div>, osd: &Osd, cx: &Context<Self>) -> AnyElement {
+        let t = cx.tokens();
+        let motion = self.features.perf_animations != "off";
+        let (ms, rise) = if osd.leaving {
+            (t.number(Token::MotionFast), 0.0)
+        } else {
+            (t.number(Token::MotionBase), f32::from(t.px(Token::SpaceSm)))
+        };
+        let duration = Duration::from_millis(ms.max(0.0) as u64);
+        if !motion || duration.is_zero() {
+            card.when(osd.leaving, |el| el.opacity(0.0))
+                .into_any_element()
+        } else if osd.leaving {
+            card.with_animation(
+                ElementId::NamedInteger("osd-out".into(), osd.id),
+                Animation::new(duration),
+                |el, delta| el.opacity(1.0 - delta),
+            )
+            .into_any_element()
+        } else {
+            card.with_animation(
+                ElementId::NamedInteger("osd-in".into(), osd.appearance),
+                Animation::new(duration).with_easing(gpui_kit::ease_out_quint()),
+                move |el, delta| el.opacity(delta).top(gpui_kit::px(rise * (1.0 - delta))),
+            )
+            .into_any_element()
         }
     }
 
@@ -368,9 +467,14 @@ impl Workspace {
                         )
                 }
             });
-        let fade = Duration::from_millis(t.number(Token::MotionBase).max(0.0) as u64);
         let card = div()
             .id(ElementId::NamedInteger("osd".into(), osd.appearance))
+            // Pointer events stop here: the rows behind it are not hovered or clicked.
+            .occlude()
+            .role(gpui_kit::Role::Status)
+            .aria_label(osd.title.clone())
+            .aria_description(osd.detail.clone())
+            .relative()
             .flex()
             .items_center()
             .gap(t.px(Token::SpaceMd))
@@ -385,6 +489,8 @@ impl Workspace {
             .shadow(t.shadow(Token::ShadowPopover))
             .text_color(t.color(Token::OsdFg))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hover_osd(*hovered, cx)))
+            // The Hot Switch panel opens here once it exists; until then a click only stays here.
+            .on_click(|_, _, cx| cx.stop_propagation())
             .child(badge)
             .child(
                 div()
@@ -407,13 +513,8 @@ impl Workspace {
                             .text_ellipsis()
                             .child(osd.detail.clone()),
                     ),
-            )
-            // A fade only: fine with reduce motion too (DESIGN.md §9.1).
-            .with_animation(
-                ElementId::NamedInteger("osd-in".into(), osd.appearance),
-                Animation::new(fade),
-                gpui_kit::Styled::opacity,
             );
+        let card = self.animate_osd(card, osd, cx);
         Some(
             div()
                 .absolute()

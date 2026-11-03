@@ -37,6 +37,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   hotkey-nya), dan badge "Drag mati" di title bar. Preset "anti salah drag" bisa dinyalakan/dimatikan dan
   mengembalikan nilai sebelumnya. Perubahan disimpan sesuai `hotswitch.persist`.
 - Ekstensi nama file bisa disembunyikan (`view.show_extensions`, `Ctrl+K`, `X`).
+- OSD Hot Switch menyebut dampaknya ("Drag file tetap aktif. Balik lagi: Ctrl+K, D"), naik + fade saat
+  muncul dan fade saat hilang (tanpa animasi bila `perf.animations` mati), tidak meneruskan klik ke daftar di
+  belakangnya, dan tampil di atas dialog. Toast tetap tampil selama di-hover atau difokus.
 - Progress operasi di tombol taskbar (`ops.taskbar_progress`).
 - Lebar kolom Diubah, Tipe, dan Ukuran bisa diseret di header (per tab, per sesi).
 - Navigasi keyboard di luar daftar: `Tab`/`Shift+Tab` ke tab, tombol nav, breadcrumb, dan item sidebar;

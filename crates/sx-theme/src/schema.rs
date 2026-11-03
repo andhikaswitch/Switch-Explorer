@@ -97,8 +97,6 @@ define_tokens! {
     SelectionBorder = "selection.border": Color,
     SelectionInactiveBg = "selection.inactive_bg": Color,
     FocusRing = "focus.ring": Color,
-    // The focus ring on a highlighted control (active sidebar item, hover gradient).
-    FocusRingOnHighlight = "focus.ring_on_highlight": Color,
     DropTargetBg = "drop_target.bg": Color,
     DropTargetBorder = "drop_target.border": Color,
     DropBlockedBorder = "drop_blocked.border": Color,

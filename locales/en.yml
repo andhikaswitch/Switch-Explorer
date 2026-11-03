@@ -151,7 +151,7 @@ conflict:
 flag:
   dnd:
     enabled: All dragging
-    external: Dragging to and from other apps
+    external: Dragging with other apps
     external_out: Dragging out to other apps
     external_in: Dragging in from other apps
     source:
@@ -169,18 +169,34 @@ flag:
 preset:
   anti_drag: Anti accidental drag
 hotswitch:
+  impact:
+    files_still_on: File dragging is still on.
+    folders_still_on: Folder dragging is still on.
+    sidebar_off: Sidebar items stay put.
+    dnd_off: Nothing can be dragged or dropped.
+    dnd_on: Dragging follows its switches again.
+    hidden_on: Hidden items are listed.
+    hidden_off: Hidden items are not listed.
+    extensions_on: Names show their extensions.
+    extensions_off: Names hide their extensions.
+    readonly_on: Files can't be changed here.
+    readonly_off: Files can be changed again.
+    pins_locked_on: Pinned folders can't be changed.
+    pins_locked_off: Pinned folders can be changed again.
+    external_off: Dragging inside Switch Explorer still works.
+  restored: Previous values are back.
   "on": "%{name} turned on"
   "off": "%{name} turned off"
   set: "%{name}: %{value}"
   group_on: "%{name} turned on (%{count} switches)"
   group_off: "%{name} turned off (%{count} switches)"
   preset_on: "%{name} preset on (%{count} switches changed)"
-  preset_off: "%{name} preset off. Previous values are back."
+  preset_off: "%{name} preset off"
   again: "Toggle: %{keys}"
   blocked: "Not in effect: all dragging is off."
   needs_dev: "%{name} needs Developer Mode"
   needs_dev_hint: Turn on Developer Mode in Settings first.
-  failed: Couldn't change this switch.
+  failed: "This switch can't change right now. Restart Switch Explorer and try again."
   chip_on: "Drag: on"
   chip_partial: "Drag: partly on"
   chip_off: "Drag: off"
