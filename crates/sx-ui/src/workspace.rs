@@ -521,6 +521,8 @@ impl Workspace {
             Err(err) => {
                 tracing::debug!(error = %err, "folder failed to load");
                 tab.content = Content::Failed(crate::format::load_error(&err));
+                // The folder is gone or unreadable: stop holding a handle on it (and its drive).
+                tab.watcher = None;
             }
         }
         cx.notify();

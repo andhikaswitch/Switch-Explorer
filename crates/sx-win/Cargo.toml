@@ -10,11 +10,13 @@ publish.workspace = true
 [dependencies]
 sx-core.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dependencies.windows]
 workspace = true
 features = [
     "Wdk_System_SystemServices",
+    "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Security",
