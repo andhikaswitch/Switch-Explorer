@@ -277,6 +277,9 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 - Lebar < 720 px: sidebar otomatis jadi rail 56 px.
 - Lebar < 560 px: preview pane disembunyikan; kotak cari menjadi ikon.
 - Kolom details menyusut berurutan: Tipe → Diubah; Nama dan Ukuran selalu terlihat.
+- Lebar kolom Diubah, Tipe, dan Ukuran bisa diseret di tepi kirinya pada header (kursor resize kolom, garis
+  `divider` saat disorot), 56–480 px; Nama mengambil sisanya. Lebar berlaku per tab selama sesi; mode
+  tampilan per folder (Fase 2) akan menyimpannya.
 
 ## 9. Umpan balik status: OSD, chip, hint
 

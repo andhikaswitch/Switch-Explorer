@@ -106,6 +106,8 @@ pub struct Workspace {
     pub(crate) focus_stops: crate::focus::FocusStops,
     /// Start renaming the selected item on the next render (it needs the window).
     pub(crate) rename_pending: bool,
+    /// The details column border being dragged.
+    pub(crate) column_resize: Option<crate::details::ColumnResize>,
     backdrop_supported: bool,
     appearance: OsAppearance,
     forced_light: Option<bool>,
@@ -179,6 +181,7 @@ impl Workspace {
             focus_stops: crate::focus::FocusStops::default(),
             icons,
             rename_pending: false,
+            column_resize: None,
             backdrop_supported: options.backdrop_supported,
             appearance: options.appearance,
             forced_light: options.forced_light,

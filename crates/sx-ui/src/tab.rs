@@ -55,6 +55,8 @@ pub struct Tab {
     pub reveal_after_refresh: Option<String>,
     /// (selection revision, listing identity) → (selected count, bytes of selected files).
     selection_summary: Cell<Option<(u64, usize, usize, u64)>>,
+    /// Widths of the fixed details columns, as dragged in the header.
+    pub columns: crate::details::ColumnWidths,
 }
 
 impl Tab {
@@ -76,6 +78,7 @@ impl Tab {
             rename_after_load: None,
             reveal_after_refresh: None,
             selection_summary: Cell::new(None),
+            columns: crate::details::ColumnWidths::default(),
         }
     }
 

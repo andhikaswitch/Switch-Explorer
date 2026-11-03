@@ -8,9 +8,10 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, ClickEvent, Context, Div, ElementId, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
-    Window, div, uniform_list,
+    AnyElement, AppContext as _, ClickEvent, Context, Div, DragMoveEvent, ElementId, Empty, Hsla,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement as _, Pixels,
+    Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window, div,
+    uniform_list,
 };
 use rust_i18n::t;
 use sx_core::{EntryKind, Location};
@@ -22,15 +23,74 @@ use crate::tab::Content;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
 
-/// Default column widths in px. They are per-folder user state (resizable later), not theme
-/// values; Name takes the remaining width.
+/// Default column widths in px. They are user state (dragged in the header), not theme values;
+/// Name takes the remaining width.
 const COL_MODIFIED: f32 = 160.0;
 const COL_TYPE: f32 = 140.0;
 const COL_SIZE: f32 = 96.0;
+/// How narrow or wide a column can be dragged.
+const COL_MIN: f32 = 56.0;
+const COL_MAX: f32 = 480.0;
 /// Narrow content areas drop Type, then Modified (DESIGN.md §8.8): Name keeps at least room
 /// for a readable file name next to the other columns.
 const HIDE_TYPE_BELOW: f32 = 640.0;
 const HIDE_MODIFIED_BELOW: f32 = 480.0;
+
+/// The widths of a tab's fixed columns, as the user dragged them (per tab, for the session).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ColumnWidths {
+    modified: f32,
+    kind: f32,
+    size: f32,
+}
+
+impl Default for ColumnWidths {
+    fn default() -> Self {
+        Self {
+            modified: COL_MODIFIED,
+            kind: COL_TYPE,
+            size: COL_SIZE,
+        }
+    }
+}
+
+impl ColumnWidths {
+    fn get(&self, column: Column) -> Option<f32> {
+        match column {
+            Column::Modified => Some(self.modified),
+            Column::Type => Some(self.kind),
+            Column::Size => Some(self.size),
+            Column::Name => None,
+        }
+    }
+
+    fn set(&mut self, column: Column, width: f32) {
+        let width = width.clamp(COL_MIN, COL_MAX);
+        match column {
+            Column::Modified => self.modified = width,
+            Column::Type => self.kind = width,
+            Column::Size => self.size = width,
+            Column::Name => {}
+        }
+    }
+}
+
+/// A column border being dragged: which column, and where the pointer and its width started.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ColumnResize {
+    column: Column,
+    start_x: f32,
+    start_width: f32,
+}
+
+/// The drag payload of a column border; nothing follows the pointer.
+struct ColumnDrag;
+
+impl Render for ColumnDrag {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
 
 #[derive(Clone, Copy)]
 struct Columns {
@@ -40,12 +100,12 @@ struct Columns {
 }
 
 impl Columns {
-    fn for_width(width: Pixels) -> Self {
+    fn for_width(width: Pixels, widths: &ColumnWidths) -> Self {
         let width = f32::from(width);
         Self {
-            modified: (width >= HIDE_MODIFIED_BELOW).then(|| gpui_kit::px(COL_MODIFIED)),
-            kind: (width >= HIDE_TYPE_BELOW).then(|| gpui_kit::px(COL_TYPE)),
-            size: gpui_kit::px(COL_SIZE),
+            modified: (width >= HIDE_MODIFIED_BELOW).then(|| gpui_kit::px(widths.modified)),
+            kind: (width >= HIDE_TYPE_BELOW).then(|| gpui_kit::px(widths.kind)),
+            size: gpui_kit::px(widths.size),
         }
     }
 }
@@ -171,7 +231,8 @@ impl Workspace {
         } else {
             gpui_kit::px(0.0)
         };
-        let columns = Columns::for_width(window.viewport_size().width - sidebar);
+        let columns =
+            Columns::for_width(window.viewport_size().width - sidebar, &self.tab().columns);
         let count = self.tab().row_count();
         let focused = self.list_focus.is_focused(window);
         let list = div()
@@ -309,7 +370,11 @@ impl Workspace {
                 .rounded(t.px(Token::RadiusXs))
                 .hover(move |s| s.bg(hover))
                 .map(|el| match width {
-                    Some(w) => el.w(w).flex_none(),
+                    Some(w) => el
+                        .w(w)
+                        .flex_none()
+                        .relative()
+                        .child(self.column_border(column, cx)),
                     None => el.flex_1().min_w_0(),
                 })
                 .when(column == Column::Size, Styled::justify_end)
@@ -329,6 +394,7 @@ impl Workspace {
             .text_color(t.color(Token::HeaderFg))
             .border_b_1()
             .border_color(t.color(Token::Divider))
+            .on_drag_move(cx.listener(Self::resize_column))
             .child(cell(
                 "col-name",
                 Column::Name,
@@ -357,6 +423,63 @@ impl Workspace {
                 t!("details.size").into(),
                 Some(columns.size),
             ))
+    }
+
+    /// The border at a fixed column's left edge: dragging it resizes that column; Name gives
+    /// way.
+    fn column_border(&self, column: Column, cx: &Context<Self>) -> Stateful<Div> {
+        let t = cx.tokens();
+        let (grip, divider) = (t.px(Token::SpaceSm), t.color(Token::Divider));
+        div()
+            .id(ElementId::NamedInteger("col-border".into(), column as u64))
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .left(-grip / 2.0)
+            .w(grip)
+            .flex()
+            .justify_center()
+            .cursor_col_resize()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    // Not a click on the column: no sort.
+                    cx.stop_propagation();
+                    let width = this.tab().columns.get(column).unwrap_or(COL_MIN);
+                    this.column_resize = Some(ColumnResize {
+                        column,
+                        start_x: f32::from(event.position.x),
+                        start_width: width,
+                    });
+                }),
+            )
+            .on_drag(ColumnDrag, |_, _, _, cx| cx.new(|_| ColumnDrag))
+            .child(
+                div()
+                    .h_full()
+                    .border_l_1()
+                    .border_color(gpui_kit::transparent_black())
+                    .hover(move |s| s.border_color(divider)),
+            )
+    }
+
+    /// A column border moved: the column follows the pointer (left is wider).
+    fn resize_column(
+        &mut self,
+        event: &DragMoveEvent<ColumnDrag>,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(resize) = self.column_resize else {
+            return;
+        };
+        let width = resize.start_width + resize.start_x - f32::from(event.event.position.x);
+        let columns = &mut self.tab_mut().columns;
+        let before = *columns;
+        columns.set(resize.column, width);
+        if *columns != before {
+            cx.notify();
+        }
     }
 
     fn render_rows(
@@ -587,5 +710,22 @@ impl RowStyle {
             space_sm: t.px(Token::SpaceSm),
             radius: t.px(Token::RadiusSm),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn column_widths_stay_in_range_and_name_is_not_fixed() {
+        let mut widths = ColumnWidths::default();
+        widths.set(Column::Modified, 10.0);
+        widths.set(Column::Size, 10_000.0);
+        widths.set(Column::Name, 300.0);
+        assert_eq!(widths.get(Column::Modified), Some(COL_MIN));
+        assert_eq!(widths.get(Column::Size), Some(COL_MAX));
+        assert_eq!(widths.get(Column::Type), Some(COL_TYPE));
+        assert_eq!(widths.get(Column::Name), None);
     }
 }

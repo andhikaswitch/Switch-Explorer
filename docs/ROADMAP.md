@@ -61,7 +61,7 @@ Hasil: [`docs/benchmarks/phase0.md`](benchmarks/phase0.md). Rekomendasi: **GO de
 
 Belum termasuk Fase 1, dicatat untuk Fase 2 (temuan review): ~~navigasi keyboard di luar daftar (F6, fokus
 tombol/tab/sidebar)~~, ~~tooltip tombol ikon~~, nama tampilan shell untuk folder pinned, ~~collapse
-breadcrumb panjang~~, kolom yang bisa diubah lebarnya, ~~progress taskbar~~ (yang dicoret sudah selesai).
+breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ (yang dicoret sudah selesai).
 
 ## Fase 2 — Paritas Explorer + Drag Guard + Hot Switch
 
