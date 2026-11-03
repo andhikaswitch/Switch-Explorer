@@ -12,7 +12,9 @@ pub mod exec;
 pub mod icons;
 pub mod names;
 pub mod recycle;
+pub mod worker;
 
 pub use appearance::OsAppearance;
 pub use com::StaGuard;
 pub use error::ShellError;
+pub use worker::{Order, StaWorker};

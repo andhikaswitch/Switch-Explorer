@@ -14,7 +14,7 @@ Alasan di balik pilihan teknologi ada di `DECISIONS.md`.
 │ Background executor: enumerasi, sort, filter, hash, search, tools ─────────┤     │
 │ Worker STA ×2: thumbnail, ikon, data context menu, property store ─────────┤     │
 │ Worker ops (CopyFile2) + STA ops-shell (IFileOperation, Recycle Bin) ──────┤     │
-│ Watcher: ReadDirectoryChangesW, hanya folder yang sedang terbuka ──────────┤     │
+│ Watcher: FindFirstChangeNotificationW, hanya folder yang sedang terbuka ───┤     │
 │ HotkeyService: RegisterHotKey untuk Hot Switch global (opsional) ──────────┤     │
 │ [lazy] sx-cloud: runtime tokio 2 thread, reqwest, OAuth loopback ──────────┘     │
 │ IPC server: \\.\pipe\switch-explorer.<SID>.<session>[.admin].v1                  │
@@ -85,10 +85,10 @@ Aturan dependensi:
 |---|---|---|---|---|
 | UI (main) | 1 | STA | Loop GPUI, input, layout, render; `SHDoDragDrop`/`IDropTarget`; menu native | Tidak ada kerja > 4 ms; COM blocking hanya yang wajib di UI STA (DnD, menu) |
 | Background executor (GPUI) | sesuai GPUI | — | Enumerasi, sort, filter, parsing tema, hashing ringan, search | Task bisa dibatalkan; hasil dikirim lewat update entity |
-| Worker STA shell | `perf.shell_workers` (2) | STA + message pump | `IShellItemImageFactory`, `SHGetFileInfo`, property store, data context menu | Antrean prioritas (item terlihat dulu), cancel token per permintaan |
+| Worker STA shell | `perf.shell_workers` (2) | STA + message pump (`sx_shell::StaWorker`) | `IShellItemImageFactory`, `SHGetFileInfo`, property store, data context menu | Antrean prioritas (item terlihat dulu). Fase 1: satu worker ikon, permintaan terbaru dulu (`Order::Newest`) |
 | Worker ops | maks `ops.parallel_jobs` (2) | — | `CopyFile2`, `MoveFileExW`, hashing verifikasi | Progress di-throttle 10 Hz |
 | STA ops-shell | 1 | STA | `IFileOperation` (Recycle Bin, namespace shell, elevasi UAC) | Terpisah dari worker thumbnail |
-| Watcher | 1 | — | `ReadDirectoryChangesW` folder yang terbuka | Debounce 100 ms; buffer overflow → rescan |
+| Watcher | 1 per tab | — | `FindFirstChangeNotificationW` folder yang terbuka + `CM_Register_Notification` untuk pelepasan drive | Debounce 250 ms → muat ulang (ADR-022). Saat drive diminta dilepas (eject USB), handle ditutup sebelum callback kembali dan watch berhenti. Gagal muat → watcher dilepas |
 | HotkeyService | 1 (message-only window) | — | `RegisterHotKey`, `WM_HOTKEY` | Hanya jika ada binding scope global |
 | Tokio (lazy) | 2 | — | HTTP Drive, server loopback OAuth | Dibuat saat cloud pertama dipakai; dimatikan setelah idle |
 | Picker Bridge hook | 1 | STA | `SetWinEventHook` + UI Automation | Hanya jika `integration.picker_bridge` aktif |
@@ -217,7 +217,8 @@ pub struct DirSnapshot {
 - Sort: kunci natural dihitung sekali (paritas `StrCmpLogicalW` diuji dengan korpus); folders-first;
   stabil; berjalan di background.
 - Filter: substring di arena lowercase (`memchr::memmem`); fuzzy hanya untuk palette (nucleo).
-- Watcher: delta (tambah/hapus/rename/ubah) diterapkan inkremental; overflow buffer → rescan penuh.
+- Watcher: perubahan memicu muat ulang ber-debounce (ADR-022). Delta inkremental lewat
+  `ReadDirectoryChangesW` baru dikerjakan bila pengukuran menunjukkan perlu.
 - String tampilan (tanggal, ukuran) dihitung malas hanya untuk baris terlihat dan di-cache per baris.
 
 ## 10. Cache

@@ -1,6 +1,7 @@
-//! System icons in the list (FEATURES.md, DESIGN.md §13): loaded on a dedicated STA worker,
-//! cached by [`IconKey`] (one per file type; programs and shortcuts per item), bounded by
-//! `perf.icon_cache_entries`. Until an icon arrives the row shows the theme's glyph.
+//! System icons in the list (FEATURES.md, DESIGN.md §13): loaded on a dedicated STA worker
+//! that pumps messages, newest request first (the rows on screen now), cached by [`IconKey`]
+//! (one per file type; programs and shortcuts per item), bounded by `perf.icon_cache_entries`.
+//! Until an icon arrives the row shows the theme's glyph.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use futures::channel::mpsc;
 use gpui_kit::RenderImage;
 use sx_shell::icons::{IconBitmap, IconKey};
+use sx_shell::{Order, StaWorker};
 
 /// Shell "large" icons; the list draws them at `size.icon_sm`, sharp at 125–200 % scaling.
 const ICON_PX: u32 = 32;
@@ -18,38 +20,25 @@ pub(crate) struct IconCache {
     images: HashMap<IconKey, Arc<RenderImage>>,
     pending: HashSet<IconKey>,
     missing: HashSet<IconKey>,
-    requests: Option<std::sync::mpsc::Sender<IconKey>>,
+    worker: Option<StaWorker>,
+    loaded: mpsc::UnboundedSender<(IconKey, Option<IconBitmap>)>,
     limit: usize,
 }
 
 impl IconCache {
     /// Starts the worker; loaded icons come back on the returned channel.
     pub fn start(limit: usize) -> (Self, mpsc::UnboundedReceiver<(IconKey, Option<IconBitmap>)>) {
-        let (tx, rx) = std::sync::mpsc::channel::<IconKey>();
-        let (done_tx, done_rx) = mpsc::unbounded();
-        let spawned = std::thread::Builder::new()
-            .name("sx-icons".into())
-            .spawn(move || {
-                let _com = sx_shell::StaGuard::new();
-                while let Ok(key) = rx.recv() {
-                    let icon = std::panic::catch_unwind(|| sx_shell::icons::load(&key, ICON_PX))
-                        .ok()
-                        .flatten();
-                    if done_tx.unbounded_send((key, icon)).is_err() {
-                        return;
-                    }
-                }
-            });
-        let requests = spawned
+        let (loaded, done_rx) = mpsc::unbounded();
+        let worker = StaWorker::spawn("sx-icons", Order::Newest)
             .map_err(|err| tracing::warn!(error = %err, "icon worker unavailable"))
-            .ok()
-            .map(|_| tx);
+            .ok();
         (
             Self {
                 images: HashMap::new(),
                 pending: HashSet::new(),
                 missing: HashSet::new(),
-                requests,
+                worker,
+                loaded,
                 limit,
             },
             done_rx,
@@ -64,10 +53,21 @@ impl IconCache {
         }
         if !self.missing.contains(&key)
             && self.pending.insert(key.clone())
-            && let Some(requests) = &self.requests
-            && requests.send(key).is_err()
+            && let Some(worker) = &self.worker
         {
-            self.requests = None;
+            let loaded = self.loaded.clone();
+            let queued = worker.run(move || {
+                // Always answer, so a failed icon is marked missing instead of pending forever.
+                let icon = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    sx_shell::icons::load(&key, ICON_PX)
+                }))
+                .ok()
+                .flatten();
+                let _ = loaded.unbounded_send((key, icon));
+            });
+            if !queued {
+                self.worker = None;
+            }
         }
         None
     }

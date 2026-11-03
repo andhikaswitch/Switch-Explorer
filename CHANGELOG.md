@@ -57,3 +57,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   redo me-recycle item itu.
 - Operasi yang berhenti di tengah (error, batal, item ditolak Recycle Bin) tetap bisa di-undo untuk bagian
   yang sudah jalan. Item yang dihapus permanen setelah peringatan shell disebut di toast.
+- Cut-paste mengosongkan clipboard hanya setelah semua item pindah, dan hanya bila isinya belum diganti
+  (salinan baru di app lain tidak lagi hilang).
+- Clipboard, cek konflik paste, dan penomoran "New folder" tidak lagi berjalan di UI thread.
+- Drive USB yang sedang dibuka bisa di-eject: watcher melepas handle saat Windows meminta. Folder yang
+  gagal dimuat tidak lagi ditahan watcher.
+- Ikon dimuat di worker STA yang memompa pesan, item yang terlihat lebih dulu; ikon lama tanpa alpha tidak
+  lagi kehilangan piksel hitamnya.
