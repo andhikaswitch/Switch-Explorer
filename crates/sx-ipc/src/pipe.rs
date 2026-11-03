@@ -215,15 +215,16 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// A security descriptor that grants the pipe to the current user and SYSTEM only.
+/// A security descriptor that grants the pipe to the current user and SYSTEM only. An elevated
+/// instance also labels it high integrity (no write up), so a non-elevated process of the same
+/// user cannot drive it.
 struct Dacl(PSECURITY_DESCRIPTOR);
 
 impl Dacl {
     fn current_user() -> Result<Self, IpcError> {
-        let sddl = wide(&format!(
-            "D:P(A;;GA;;;{})(A;;GA;;;SY)",
-            Identity::current()?.sid
-        ));
+        let me = Identity::current()?;
+        let label = if me.elevated { "S:(ML;;NW;;;HI)" } else { "" };
+        let sddl = wide(&format!("D:P(A;;GA;;;{})(A;;GA;;;SY){label}", me.sid));
         let mut descriptor = PSECURITY_DESCRIPTOR::default();
         // SAFETY: `sddl` is NUL-terminated; the descriptor is freed with LocalFree on drop.
         unsafe {

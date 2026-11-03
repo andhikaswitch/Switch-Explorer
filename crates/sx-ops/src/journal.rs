@@ -31,6 +31,10 @@ pub enum Record {
         cancelled: bool,
         #[serde(default)]
         error: Option<String>,
+        /// Items deleted permanently instead of recycled (the user agreed in the shell's
+        /// warning), which no undo can bring back.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        deleted: Vec<PathBuf>,
     },
 }
 
@@ -97,6 +101,7 @@ impl Journal {
         done: &Op,
         cancelled: bool,
         error: Option<String>,
+        deleted: &[PathBuf],
     ) -> Result<(), OpsError> {
         self.append(&Record::End {
             id,
@@ -104,6 +109,7 @@ impl Journal {
             done: done.clone(),
             cancelled,
             error,
+            deleted: deleted.to_vec(),
         })
     }
 
@@ -135,7 +141,7 @@ impl Journal {
 
     /// Marks an unfinished operation as reviewed so it is not reported again.
     pub fn dismiss(&mut self, id: u64, op: &Op) -> Result<(), OpsError> {
-        self.end(id, op, true, Some("interrupted".into()))
+        self.end(id, op, true, Some("interrupted".into()), &[])
     }
 }
 
@@ -164,7 +170,7 @@ mod tests {
         {
             let mut journal = Journal::open(dir.path()).unwrap();
             let done = journal.begin(&op).unwrap();
-            journal.end(done, &op, false, None).unwrap();
+            journal.end(done, &op, false, None, &[]).unwrap();
             journal.begin(&op).unwrap(); // the app "crashes" here
         }
         // A torn line from the crash.

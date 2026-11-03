@@ -143,8 +143,10 @@ pub fn write(files: &ClipboardFiles, owner: Option<isize>) -> Result<(), ShellEr
     set(preferred_drop_effect(), effect_block)
 }
 
-/// Files on the clipboard (from us or from Explorer), or `None` when it holds no files.
-pub fn read() -> Result<Option<ClipboardFiles>, ShellError> {
+/// Files on the clipboard (from us or from Explorer), or `None` when it holds no files, with
+/// the clipboard sequence number for [`clear_if_unchanged`]. The number is read while the
+/// clipboard is still open, after the data (rendering data on demand may change it).
+pub fn read() -> Result<Option<(ClipboardFiles, u32)>, ShellError> {
     // SAFETY: a plain availability query.
     if unsafe { IsClipboardFormatAvailable(u32::from(CF_HDROP.0)) }.is_err() {
         return Ok(None);
@@ -183,7 +185,7 @@ pub fn read() -> Result<Option<ClipboardFiles>, ShellError> {
                 Some(u32::from_le_bytes(value))
             })
             .is_some_and(|effect| effect & DROPEFFECT_MOVE.0 != 0);
-        Ok(Some(ClipboardFiles { paths, cut }))
+        Ok(Some((ClipboardFiles { paths, cut }, sequence())))
     }
 }
 
@@ -216,8 +218,8 @@ mod tests {
             cut: true,
         };
         write(&files, None).unwrap();
-        let before = sequence();
-        assert_eq!(read().unwrap(), Some(files.clone()));
+        let (read_back, before) = read().unwrap().unwrap();
+        assert_eq!(read_back, files);
         // A newer copy is never wiped.
         write(&files, None).unwrap();
         assert!(!clear_if_unchanged(before, None).unwrap());

@@ -65,5 +65,11 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Clipboard, cek konflik paste, dan penomoran "New folder" tidak lagi berjalan di UI thread.
 - Drive USB yang sedang dibuka bisa di-eject: watcher melepas handle saat Windows meminta. Folder yang
   gagal dimuat tidak lagi ditahan watcher.
+- Restore folder yang namanya sudah dipakai lagi tidak pernah digabung (kembali sebagai "nama (2)"), dan
+  restore menolak slot Recycle Bin milik item lain. Menjawab No di peringatan hapus permanen tidak lagi
+  dilaporkan sebagai "dihapus".
+- Clipboard berjalan berurutan di satu thread; undo yang ditolak mode baca-saja tetap tersedia; undo/redo
+  yang selesai setelah operasi baru tidak menulis ulang riwayat.
+- Instance elevated tidak bisa dikendalikan proses non-elevated lewat pipe.
 - Ikon dimuat di worker STA yang memompa pesan, item yang terlihat lebih dulu; ikon lama tanpa alpha tidak
   lagi kehilangan piksel hitamnya.

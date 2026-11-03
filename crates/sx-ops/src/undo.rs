@@ -12,6 +12,9 @@ pub struct UndoStack {
     undo: Vec<Op>,
     redo: Vec<Op>,
     depth: usize,
+    /// Bumped by every user operation: an undo or redo that finishes after one does not write
+    /// into the history that operation started.
+    generation: u64,
 }
 
 impl UndoStack {
@@ -20,6 +23,7 @@ impl UndoStack {
             undo: Vec::new(),
             redo: Vec::new(),
             depth: depth.max(1),
+            generation: 0,
         }
     }
 
@@ -39,6 +43,7 @@ impl UndoStack {
     pub fn record(&mut self, done: Op) {
         if self.push_undo(done) {
             self.redo.clear();
+            self.generation += 1;
         }
     }
 
@@ -50,26 +55,45 @@ impl UndoStack {
         !self.redo.is_empty()
     }
 
-    /// The operation that undoes the last one. Report what it did with [`Self::undone`].
-    pub fn undo(&mut self) -> Option<Op> {
-        self.undo.pop()?.inverse()
+    /// The operation that undoes the last one, without taking it: take it with
+    /// [`Self::take_undo`] once its job has started, so an undo that cannot start keeps it.
+    pub fn next_undo(&self) -> Option<Op> {
+        self.undo.last()?.inverse()
     }
 
-    /// What an undo did: its inverse becomes the next redo.
-    pub fn undone(&mut self, done: &Op) {
+    /// Takes the entry [`Self::next_undo`] returned; the generation goes to [`Self::undone`].
+    pub fn take_undo(&mut self) -> u64 {
+        self.undo.pop();
+        self.generation
+    }
+
+    /// What an undo did: its inverse becomes the next redo (unless a newer operation started
+    /// a new history meanwhile).
+    pub fn undone(&mut self, done: &Op, generation: u64) {
+        if generation != self.generation {
+            return;
+        }
         if let Some(redo) = done.inverse().filter(|redo| !redo.is_noop()) {
             self.redo.push(redo);
         }
     }
 
-    /// The operation to run again. Report what it did with [`Self::redone`].
-    pub fn redo(&mut self) -> Option<Op> {
-        self.redo.pop()
+    /// The operation to run again, without taking it (see [`Self::next_undo`]).
+    pub fn next_redo(&self) -> Option<Op> {
+        self.redo.last().cloned()
+    }
+
+    /// Takes the entry [`Self::next_redo`] returned; the generation goes to [`Self::redone`].
+    pub fn take_redo(&mut self) -> u64 {
+        self.redo.pop();
+        self.generation
     }
 
     /// What a redo did: it can be undone again (redo keeps the rest of its history).
-    pub fn redone(&mut self, done: Op) {
-        self.push_undo(done);
+    pub fn redone(&mut self, done: Op, generation: u64) {
+        if generation == self.generation {
+            self.push_undo(done);
+        }
     }
 }
 
@@ -94,40 +118,52 @@ mod tests {
         stack.record(folder(1));
         stack.record(folder(2));
         stack.record(folder(3));
-        let undo = stack.undo();
+        let undo = stack.next_undo();
         assert!(matches!(&undo, Some(Op::Recycle { paths, .. }) if paths[0] == path(3)));
+        let generation = stack.take_undo();
         // The undo ran and put the folder in slot $R3.
         let slot = Binned {
             original: path(3),
             slot: PathBuf::from(r"C:\$Recycle.Bin\S-1\$R3"),
         };
-        stack.undone(&Op::Recycle {
-            paths: vec![path(3)],
-            binned: vec![slot.clone()],
-        });
+        stack.undone(
+            &Op::Recycle {
+                paths: vec![path(3)],
+                binned: vec![slot.clone()],
+            },
+            generation,
+        );
         // Redo brings that very item back from its slot.
         assert_eq!(
-            stack.redo(),
+            stack.next_redo(),
             Some(Op::Restore {
                 items: vec![slot.clone()],
                 restored: vec![],
             })
         );
-        stack.redone(Op::Restore {
-            items: vec![slot],
-            restored: vec![path(3)],
-        });
-        assert!(matches!(stack.undo(), Some(Op::Recycle { paths, .. }) if paths[0] == path(3)));
-        assert!(stack.undo().is_some());
-        assert!(stack.undo().is_none(), "depth 2 forgot the first one");
+        let generation = stack.take_redo();
+        stack.redone(
+            Op::Restore {
+                items: vec![slot],
+                restored: vec![path(3)],
+            },
+            generation,
+        );
+        assert!(
+            matches!(stack.next_undo(), Some(Op::Recycle { paths, .. }) if paths[0] == path(3))
+        );
+        stack.take_undo();
+        assert!(stack.next_undo().is_some());
+        stack.take_undo();
+        assert!(stack.next_undo().is_none(), "depth 2 forgot the first one");
     }
 
     #[test]
     fn nothing_done_is_not_recorded() {
         let mut stack = UndoStack::new(4);
         stack.record(folder(1));
-        let _ = stack.undo();
-        stack.undone(&folder(1));
+        let generation = stack.take_undo();
+        stack.undone(&folder(1), generation);
         assert!(stack.can_redo());
         stack.record(Op::Delete { paths: vec![] });
         stack.record(Op::nothing());
@@ -138,12 +174,28 @@ mod tests {
         // An undo that failed at once, or one whose items left no slot, leaves nothing to redo.
         let mut stack = UndoStack::new(4);
         stack.record(folder(2));
-        let _ = stack.undo();
-        stack.undone(&Op::nothing());
-        stack.undone(&Op::Recycle {
-            paths: vec![path(2)],
-            binned: vec![],
-        });
+        let generation = stack.take_undo();
+        stack.undone(&Op::nothing(), generation);
+        stack.undone(
+            &Op::Recycle {
+                paths: vec![path(2)],
+                binned: vec![],
+            },
+            generation,
+        );
         assert!(!stack.can_undo() && !stack.can_redo());
+    }
+
+    #[test]
+    fn a_late_undo_does_not_rewrite_newer_history() {
+        let mut stack = UndoStack::new(4);
+        stack.record(folder(1));
+        // An undo starts; the user does something else before it finishes.
+        assert!(stack.next_undo().is_some());
+        let generation = stack.take_undo();
+        stack.record(folder(2));
+        stack.undone(&folder(1), generation);
+        assert!(!stack.can_redo(), "the new operation started a new history");
+        assert!(stack.can_undo());
     }
 }

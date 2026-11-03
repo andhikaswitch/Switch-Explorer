@@ -27,12 +27,13 @@ use crate::workspace::Workspace;
 /// How long the "Done · Undo" toast stays.
 const TOAST_FOR: Duration = Duration::from_secs(8);
 
-/// Why a job runs: user work is recorded for undo; undo and redo runs are not.
+/// Why a job runs: user work is recorded for undo; undo and redo runs report back to the
+/// history they came from (its generation, see `UndoStack`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Origin {
     User,
-    Undo,
-    Redo,
+    Undo(u64),
+    Redo(u64),
 }
 
 #[derive(Debug)]
@@ -98,6 +99,9 @@ pub(crate) struct OpsState {
     pub interrupted: Vec<(u64, Op)>,
     /// Cut-paste jobs and the clipboard sequence to clear once they have moved everything.
     clear_clipboard_after: HashMap<u64, u32>,
+    /// The clipboard thread: clipboard calls run there in order (a paste right after a copy
+    /// sees that copy), off the UI thread.
+    clipboard: Option<sx_shell::StaWorker>,
 }
 
 impl OpsState {
@@ -111,16 +115,41 @@ impl OpsState {
             .as_ref()
             .map(Journal::unfinished)
             .unwrap_or_default();
+        let clipboard = sx_shell::StaWorker::spawn("sx-clipboard", sx_shell::Order::Oldest)
+            .map_err(|err| tracing::warn!(error = %err, "clipboard worker unavailable"))
+            .ok();
         Self {
             journal,
             undo: UndoStack::new(undo_depth),
             interrupted,
+            clipboard,
             ..Self::default()
         }
     }
 
     pub fn running(&self) -> impl Iterator<Item = &Job> {
         self.jobs.iter().filter(|j| j.finished.is_none())
+    }
+
+    /// Runs clipboard work on the clipboard thread and resolves with its result (`None` when
+    /// the worker is gone or the work panicked).
+    fn on_clipboard<T, F>(&self, work: F) -> impl Future<Output = Option<T>> + use<T, F>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> T + Send + 'static,
+    {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        let queued = self.clipboard.as_ref().is_some_and(|worker| {
+            worker.run(move || {
+                let _ = tx.send(work());
+            })
+        });
+        async move {
+            if !queued {
+                return None;
+            }
+            rx.await.ok()
+        }
     }
 }
 
@@ -190,7 +219,7 @@ fn file_name(path: &Path) -> String {
 fn job_label(op: &Op, origin: Origin) -> SharedString {
     let count = op.item_count();
     let key = match (origin, op) {
-        (Origin::Undo, _) => "ops.undoing",
+        (Origin::Undo(_), _) => "ops.undoing",
         (_, Op::Copy { .. }) => "ops.copying",
         (_, Op::Move { .. }) => "ops.moving",
         (_, Op::Recycle { .. }) => "ops.recycling",
@@ -242,7 +271,7 @@ fn done_text(op: &Op, origin: Origin) -> SharedString {
         }
     };
     match (origin, op) {
-        (Origin::Undo, _) => t!("ops.undone"),
+        (Origin::Undo(_), _) => t!("ops.undone"),
         (_, Op::Copy { .. }) => plural("ops.done_copy"),
         (_, Op::Move { .. }) => plural("ops.done_move"),
         (_, Op::Recycle { .. }) => plural("ops.done_recycle"),
@@ -421,8 +450,8 @@ impl Workspace {
         match origin {
             Origin::User if self.features.ops_undo => self.ops.undo.record(done.clone()),
             Origin::User => {}
-            Origin::Undo => self.ops.undo.undone(done),
-            Origin::Redo => self.ops.undo.redone(done.clone()),
+            Origin::Undo(generation) => self.ops.undo.undone(done, generation),
+            Origin::Redo(generation) => self.ops.undo.redone(done.clone(), generation),
         }
         let mut message: String = match &outcome.error {
             Some(err) => {
@@ -437,13 +466,15 @@ impl Workspace {
             message.push_str(&deleted_text(outcome.deleted.len()));
         }
         let message = SharedString::from(message);
-        let undo = origin != Origin::Undo
+        let undo = !matches!(origin, Origin::Undo(_))
             && self.features.ops_undo
             && !done.is_noop()
             && done.inverse().is_some();
         if let (Some(journal), Some(journal_id)) = (self.ops.journal.as_mut(), journal_id) {
             let error = outcome.error.as_ref().map(ToString::to_string);
-            if let Err(err) = journal.end(journal_id, done, outcome.cancelled, error) {
+            if let Err(err) =
+                journal.end(journal_id, done, outcome.cancelled, error, &outcome.deleted)
+            {
                 tracing::warn!(error = %err, "journal");
             }
         }
@@ -455,10 +486,11 @@ impl Workspace {
             && !outcome.stopped_early()
         {
             let owner = self.hwnd;
+            let cleared = self
+                .ops
+                .on_clipboard(move || clipboard::clear_if_unchanged(sequence, owner));
             cx.spawn(async move |_, _| {
-                if let Some(Err(err)) =
-                    off_thread(move || clipboard::clear_if_unchanged(sequence, owner)).await
-                {
+                if let Some(Err(err)) = cleared.await {
                     tracing::debug!(error = %err, "clipboard");
                 }
             })
@@ -531,9 +563,11 @@ impl Workspace {
             return;
         }
         let owner = self.hwnd;
+        let written = self
+            .ops
+            .on_clipboard(move || clipboard::write(&ClipboardFiles { paths, cut }, owner));
         cx.spawn(async move |this, cx| {
-            let written =
-                off_thread(move || clipboard::write(&ClipboardFiles { paths, cut }, owner)).await;
+            let written = written.await;
             if let Some(Ok(())) = written {
                 return;
             }
@@ -575,18 +609,23 @@ impl Workspace {
         if !self.writable(cx) {
             return;
         }
+        let files = self.ops.on_clipboard(clipboard::read);
         cx.spawn(async move |this, cx| {
-            let target = dest.clone();
-            let read = off_thread(move || -> ClipboardRead {
-                let sequence = clipboard::sequence();
-                Ok(clipboard::read()?
-                    .filter(|files| !files.paths.is_empty())
-                    .map(|files| {
+            // The clipboard on its thread, then the destination checks on another (they can
+            // take seconds on a network folder and must not hold up the clipboard).
+            let read = match files.await {
+                Some(Ok(Some((files, sequence)))) if !files.paths.is_empty() => {
+                    let target = dest.clone();
+                    off_thread(move || -> ClipboardRead {
                         let conflicts = sx_ops::plan::conflicts(&files.paths, &target);
-                        (files, conflicts, sequence)
-                    }))
-            })
-            .await;
+                        Ok(Some((files, conflicts, sequence)))
+                    })
+                    .await
+                }
+                Some(Ok(_)) => Some(Ok(None)),
+                Some(Err(err)) => Some(Err(err)),
+                None => None,
+            };
             let _ = this.update(cx, |this, cx| this.on_clipboard_read(dest, read, cx));
         })
         .detach();
@@ -714,20 +753,32 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Undoes the last operation. Read-only mode refuses it before the entry is taken, so the
+    /// undo stays available.
     pub(crate) fn undo(&mut self, cx: &mut Context<Self>) {
         self.ops.toast = None;
-        if let Some(inverse) = self.ops.undo.undo() {
-            self.run_op(inverse, Origin::Undo, cx);
-        } else {
+        let Some(inverse) = self.ops.undo.next_undo() else {
             self.notice = Some(t!("ops.nothing_to_undo").into());
             cx.notify();
+            return;
+        };
+        if !self.writable(cx) {
+            return;
         }
+        // The job reports back with the generation the entry was taken under.
+        let generation = self.ops.undo.take_undo();
+        self.run_op(inverse, Origin::Undo(generation), cx);
     }
 
     pub(crate) fn redo(&mut self, cx: &mut Context<Self>) {
-        if let Some(op) = self.ops.undo.redo() {
-            self.run_op(op, Origin::Redo, cx);
+        let Some(op) = self.ops.undo.next_redo() else {
+            return;
+        };
+        if !self.writable(cx) {
+            return;
         }
+        let generation = self.ops.undo.take_redo();
+        self.run_op(op, Origin::Redo(generation), cx);
     }
 
     /// `Ctrl+Shift+N`: a "New folder" (numbered if taken) that opens in rename mode.

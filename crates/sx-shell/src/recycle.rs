@@ -97,6 +97,7 @@ mod progress {
     use std::path::PathBuf;
     use std::rc::Rc;
 
+    use windows::Win32::Foundation::S_OK;
     use windows::Win32::UI::Shell::{
         IFileOperationProgressSink, IFileOperationProgressSink_Impl, IShellItem, SICHINT_CANONICAL,
         SICHINT_TEST_FILESYSPATH_IF_NOT_EQUAL,
@@ -110,8 +111,14 @@ mod progress {
     pub(super) enum Report {
         /// Now at this path: its slot in the bin (recycle) or where it came back (restore).
         Placed(PathBuf),
-        /// Done, but the shell gave no path for the result: deleted permanently (recycle).
-        NoResult,
+        /// `S_OK` and no resulting item: deleted permanently, if the item is really gone
+        /// (recycle).
+        Gone,
+        /// Another success code without a result (`COPYENGINE_S_USER_IGNORED` when the user
+        /// declined the permanent-delete warning): left where it was.
+        Skipped,
+        /// A resulting item the shell gave no file system path for.
+        Unplaced,
         Failed(HRESULT),
     }
 
@@ -119,7 +126,10 @@ mod progress {
 
     /// Records the shell's report about one item. The shell may also report items inside a folder
     /// (when it deletes one permanently); only the item itself counts.
-    #[windows_core::implement(IFileOperationProgressSink)]
+    ///
+    /// Not agile: its state is single-threaded (`Rc`, an STA shell item), so COM calls it on the
+    /// STA that made it and marshals calls from any other apartment.
+    #[windows_core::implement(IFileOperationProgressSink, Agile = false)]
     struct Sink {
         item: IShellItem,
         report: Slot,
@@ -143,11 +153,12 @@ mod progress {
                 }
                 let report = if result.is_err() {
                     Report::Failed(result)
+                } else if let Some(created) = created.as_ref() {
+                    file_system_path(created).map_or(Report::Unplaced, Report::Placed)
+                } else if result == S_OK {
+                    Report::Gone
                 } else {
-                    created
-                        .as_ref()
-                        .and_then(file_system_path)
-                        .map_or(Report::NoResult, Report::Placed)
+                    Report::Skipped
                 };
                 *self.report.borrow_mut() = Some(report);
             });
@@ -329,7 +340,12 @@ pub fn recycle(paths: &[PathBuf], owner: Option<isize>) -> Recycled {
         }
     };
     let mut queued = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for path in paths {
+        // Each item once: a second delete of the same item would fail and hide the first.
+        if !seen.insert(path) {
+            continue;
+        }
         let queue = shell_item(path).and_then(|item| {
             let (sink, report) = sink(&item);
             // SAFETY: queues a delete of a live shell item with its own sink.
@@ -354,9 +370,19 @@ pub fn recycle(paths: &[PathBuf], owner: Option<isize>) -> Recycled {
         }
     };
     for (path, report) in queued {
-        match report.borrow_mut().take() {
+        let report = report.borrow_mut().take();
+        match report {
             Some(Report::Placed(slot)) => out.binned.push((path.clone(), slot)),
-            Some(Report::NoResult) => out.deleted.push(path.clone()),
+            // Only what is really gone was deleted; anything still there was left alone.
+            Some(Report::Gone) if std::fs::symlink_metadata(path).is_err() => {
+                out.deleted.push(path.clone());
+            }
+            Some(Report::Gone | Report::Skipped) => out.cancelled = true,
+            Some(Report::Unplaced) => {
+                // In the bin, but without a slot undo could find it by.
+                out.error
+                    .get_or_insert(ShellError::NotRecycled(path.clone()));
+            }
             Some(Report::Failed(code)) => {
                 out.error.get_or_insert(ShellError::Item {
                     path: path.clone(),
@@ -371,6 +397,73 @@ pub fn recycle(paths: &[PathBuf], owner: Option<isize>) -> Recycled {
         }
     }
     out
+}
+
+/// The original path a `$I…` metadata file records for its `$R…` slot (format 1: Vista to 8,
+/// a fixed `MAX_PATH` field; format 2: Windows 10 and later, a counted string). `None` when
+/// it cannot be read.
+fn recorded_original(slot: &Path) -> Option<PathBuf> {
+    let name: Vec<u16> = slot.file_name()?.encode_wide().collect();
+    if name.len() < 3 || name[0] != u16::from(b'$') || name[1] != u16::from(b'R') {
+        return None;
+    }
+    let mut info = name;
+    info[1] = u16::from(b'I');
+    let bytes = std::fs::read(slot.with_file_name(OsString::from_wide(&info))).ok()?;
+    let version = u64::from_le_bytes(bytes.get(..8)?.try_into().ok()?);
+    let (start, units) = match version {
+        1 => (24, 260),
+        2 => {
+            let count = u32::from_le_bytes(bytes.get(24..28)?.try_into().ok()?);
+            (28, usize::try_from(count).ok()?)
+        }
+        _ => return None,
+    };
+    let raw = bytes.get(start..start + units * 2)?;
+    let wide: Vec<u16> = raw
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
+        .take_while(|&unit| unit != 0)
+        .collect();
+    Some(PathBuf::from(OsString::from_wide(&wide)))
+}
+
+/// Whether two paths name the same item, ignoring a verbatim prefix and ASCII case.
+fn same_path(a: &Path, b: &Path) -> bool {
+    let plain = |p: &Path| {
+        let s = p.as_os_str().to_string_lossy().into_owned();
+        s.strip_prefix(r"\\?\")
+            .map_or_else(|| s.clone(), str::to_owned)
+    };
+    plain(a).eq_ignore_ascii_case(&plain(b))
+}
+
+/// Where an item comes back: its original path, or the first free "name (2).ext" when that is
+/// taken again (as Explorer numbers). Chosen before the move, so the shell never meets a
+/// collision, where it could merge a folder into the new one instead of renaming.
+fn free_target(original: &Path, folder: bool) -> Option<PathBuf> {
+    if std::fs::symlink_metadata(original).is_err() {
+        return Some(original.to_path_buf());
+    }
+    let parent = original.parent()?;
+    let (stem, ext) = match (folder, original.extension()) {
+        (false, Some(ext)) => (original.file_stem()?, Some(ext)),
+        _ => (original.file_name()?, None),
+    };
+    (2..10_000).find_map(|n| {
+        let mut name = stem.to_os_string();
+        name.push(format!(" ({n})"));
+        if let Some(ext) = ext {
+            name.push(".");
+            name.push(ext);
+        }
+        let candidate = parent.join(name);
+        std::fs::symlink_metadata(&candidate)
+            .is_err()
+            .then_some(candidate)
+    })
 }
 
 /// The `$I…` file next to a `$R…` slot holds the item's original path and deletion time. The
@@ -397,8 +490,8 @@ fn remove_metadata(slot: &Path) {
 
 /// Restores `(original path, slot)` items: each one is moved from its own slot back to its
 /// original folder (recreated if it is gone). An item whose name is taken again comes back as
-/// "name (2)" instead of replacing anything. A missing slot (the bin was emptied) does not stop
-/// the others.
+/// "name (2)" instead of replacing anything. A missing slot (the bin was emptied), or one whose
+/// metadata names another item, does not stop the others.
 pub fn restore(items: &[(PathBuf, PathBuf)]) -> Restored {
     let mut out = Restored::default();
     let op = match file_operation(
@@ -418,11 +511,17 @@ pub fn restore(items: &[(PathBuf, PathBuf)]) -> Restored {
     let mut queued = Vec::new();
     for (ix, (original, slot)) in items.iter().enumerate() {
         let queue = (|| {
-            if std::fs::symlink_metadata(slot).is_err() {
+            let Ok(meta) = std::fs::symlink_metadata(slot) else {
+                return Err(ShellError::NotRecycled(original.clone()));
+            };
+            // The bin reuses slot names once emptied: never bring back someone else's item.
+            if recorded_original(slot).is_some_and(|recorded| !same_path(&recorded, original)) {
                 return Err(ShellError::NotRecycled(original.clone()));
             }
-            let (Some(parent), Some(name)) = (original.parent(), original.file_name()) else {
-                return Err(ShellError::InvalidPath(original.display().to_string()));
+            let invalid = || ShellError::InvalidPath(original.display().to_string());
+            let target = free_target(original, meta.is_dir()).ok_or_else(invalid)?;
+            let (Some(parent), Some(name)) = (target.parent(), target.file_name()) else {
+                return Err(invalid());
             };
             std::fs::create_dir_all(parent).map_err(ShellError::Io)?;
             let (item, folder) = (shell_item(slot)?, shell_item(parent)?);
@@ -432,10 +531,10 @@ pub fn restore(items: &[(PathBuf, PathBuf)]) -> Restored {
             // `name` outlives the call (the operation copies it).
             unsafe { op.MoveItem(&item, &folder, PCWSTR(name.as_ptr()), &sink) }
                 .map_err(ShellError::Com)?;
-            Ok(report)
+            Ok((report, target))
         })();
         match queue {
-            Ok(report) => queued.push((ix, report)),
+            Ok((report, target)) => queued.push((ix, report, target)),
             Err(err) => {
                 out.error.get_or_insert(err);
             }
@@ -447,12 +546,18 @@ pub fn restore(items: &[(PathBuf, PathBuf)]) -> Restored {
     if let Err(err) = perform(&op) {
         out.error.get_or_insert(err);
     }
-    for (ix, report) in queued {
+    for (ix, report, target) in queued {
         let (original, slot) = &items[ix];
-        match report.borrow_mut().take() {
+        let report = report.borrow_mut().take();
+        match report {
             Some(Report::Placed(back)) => {
                 remove_metadata(slot);
                 out.done.push((ix, back));
+            }
+            // Moved, but without a path from the shell: it is where it was asked to go.
+            Some(Report::Unplaced) => {
+                remove_metadata(slot);
+                out.done.push((ix, target));
             }
             Some(Report::Failed(code)) => {
                 out.error.get_or_insert(ShellError::Item {
@@ -460,7 +565,7 @@ pub fn restore(items: &[(PathBuf, PathBuf)]) -> Restored {
                     source: code.into(),
                 });
             }
-            Some(Report::NoResult) | None => {
+            Some(Report::Gone | Report::Skipped) | None => {
                 out.error.get_or_insert(ShellError::Aborted);
             }
         }
@@ -488,6 +593,49 @@ mod tests {
         assert!(dir.path().join("$IABC.txt").exists() && bin.join("$IABC.txt").exists());
         remove_metadata(&bin.join("$RABC.txt"));
         assert!(!bin.join("$IABC.txt").exists() && bin.join("$RABC.txt").exists());
+    }
+
+    #[test]
+    fn free_targets_number_like_explorer() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("report.txt");
+        assert_eq!(free_target(&file, false), Some(file.clone()));
+        std::fs::write(&file, b"x").unwrap();
+        std::fs::write(dir.path().join("report (2).txt"), b"x").unwrap();
+        assert_eq!(
+            free_target(&file, false),
+            Some(dir.path().join("report (3).txt"))
+        );
+        // Folders keep dots in their name.
+        let folder = dir.path().join("v1.2");
+        std::fs::create_dir(&folder).unwrap();
+        assert_eq!(
+            free_target(&folder, true),
+            Some(dir.path().join("v1.2 (2)"))
+        );
+    }
+
+    #[test]
+    fn metadata_names_the_original_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let slot = dir.path().join("$RABC123.txt");
+        let original = r"C:\Users\Public\a.txt";
+        let wide: Vec<u16> = original.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut bytes = Vec::new();
+        bytes.extend(2u64.to_le_bytes());
+        bytes.extend(5u64.to_le_bytes());
+        bytes.extend(0u64.to_le_bytes());
+        bytes.extend((wide.len() as u32).to_le_bytes());
+        bytes.extend(wide.iter().flat_map(|u| u.to_le_bytes()));
+        std::fs::write(dir.path().join("$IABC123.txt"), bytes).unwrap();
+        let recorded = recorded_original(&slot).unwrap();
+        assert_eq!(recorded, PathBuf::from(original));
+        assert!(same_path(
+            &recorded,
+            Path::new(r"\\?\c:\users\public\A.TXT")
+        ));
+        assert!(!same_path(&recorded, Path::new(r"C:\Users\Public\b.txt")));
+        assert_eq!(recorded_original(&dir.path().join("plain.txt")), None);
     }
 
     /// Uses the real Recycle Bin of this user (it leaves nothing behind when it passes):
@@ -522,6 +670,23 @@ mod tests {
         assert_eq!(std::fs::read(back).unwrap(), b"keep me");
         assert_eq!(std::fs::read(&file).unwrap(), b"new");
         assert!(!slot.exists() && !info.exists(), "no ghost left in the bin");
+
+        // A folder whose name is taken again comes back beside the new one, never merged.
+        let folder = dir.path().join("sx-recycle-folder");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("old.txt"), b"old").unwrap();
+        let recycled = recycle(std::slice::from_ref(&folder), None);
+        assert!(recycled.error.is_none(), "{:?}", recycled.error);
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("new.txt"), b"new").unwrap();
+        let restored = restore(&recycled.binned);
+        assert!(restored.error.is_none(), "{:?}", restored.error);
+        let [(0, back)] = restored.done.as_slice() else {
+            panic!("expected one restored folder: {restored:?}");
+        };
+        assert_eq!(back, &dir.path().join("sx-recycle-folder (2)"));
+        assert!(back.join("old.txt").exists() && !back.join("new.txt").exists());
+        assert!(folder.join("new.txt").exists() && !folder.join("old.txt").exists());
     }
 
     fn remove_metadata_path(slot: &Path) -> PathBuf {

@@ -482,7 +482,12 @@ impl Workspace {
                     let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
                         return;
                     };
-                    if watch && tab.watcher.is_none() {
+                    if watch
+                        && !tab
+                            .watcher
+                            .as_ref()
+                            .is_some_and(sx_win::DirWatcher::is_running)
+                    {
                         tab.watcher =
                             sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
                                 .map_err(
@@ -506,7 +511,12 @@ impl Workspace {
                 } else {
                     tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
                 }
-                if watch && tab.watcher.is_none() {
+                if watch
+                    && !tab
+                        .watcher
+                        .as_ref()
+                        .is_some_and(sx_win::DirWatcher::is_running)
+                {
                     tab.watcher =
                         sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
                             .map_err(

@@ -88,7 +88,7 @@ Aturan dependensi:
 | Worker STA shell | `perf.shell_workers` (2) | STA + message pump (`sx_shell::StaWorker`) | `IShellItemImageFactory`, `SHGetFileInfo`, property store, data context menu | Antrean prioritas (item terlihat dulu). Fase 1: satu worker ikon, permintaan terbaru dulu (`Order::Newest`) |
 | Worker ops | maks `ops.parallel_jobs` (2) | — | `CopyFile2`, `MoveFileExW`, hashing verifikasi | Progress di-throttle 10 Hz |
 | STA ops-shell | 1 | STA | `IFileOperation` (Recycle Bin, namespace shell, elevasi UAC) | Terpisah dari worker thumbnail |
-| Watcher | 1 per tab | — | `FindFirstChangeNotificationW` folder yang terbuka + `CM_Register_Notification` untuk pelepasan drive | Debounce 250 ms → muat ulang (ADR-022). Saat drive diminta dilepas (eject USB), handle ditutup sebelum callback kembali dan watch berhenti. Gagal muat → watcher dilepas |
+| Watcher | 1 per tab | — | `FindFirstChangeNotificationW` folder yang terbuka + `CM_Register_Notification` untuk pelepasan drive | Debounce 250 ms → muat ulang (ADR-022). Semua setup (buka folder, registrasi PnP) di thread watcher, tidak di UI thread. Saat drive diminta dilepas (eject USB), handle ditutup sebelum callback kembali. Eject ditolak app lain → satu perubahan dilaporkan, UI memuat ulang dan memasang watcher baru. Gagal muat → watcher dilepas |
 | HotkeyService | 1 (message-only window) | — | `RegisterHotKey`, `WM_HOTKEY` | Hanya jika ada binding scope global |
 | Tokio (lazy) | 2 | — | HTTP Drive, server loopback OAuth | Dibuat saat cloud pertama dipakai; dimatikan setelah idle |
 | Picker Bridge hook | 1 | STA | `SetWinEventHook` + UI Automation | Hanya jika `integration.picker_bridge` aktif |
@@ -266,6 +266,8 @@ pub struct DirSnapshot {
   mengirim byte sedikit demi sedikit tetap diputus. Klien yang tersambung lalu diam tidak memblokir server.
   Server menunggu klien menutup koneksi sebelum `DisconnectNamedPipe`, karena disconnect membuang data yang
   belum dibaca.
+- Instance elevated memberi pipe-nya label integritas tinggi (`S:(ML;;NW;;;HI)`), jadi proses non-elevated
+  milik user yang sama tidak bisa mengendalikannya.
 - Klien memverifikasi server sebelum mengirim apa pun (`sx_ipc::pipe::trusted_server`):
   `GetNamedPipeServerProcessId` → token proses itu harus punya SID, session, dan status elevasi yang sama,
   dan path image-nya (setelah di-resolve) harus sama dengan exe klien. Gagal → `IpcError::Untrusted`,

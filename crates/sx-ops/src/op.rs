@@ -55,6 +55,7 @@ pub enum Op {
     /// Brings recycled items back (undo of `Recycle`). `restored` is where each one came back,
     /// set when it ran: its original path, or "name (2)" when that name was taken again.
     Restore {
+        #[serde(default)]
         items: Vec<Binned>,
         #[serde(default)]
         restored: Vec<PathBuf>,

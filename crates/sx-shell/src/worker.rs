@@ -125,7 +125,7 @@ impl StaWorker {
                 loop {
                     pump();
                     if worker.stopped.load(Ordering::Relaxed) {
-                        return;
+                        break;
                     }
                     if let Some(job) = worker.next() {
                         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
@@ -144,6 +144,13 @@ impl StaWorker {
                         )
                     };
                 }
+                // Jobs that never ran may hold COM objects of this apartment: release them
+                // while it still exists.
+                worker
+                    .jobs
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clear();
             })
             .map_err(ShellError::Thread)?;
         Ok(Self { queue })

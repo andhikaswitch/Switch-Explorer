@@ -157,8 +157,11 @@ Fase 1 (`sx_shell::clipboard`):
   `DROPEFFECT_MOVE` untuk cut), sehingga paste di Explorer bekerja dan sebaliknya. Data langsung diisi (tanpa
   delayed rendering), jadi tidak perlu `OleFlushClipboard` saat keluar.
 - Paste: `CF_HDROP` + `Preferred DropEffect` (ukuran blok dicek dengan `GlobalSize`) → rencana operasi.
-- Semua akses clipboard berjalan di thread sendiri, bukan UI thread: app lain bisa memegang clipboard
-  (dicoba ulang), dan data yang di-render app lain saat diminta menunggu app itu.
+- Semua akses clipboard berjalan di satu thread clipboard (`StaWorker`, berurutan: paste tepat setelah copy
+  melihat copy itu), bukan UI thread. App lain bisa memegang clipboard (dicoba ulang), dan data yang
+  di-render app lain saat diminta menunggu app itu.
+- Nomor urut clipboard dibaca saat clipboard masih terbuka, setelah datanya (render data on demand bisa
+  mengubahnya).
 - Setelah cut-paste selesai **tanpa error dan tanpa batal**, clipboard dikosongkan, tetapi hanya bila
   `GetClipboardSequenceNumber` masih sama dengan saat dibaca (dicek saat clipboard terbuka). Salinan baru
   user di app mana pun tidak pernah terhapus.
@@ -179,7 +182,13 @@ Succeeded" sesuai skenario delete-on-paste.
   itu ke folder asal (`FOF_RENAMEONCOLLISION`), `PostMoveItem` memberi path akhir, lalu file `$I…`
   pasangannya dihapus. Hanya `$I` di samping slot `$R` di dalam folder `$Recycle.Bin` yang pernah dihapus.
   Sink memanggil `Compare` (`SICHINT_CANONICAL`) agar laporan untuk isi folder tidak tercampur dengan item
-  itu sendiri. Callback yang berisi logika dibungkus `catch_unwind`; sisanya hanya mengembalikan `S_OK`.
+  itu sendiri. Sink tidak agile (`Agile = false`): COM selalu memanggilnya di STA pembuatnya.
+- Item dihitung "dihapus permanen" hanya bila hasilnya `S_OK`, tanpa item hasil, dan item aslinya memang
+  sudah tidak ada. Kode sukses lain (`COPYENGINE_S_USER_IGNORED` saat user menjawab No di peringatan) =
+  item tetap di tempat, dihitung batal.
+- Sebelum restore: file `$I` slot harus mencatat path asli yang sama (slot `$R` bisa dipakai ulang setelah
+  Recycle Bin dikosongkan), dan nama tujuan dipilih dulu ("nama (2)") bila nama asli sudah dipakai, supaya
+  shell tidak pernah bertemu tabrakan (ia bisa menggabungkan folder). Callback yang berisi logika dibungkus `catch_unwind`; sisanya hanya mengembalikan `S_OK`.
 
 ## 12. Taskbar, notifikasi, hotkey global
 
