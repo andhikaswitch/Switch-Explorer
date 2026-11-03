@@ -100,6 +100,10 @@ pub struct Workspace {
     pub(crate) ops: crate::ops::OpsState,
     pub(crate) icons: crate::icons::IconCache,
     pub(crate) dialog_focus: FocusHandle,
+    /// The areas `F6` moves between (with `list_focus`), and the chrome's tab stops.
+    pub(crate) command_area: FocusHandle,
+    pub(crate) sidebar_area: FocusHandle,
+    pub(crate) focus_stops: crate::focus::FocusStops,
     /// Start renaming the selected item on the next render (it needs the window).
     pub(crate) rename_pending: bool,
     backdrop_supported: bool,
@@ -170,6 +174,9 @@ impl Workspace {
             hwnd: hwnd(window),
             ops: crate::ops::OpsState::new(options.journal_dir.as_deref(), usize::from(undo_depth)),
             dialog_focus: cx.focus_handle(),
+            command_area: cx.focus_handle(),
+            sidebar_area: cx.focus_handle(),
+            focus_stops: crate::focus::FocusStops::default(),
             icons,
             rename_pending: false,
             backdrop_supported: options.backdrop_supported,
@@ -1045,7 +1052,8 @@ impl Render for Workspace {
             )
             .child(self.render_status_bar(cx))
             .children(overlays);
-        self.file_actions(root, cx)
+        let root = self.file_actions(root, cx);
+        self.focus_actions(root, cx)
     }
 }
 

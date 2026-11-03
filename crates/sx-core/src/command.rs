@@ -170,6 +170,7 @@ pub const BUILTIN: &[CommandSpec] = &[
     ),
     cmd("view.split", Workspace, &["ctrl-\\"], true, false),
     cmd("view.next_area", Workspace, &["f6"], false, false),
+    cmd("view.previous_area", Workspace, &["shift-f6"], false, false),
     cmd("view.toggle_sidebar", Workspace, &["ctrl-b"], true, false),
     cmd("view.fullscreen", Workspace, &["f11"], true, false),
     cmd(

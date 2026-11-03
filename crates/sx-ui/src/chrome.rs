@@ -21,6 +21,7 @@ use sx_core::Location;
 use sx_theme::Token;
 
 use crate::actions::WORKSPACE_CONTEXT;
+use crate::focus::{self, TabStop as _};
 use crate::format;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -119,8 +120,11 @@ impl Workspace {
             t.color(Token::TabFg),
         );
         let control = t.px(Token::SizeControl);
+        let element = ElementId::NamedInteger("tab".into(), id as u64);
+        let focus = self.focus_stop(&element, cx);
         div()
-            .id(ElementId::NamedInteger("tab".into(), id as u64))
+            .id(element)
+            .tab_stop_ring(&focus, Vec::new(), cx)
             .occlude()
             .relative()
             .flex()
@@ -195,8 +199,10 @@ impl Workspace {
             t.color(Token::ButtonGhostFgHover),
         );
         let control = t.px(Token::SizeControl);
+        let focus = self.focus_stop(&ElementId::Name("tab-new".into()), cx);
         div()
             .id("tab-new")
+            .tab_stop_ring(&focus, Vec::new(), cx)
             .occlude()
             .flex()
             .flex_none()
@@ -227,7 +233,7 @@ impl Workspace {
         let t = cx.tokens();
         let tab = self.tab();
         let can_up = tab.location().parent().is_some();
-        div()
+        focus::area(div().id("command-bar"), &self.command_area)
             .flex()
             .flex_none()
             .items_center()
@@ -317,8 +323,10 @@ impl Workspace {
             t.color(Token::ButtonGhostFgHover),
         );
         let (label, action) = self.nav_tooltip(id);
+        let focus = self.focus_stop(&ElementId::Name(id.into()), cx);
         div()
             .id(id)
+            .when(enabled, |el| el.tab_stop_ring(&focus, Vec::new(), cx))
             .flex()
             .flex_none()
             .items_center()
@@ -406,9 +414,11 @@ impl Workspace {
             }
             let Some((label, location)) = segment else {
                 // The collapsed middle: clicking it shows the whole path to edit.
+                let focus = self.focus_stop(&ElementId::Name("crumb-more".into()), cx);
                 out.push(
                     div()
                         .id("crumb-more")
+                        .tab_stop_ring(&focus, Vec::new(), cx)
                         .flex_none()
                         .px(t.px(Token::SpaceSm))
                         .rounded(t.px(Token::RadiusXs))
@@ -423,9 +433,15 @@ impl Workspace {
                 );
                 continue;
             };
+            let stop = match location.as_path() {
+                Some(path) => format!("crumb:{}", path.display()),
+                None => format!("crumb:{label}"),
+            };
+            let focus = self.focus_stop(&ElementId::Name(stop.into()), cx);
             out.push(
                 div()
                     .id(ElementId::NamedInteger("crumb".into(), ix as u64))
+                    .tab_stop_ring(&focus, Vec::new(), cx)
                     .flex_none()
                     .px(t.px(Token::SpaceSm))
                     .rounded(t.px(Token::RadiusXs))

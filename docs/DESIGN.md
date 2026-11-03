@@ -56,7 +56,7 @@ dark `#7A8FA8` di `#0A1628` ≈ 5.5:1.
 | `accent.highlight` | Lagoon → Cerulean (120°) | sama | Tide Slash, tombol primer, toggle on |
 | `accent.solid` | Tide → Deep Tide (135°) | sama | Checkbox, bidang solid bertulisan putih |
 | `selection.bg` | Cerulean 16% | Cerulean 22% | Baris terpilih |
-| `focus.ring` | Tide | Lagoon | 2 px + offset 2 px |
+| `focus.ring` | Tide | Lagoon | `focus.ring_width` (2 px), digambar tepat di dalam tepi elemen (bayangan inset): tidak menggeser layout dan tidak terpotong container yang meng-clip (sidebar, strip tab) |
 
 Warna kategori (ikon folder kategori, chip, bar komposisi Organizer): Dokumen `#3B82F6`, Audio `#F43F5E`,
 Gambar `#F59E0B`, Video `#8B5CF6`, Arsip `#10B981`, Kode `#06B6D4`, Aplikasi `#64748B`, Lainnya `#94A3B8`.

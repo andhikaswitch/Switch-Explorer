@@ -178,6 +178,7 @@ impl Workspace {
             .id("details")
             .key_context(LIST_CONTEXT)
             .track_focus(&self.list_focus)
+            .tab_index(0)
             .flex()
             .flex_col()
             .flex_1()

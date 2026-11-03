@@ -10,6 +10,7 @@ pub mod actions;
 mod assets;
 mod chrome;
 mod details;
+mod focus;
 mod format;
 mod icons;
 mod ops;

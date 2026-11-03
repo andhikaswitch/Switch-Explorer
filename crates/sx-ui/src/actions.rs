@@ -48,6 +48,10 @@ actions!(
         EditRedo,
         TransferPanel,
         SidebarPin,
+        FocusNextArea,
+        FocusPreviousArea,
+        FocusNextStop,
+        FocusPreviousStop,
     ]
 );
 
@@ -83,6 +87,8 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "edit.redo" => Box::new(EditRedo),
         "app.transfer_panel" => Box::new(TransferPanel),
         "sidebar.pin" => Box::new(SidebarPin),
+        "view.next_area" => Box::new(FocusNextArea),
+        "view.previous_area" => Box::new(FocusPreviousArea),
         _ => return None,
     })
 }
@@ -133,6 +139,9 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
         KeyBinding::new("ctrl-up", MoveFocusPrevious, list),
         KeyBinding::new("ctrl-down", MoveFocusNext, list),
         KeyBinding::new("ctrl-enter", OpenInNewTab, list),
+        // Moving between controls is not a command; it also leaves a text input.
+        KeyBinding::new("tab", FocusNextStop, Some(WORKSPACE_CONTEXT)),
+        KeyBinding::new("shift-tab", FocusPreviousStop, Some(WORKSPACE_CONTEXT)),
     ]);
     cx.bind_keys(bindings);
 }

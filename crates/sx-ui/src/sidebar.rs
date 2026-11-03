@@ -14,6 +14,7 @@ use sx_core::Location;
 use sx_theme::Token;
 use sx_win::Drive;
 
+use crate::focus::{self, TabStop as _};
 use crate::format;
 use crate::slash;
 use crate::theme::ActiveTokens as _;
@@ -61,8 +62,7 @@ impl Workspace {
         let item = |id: Item, icon: IconName, label: SharedString, to: Location| {
             self.sidebar_item(id, icon, label, None, active == Some(id), to, cx)
         };
-        div()
-            .id("sidebar")
+        focus::area(div().id("sidebar"), &self.sidebar_area)
             .flex()
             .flex_col()
             .flex_none()
@@ -178,13 +178,7 @@ impl Workspace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let t = cx.tokens();
-        let element_id = match id {
-            Item::Home => ElementId::Name("side-home".into()),
-            Item::Pin(ix) => ElementId::NamedInteger("side-pin".into(), ix as u64),
-            Item::ThisPc => ElementId::Name("side-pc".into()),
-            Item::Drive(letter) => ElementId::NamedInteger("side-drive".into(), u64::from(letter)),
-            Item::RecycleBin => ElementId::Name("side-bin".into()),
-        };
+        let element_id = id.element_id();
         let (fg, active_fg, icon_fg, muted) = (
             t.color(Token::NavItemFg),
             t.color(Token::NavItemActiveFg),
@@ -200,8 +194,11 @@ impl Workspace {
         let gauge = drive.and_then(|d| self.drive_gauge(d, active || lit, cx));
         let detail = drive.map(format::drive_space);
         let control = t.px(Token::SizeControl);
+        let glow = if active { active_glow(cx) } else { Vec::new() };
+        let focus = self.focus_stop(&element_id, cx);
         div()
             .id(element_id.clone())
+            .tab_stop_ring(&focus, glow.clone(), cx)
             .flex()
             .items_center()
             .gap(t.px(Token::SpaceMd))
@@ -211,10 +208,6 @@ impl Workspace {
             .rounded(t.px(Token::RadiusSm))
             .relative()
             .when(active, |el| {
-                let mut glow = t.shadow(Token::ShadowGlow);
-                for shadow in &mut glow {
-                    shadow.color = t.color(Token::NavItemActiveGlow);
-                }
                 el.text_color(active_fg)
                     .shadow(glow)
                     .child(slash::tide_slash(slash::Slash {
@@ -290,4 +283,26 @@ fn drive_letter(path: &Path) -> Option<char> {
         },
         _ => None,
     }
+}
+
+impl Item {
+    fn element_id(self) -> ElementId {
+        match self {
+            Self::Home => ElementId::Name("side-home".into()),
+            Self::Pin(ix) => ElementId::NamedInteger("side-pin".into(), ix as u64),
+            Self::ThisPc => ElementId::Name("side-pc".into()),
+            Self::Drive(letter) => ElementId::NamedInteger("side-drive".into(), u64::from(letter)),
+            Self::RecycleBin => ElementId::Name("side-bin".into()),
+        }
+    }
+}
+
+/// The glow under the active item's Tide Slash (`shadow.glow` in `nav.item.active.glow`).
+fn active_glow(cx: &gpui_kit::App) -> Vec<gpui_kit::BoxShadow> {
+    let t = cx.tokens();
+    let mut glow = t.shadow(Token::ShadowGlow);
+    for shadow in &mut glow {
+        shadow.color = t.color(Token::NavItemActiveGlow);
+    }
+    glow
 }
