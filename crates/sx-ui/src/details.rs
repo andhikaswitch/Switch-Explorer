@@ -524,7 +524,7 @@ impl Workspace {
                     focused,
                     is_focus: focused && focus_row == Some(row),
                 };
-                let text = tab.row_text(row)?;
+                let text = tab.row_text(row, self.features.view_show_extensions)?;
                 let kind = self.row_kind(row)?;
                 Some((row, kind, text, state))
             })

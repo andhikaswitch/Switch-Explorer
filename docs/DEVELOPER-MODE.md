@@ -197,6 +197,10 @@ Jenis aksi:
 | `hotswitch.titlebar_badge` | bool | true | Badge "Drag mati" di title bar saat master mati |
 | `hotswitch.chord_timeout_ms` | u16 | 1500 | Batas waktu tombol kedua setelah `Ctrl+K` |
 
+Implementasi: `sx_ui::hotswitch`. Binding dibaca dari `sx_settings::DEFAULT_BINDINGS` (keymap.toml menyusul);
+setiap perubahan lewat `SettingsStore::run_hotswitch` menghasilkan `Change` yang memperbarui snapshot, chip,
+badge, dan OSD; `settings.toml` ditulis di thread `sx-settings`, berurutan.
+
 ### 6.4 Aturan perilaku
 - Chord `Ctrl+K` hanya aktif saat fokus **tidak** di input teks (kotak cari, rename, address bar), agar
   tidak memakan karakter. Kombinasi tunggal seperti `Ctrl+Shift+D` tetap aktif di mana pun.

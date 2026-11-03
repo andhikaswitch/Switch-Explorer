@@ -12,6 +12,7 @@ mod chrome;
 mod details;
 mod focus;
 mod format;
+mod hotswitch;
 mod icons;
 mod ops;
 mod overlays;

@@ -15,7 +15,9 @@ pub struct RowText {
     pub size: SharedString,
 }
 
-pub fn row_text(entry: &EntryView<'_>) -> RowText {
+/// The display strings of a row. Without `show_extensions` a file's extension is left out of
+/// its name (the Type column still says it), as in Explorer.
+pub fn row_text(entry: &EntryView<'_>, show_extensions: bool) -> RowText {
     let kind = match entry.kind {
         // Explorer also calls junctions and folder symlinks "File folder".
         EntryKind::Dir | EntryKind::Junction => t!("details.type_folder"),
@@ -29,8 +31,16 @@ pub fn row_text(entry: &EntryView<'_>) -> RowText {
     } else {
         sx_win::format::kb_size(entry.size).into()
     };
+    let mut name = entry.name;
+    if !show_extensions && !entry.kind.is_container() && !entry.ext.is_empty() {
+        // `ext` is the lowercase extension, the same length as in the name.
+        let cut = name.len().saturating_sub(entry.ext.len() + 1);
+        if cut > 0 && name.is_char_boundary(cut) && name[cut..].starts_with('.') {
+            name = &name[..cut];
+        }
+    }
     RowText {
-        name: SharedString::from(entry.name.to_string()),
+        name: SharedString::from(name.to_string()),
         modified: sx_win::format::file_time(entry.modified)
             .unwrap_or_default()
             .into(),

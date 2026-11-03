@@ -20,7 +20,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use rust_i18n::t;
 use sx_core::{EntryKind, Location};
 use sx_fs::{Address, Column, LoadError, SortSpec, ViewOptions};
-use sx_settings::Features;
+use sx_settings::{Features, SettingsStore};
 use sx_shell::OsAppearance;
 use sx_theme::{Mode, Token};
 use sx_win::Drive;
@@ -52,7 +52,8 @@ pub struct OpenRequest {
 pub struct WorkspaceOptions {
     /// One tab per location; Home when empty.
     pub locations: Vec<Location>,
-    pub features: Arc<Features>,
+    /// The switches: their values, Hot Switch, `settings.toml`.
+    pub settings: SettingsStore,
     /// The OS supports system backdrops (Windows 11 22H2+).
     pub backdrop_supported: bool,
     pub appearance: OsAppearance,
@@ -94,6 +95,12 @@ pub struct Workspace {
     /// the highlight colours from this; GPUI group hover is not known yet when text is laid out.
     pub(crate) hovered: Option<gpui_kit::ElementId>,
     pub(crate) features: Arc<Features>,
+    /// Where `features` comes from; Hot Switch changes it (and writes `settings.toml`).
+    pub(crate) settings: SettingsStore,
+    pub(crate) settings_writer: crate::hotswitch::SettingsWriter,
+    /// The Hot Switch OSD, while it shows.
+    pub(crate) osd: Option<crate::hotswitch::Osd>,
+    pub(crate) next_osd: u64,
     /// One-line message about the last failed action (cause + fix, DESIGN.md §10).
     pub(crate) notice: Option<SharedString>,
     pub(crate) hwnd: Option<isize>,
@@ -155,9 +162,10 @@ impl Workspace {
         ];
         let list_focus = cx.focus_handle().tab_stop(true);
         window.focus(&list_focus, cx);
-        let undo_depth = options.features.ops_undo_depth;
+        let features = options.settings.snapshot();
+        let undo_depth = features.ops_undo_depth;
         let (icons, loaded_icons) =
-            crate::icons::IconCache::start(usize::from(options.features.perf_icon_cache_entries));
+            crate::icons::IconCache::start(usize::from(features.perf_icon_cache_entries));
         let (changes, changed_tabs) = mpsc::unbounded();
 
         let mut this = Self {
@@ -175,7 +183,11 @@ impl Workspace {
             pins_file: options.pins_file.clone(),
             sidebar_visible: true,
             hovered: None,
-            features: options.features,
+            features,
+            settings: options.settings,
+            settings_writer: crate::hotswitch::SettingsWriter::start(),
+            osd: None,
+            next_osd: 0,
             notice: None,
             hwnd: hwnd(window),
             ops: crate::ops::OpsState::new(options.journal_dir.as_deref(), usize::from(undo_depth)),
@@ -1082,8 +1094,10 @@ impl Render for Workspace {
                     .child(self.render_content(window, cx)),
             )
             .child(self.render_status_bar(cx))
+            .children(self.render_osd(cx))
             .children(overlays);
         let root = self.file_actions(root, cx);
+        let root = self.hotswitch_actions(root, cx);
         self.focus_actions(root, cx)
     }
 }

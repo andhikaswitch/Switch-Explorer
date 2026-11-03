@@ -53,5 +53,7 @@ impl Workspace {
             .text_color(t.color(Token::FgSecondary))
             .children(left.into_iter().map(|text| div().child(text)))
             .children(free.map(|text| div().child(text)))
+            .child(div().flex_1())
+            .children(self.render_drag_chip(cx))
     }
 }

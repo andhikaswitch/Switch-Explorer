@@ -148,3 +148,42 @@ conflict:
   keep_both: Keep both
   replace_newer: Replace if newer
   apply_all: "Do this for all %{count} items"
+flag:
+  dnd:
+    enabled: All dragging
+    external: Dragging to and from other apps
+    external_out: Dragging out to other apps
+    external_in: Dragging in from other apps
+    source:
+      files: File dragging
+      folders: Folder dragging
+      sidebar: Dragging from the sidebar
+  sidebar:
+    pins_locked: Pinned folder lock
+  view:
+    show_hidden: Hidden items
+    show_extensions: File name extensions
+    thumbnails: Thumbnails
+  safety:
+    readonly_mode: Read-only mode
+preset:
+  anti_drag: Anti accidental drag
+hotswitch:
+  "on": "%{name} turned on"
+  "off": "%{name} turned off"
+  set: "%{name}: %{value}"
+  group_on: "%{name} turned on (%{count} switches)"
+  group_off: "%{name} turned off (%{count} switches)"
+  preset_on: "%{name} preset on (%{count} switches changed)"
+  preset_off: "%{name} preset off. Previous values are back."
+  again: "Toggle: %{keys}"
+  blocked: "Not in effect: all dragging is off."
+  needs_dev: "%{name} needs Developer Mode"
+  needs_dev_hint: Turn on Developer Mode in Settings first.
+  failed: Couldn't change this switch.
+  chip_on: "Drag: on"
+  chip_partial: "Drag: partly on"
+  chip_off: "Drag: off"
+  tip_on: "on"
+  tip_off: "off"
+  badge: Drag off

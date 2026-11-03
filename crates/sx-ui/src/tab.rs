@@ -150,8 +150,9 @@ impl Tab {
         self.rows.borrow_mut().clear();
     }
 
-    /// Display strings of a visible row, formatted once and cached.
-    pub fn row_text(&self, row: usize) -> Option<RowText> {
+    /// Display strings of a visible row, formatted once and cached (the cache is cleared when
+    /// `view.show_extensions` changes).
+    pub fn row_text(&self, row: usize, show_extensions: bool) -> Option<RowText> {
         let snapshot = self.snapshot()?;
         let entry = snapshot.row(row)?;
         let mut rows = self.rows.borrow_mut();
@@ -160,7 +161,7 @@ impl Tab {
         }
         Some(
             rows.entry(entry.index)
-                .or_insert_with(|| format::row_text(&entry))
+                .or_insert_with(|| format::row_text(&entry, show_extensions))
                 .clone(),
         )
     }

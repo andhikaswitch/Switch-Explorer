@@ -96,6 +96,11 @@ impl Workspace {
                     )
                     .child(self.render_new_tab_button(cx)),
             )
+            // "Drag off" next to the window buttons while all dragging is off.
+            .children(
+                self.render_drag_badge(cx)
+                    .map(|badge| badge.mr(t.px(Token::SpaceMd))),
+            )
             .child(caption(
                 "caption-min",
                 WindowControlArea::Min,

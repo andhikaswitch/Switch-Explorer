@@ -148,3 +148,42 @@ conflict:
   keep_both: Simpan keduanya
   replace_newer: Ganti jika lebih baru
   apply_all: "Lakukan ini untuk semua (%{count} item)"
+flag:
+  dnd:
+    enabled: Semua drag
+    external: Drag ke/dari aplikasi lain
+    external_out: Drag ke aplikasi lain
+    external_in: Drag dari aplikasi lain
+    source:
+      files: Drag file
+      folders: Drag folder
+      sidebar: Drag dari sidebar
+  sidebar:
+    pins_locked: Kunci folder pinned
+  view:
+    show_hidden: Item tersembunyi
+    show_extensions: Ekstensi nama file
+    thumbnails: Thumbnail
+  safety:
+    readonly_mode: Mode baca-saja
+preset:
+  anti_drag: anti salah drag
+hotswitch:
+  "on": "%{name} diaktifkan"
+  "off": "%{name} dinonaktifkan"
+  set: "%{name}: %{value}"
+  group_on: "%{name} diaktifkan (%{count} switch)"
+  group_off: "%{name} dinonaktifkan (%{count} switch)"
+  preset_on: "Preset %{name} aktif (%{count} switch diubah)"
+  preset_off: "Preset %{name} dimatikan. Nilai sebelumnya dikembalikan."
+  again: "Balik lagi: %{keys}"
+  blocked: "Tidak berlaku: semua drag sedang mati."
+  needs_dev: "%{name} butuh Developer Mode"
+  needs_dev_hint: Aktifkan Developer Mode di Settings dulu.
+  failed: Switch ini tidak bisa diubah.
+  chip_on: "Drag: aktif"
+  chip_partial: "Drag: sebagian"
+  chip_off: "Drag: mati"
+  tip_on: aktif
+  tip_off: mati
+  badge: Drag mati

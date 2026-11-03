@@ -32,6 +32,11 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Ikon sistem di daftar (cache terbatas `perf.icon_cache_entries`).
 - Pin/unpin folder di sidebar; nama `shell:` dan `~` di address bar.
 - ADR-021 (engine operasi file Fase 1), ADR-022 (watcher muat ulang debounce).
+- Hot Switch: `Ctrl+Shift+D` dan chord `Ctrl+K` (F, D, S, E, G, L, H, X, T, R) membalik switch seketika
+  dengan OSD di atas status bar, chip "Drag: aktif/sebagian/mati" (tooltip berisi semua switch drag dan
+  hotkey-nya), dan badge "Drag mati" di title bar. Preset "anti salah drag" bisa dinyalakan/dimatikan dan
+  mengembalikan nilai sebelumnya. Perubahan disimpan sesuai `hotswitch.persist`.
+- Ekstensi nama file bisa disembunyikan (`view.show_extensions`, `Ctrl+K`, `X`).
 - Progress operasi di tombol taskbar (`ops.taskbar_progress`).
 - Lebar kolom Diubah, Tipe, dan Ukuran bisa diseret di header (per tab, per sesi).
 - Navigasi keyboard di luar daftar: `Tab`/`Shift+Tab` ke tab, tombol nav, breadcrumb, dan item sidebar;
