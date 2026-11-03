@@ -55,7 +55,11 @@
 ## 6. IPC
 
 - Pipe dengan DACL hanya SID pengguna (+ SYSTEM), `PIPE_REJECT_REMOTE_CLIENTS`.
-- Pesan maks 1 MB, JSON tervalidasi; path dari pesan dinormalisasi & divalidasi sebelum dipakai.
+- Siapa pun bisa membuat pipe dengan nama kita lebih dulu (squatting). Klien hanya bicara dengan server
+  yang SID, session, elevasi, dan exe-nya sama dengan klien. Pipe dibuka dengan `SECURITY_IDENTIFICATION`
+  supaya server tidak bisa meng-impersonate klien (ARCHITECTURE.md §12).
+- Pesan maks 1 MB, JSON tervalidasi, tenggat per pesan; path dari pesan dinormalisasi & divalidasi sebelum
+  dipakai. `OpenPaths` hanya menerima path absolut, maksimum 64 per pesan.
 - Hanya aksi yang aman yang tersedia lewat IPC (buka path, aktifkan window, picker, upload dialog).
 
 ## 7. Parsing file konfigurasi

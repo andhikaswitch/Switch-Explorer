@@ -28,7 +28,7 @@ Settings di elementary OS), BlueSwitch, Swytch.
 | Data roaming | `%APPDATA%\SwitchExplorer\` |
 | Data lokal | `%LOCALAPPDATA%\SwitchExplorer\` |
 | Portable | `portable.flag` → `.\data\` |
-| Named pipe | `\\.\pipe\switch-explorer.<SID>.v1` |
+| Named pipe | `\\.\pipe\switch-explorer.<SID>.<session>[.admin].v1` |
 | Mutex single instance | `Local\SwitchExplorer.SingleInstance.v1` |
 | AppUserModelID | `SwitchExplorer.App` |
 | Verb registry | `switchexplorer` (`Directory\shell`, `Drive\shell`), `switchexplorer.open` (menu Explorer) |

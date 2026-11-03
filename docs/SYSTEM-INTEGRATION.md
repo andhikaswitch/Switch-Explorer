@@ -48,7 +48,8 @@ Pemantauan dilakukan `ThemeWatcher` (window tersembunyi di `sx-shell`) yang meng
 
 ## 4. Single instance, IPC, resident mode
 
-- Proses pertama membuat pipe `\\.\pipe\switch-explorer.<SID>.v1` (detail di ARCHITECTURE.md §12).
+- Proses pertama membuat pipe `\\.\pipe\switch-explorer.<SID>.<session>[.admin].v1` (detail di
+  ARCHITECTURE.md §12).
 - Proses berikutnya (dari registry verb, Win+E, CLI) mengirim `OpenPaths`/`Activate` lalu keluar < 50 ms.
 - Resident mode (`integration.resident`): saat window terakhir ditutup, proses tetap hidup dengan cache besar
   dibuang (≤ 25 MB), ikon di system tray dengan menu (Buka, Hot Switch, Settings, Keluar). Win+E/buka folder

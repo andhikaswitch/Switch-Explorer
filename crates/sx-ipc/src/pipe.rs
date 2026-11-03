@@ -1,32 +1,40 @@
 //! The single-instance pipe (ARCHITECTURE.md §12, SYSTEM-INTEGRATION.md §4).
 //!
-//! `\\.\pipe\switch-explorer.<user SID>.v1`:
+//! `\\.\pipe\switch-explorer.<user SID>.<session>[.admin].v1`:
+//! - The name is per user, logon session and elevation. Pipe names are machine-wide, so a second
+//!   desktop session or an elevated window keeps its own instance.
 //! - The DACL grants only the current user and SYSTEM.
 //! - Remote clients are rejected.
 //! - The first instance is created with `FILE_FLAG_FIRST_PIPE_INSTANCE`, which is the
 //!   single-instance arbitration: a second process cannot create the pipe, so it connects to it
 //!   and forwards its request.
+//! - Anyone may create a pipe with this name first. A client therefore only talks to a server
+//!   that runs as the same user, session and elevation from the same executable, and it lets the
+//!   server identify it but never impersonate it (SECURITY.md §6).
 //!
-//! All I/O is overlapped with timeouts, so a client that connects and then stalls cannot block
-//! the server, and a server that stops answering cannot block a client.
+//! All I/O is overlapped with a deadline per message, so a client that connects and then stalls
+//! cannot block the server, and a server that stops answering cannot block a client.
 
+use std::os::windows::ffi::OsStringExt;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_IO_PENDING, ERROR_PIPE_BUSY,
-    ERROR_PIPE_CONNECTED, GENERIC_READ, GENERIC_WRITE, HANDLE, HLOCAL, INVALID_HANDLE_VALUE,
-    LocalFree, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    CloseHandle, ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_IO_PENDING, ERROR_NO_DATA,
+    ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED, GENERIC_READ, GENERIC_WRITE, HANDLE, HLOCAL,
+    INVALID_HANDLE_VALUE, LocalFree, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
 use windows::Win32::Security::{
-    GetTokenInformation, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
-    TokenUser,
+    GetTokenInformation, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_ELEVATION,
+    TOKEN_INFORMATION_CLASS, TOKEN_QUERY, TOKEN_USER, TokenElevation, TokenSessionId, TokenUser,
 };
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, FILE_SHARE_NONE,
-    OPEN_EXISTING, PIPE_ACCESS_DUPLEX, ReadFile, WriteFile,
+    OPEN_EXISTING, PIPE_ACCESS_DUPLEX, ReadFile, SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT,
+    WriteFile,
 };
 use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 use windows::Win32::System::Pipes::{
@@ -34,7 +42,8 @@ use windows::Win32::System::Pipes::{
     PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT, WaitNamedPipeW,
 };
 use windows::Win32::System::Threading::{
-    CreateEventW, GetCurrentProcess, OpenProcessToken, ResetEvent, SetEvent,
+    CreateEventW, GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, ResetEvent, SetEvent,
     WaitForMultipleObjects, WaitForSingleObject,
 };
 use windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
@@ -71,46 +80,135 @@ fn event() -> Result<Owned, IpcError> {
     Ok(Owned(handle))
 }
 
-/// `S-1-5-21-…` of the user running this process.
-fn user_sid() -> Result<String, IpcError> {
-    let mut token = HANDLE::default();
-    // SAFETY: query access to our own token; the handle is closed by `Owned`.
-    unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) }?;
-    let token = Owned(token);
+/// One token information class, in u64 storage so the pointer-aligned structures are aligned.
+/// `min` is the size of a fixed-size class, for which the size query may not report a length.
+fn token_info(
+    token: HANDLE,
+    class: TOKEN_INFORMATION_CLASS,
+    min: usize,
+) -> Result<Vec<u64>, IpcError> {
     let mut len = 0u32;
     // SAFETY: a size query; it fails with ERROR_INSUFFICIENT_BUFFER and sets `len`.
-    let _ = unsafe { GetTokenInformation(token.0, TokenUser, None, 0, &raw mut len) };
-    // u64 storage keeps TOKEN_USER (pointer-aligned) correctly aligned.
-    let mut buffer = vec![0u64; (len as usize).div_ceil(8).max(1)];
-    // SAFETY: the buffer holds at least `len` bytes and outlives the call.
+    let _ = unsafe { GetTokenInformation(token, class, None, 0, &raw mut len) };
+    let bytes = (len as usize).max(min);
+    let mut buffer = vec![0u64; bytes.div_ceil(8).max(1)];
+    // SAFETY: the buffer holds at least `bytes` bytes and outlives the call.
     unsafe {
         GetTokenInformation(
-            token.0,
-            TokenUser,
+            token,
+            class,
             Some(buffer.as_mut_ptr().cast()),
-            len,
+            bytes as u32,
             &raw mut len,
         )
     }?;
-    // SAFETY: GetTokenInformation(TokenUser) filled the buffer with a TOKEN_USER whose SID
-    // pointer points into the same buffer, which is alive for the conversion below.
-    let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
-    let mut text = PWSTR::null();
-    // SAFETY: `sid` is valid (see above); the string is freed with LocalFree after copying.
-    unsafe {
-        ConvertSidToStringSidW(sid, &raw mut text)?;
-        let out = text.to_string().map_err(|_| IpcError::Closed);
-        let _ = LocalFree(Some(HLOCAL(text.0.cast())));
-        out
+    Ok(buffer)
+}
+
+/// Who a process runs as: the account, the logon session and whether it is elevated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Identity {
+    /// `S-1-5-21-…`.
+    sid: String,
+    session: u32,
+    elevated: bool,
+}
+
+impl Identity {
+    fn of_token(token: HANDLE) -> Result<Self, IpcError> {
+        let user = token_info(token, TokenUser, size_of::<TOKEN_USER>())?;
+        // SAFETY: GetTokenInformation(TokenUser) filled the buffer with a TOKEN_USER whose SID
+        // pointer points into the same buffer, which is alive for the conversion below.
+        let sid = unsafe { (*user.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+        let mut text = PWSTR::null();
+        // SAFETY: `sid` is valid (see above); the string is freed with LocalFree after copying.
+        let sid = unsafe {
+            ConvertSidToStringSidW(sid, &raw mut text)?;
+            let out = text.to_string().map_err(|_| IpcError::Closed);
+            let _ = LocalFree(Some(HLOCAL(text.0.cast())));
+            out
+        }?;
+        let session = token_info(token, TokenSessionId, size_of::<u32>())?;
+        let elevation = token_info(token, TokenElevation, size_of::<TOKEN_ELEVATION>())?;
+        // SAFETY: both buffers were filled by GetTokenInformation with the fixed-size structure
+        // of their class (a DWORD session id, a TOKEN_ELEVATION) and are at least that large.
+        let (session, elevated) = unsafe {
+            (
+                *session.as_ptr().cast::<u32>(),
+                (*elevation.as_ptr().cast::<TOKEN_ELEVATION>()).TokenIsElevated != 0,
+            )
+        };
+        Ok(Self {
+            sid,
+            session,
+            elevated,
+        })
+    }
+
+    fn of_process(process: HANDLE) -> Result<Self, IpcError> {
+        let mut token = HANDLE::default();
+        // SAFETY: query access to the token of a process handle we hold; closed by `Owned`.
+        unsafe { OpenProcessToken(process, TOKEN_QUERY, &raw mut token) }?;
+        let token = Owned(token);
+        Self::of_token(token.0)
+    }
+
+    fn current() -> Result<Self, IpcError> {
+        // SAFETY: the pseudo handle of this process needs no closing.
+        Self::of_process(unsafe { GetCurrentProcess() })
     }
 }
 
-/// The pipe name for this user and protocol version.
+/// The pipe name for this user, session, elevation and protocol version.
 pub fn pipe_name() -> Result<String, IpcError> {
+    let me = Identity::current()?;
+    let admin = if me.elevated { ".admin" } else { "" };
     Ok(format!(
-        r"\\.\pipe\switch-explorer.{}.v{VERSION}",
-        user_sid()?
+        r"\\.\pipe\switch-explorer.{}.{}{admin}.v{VERSION}",
+        me.sid, me.session
     ))
+}
+
+/// The executable of a process, resolved so two spellings of one file compare equal.
+fn image_path(process: HANDLE) -> Option<PathBuf> {
+    let mut buffer = vec![0u16; 32 * 1024];
+    let mut len = buffer.len() as u32;
+    // SAFETY: `buffer` holds `len` UTF-16 units; the call writes at most that many and stores
+    // the length written in `len`.
+    unsafe {
+        QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &raw mut len,
+        )
+    }
+    .ok()?;
+    buffer.truncate(len as usize);
+    let path = PathBuf::from(std::ffi::OsString::from_wide(&buffer));
+    std::fs::canonicalize(path).ok()
+}
+
+/// The process id of the server at the other end of `pipe` when it is a Switch Explorer of this
+/// user: same account, session and elevation, same executable as this process. A process that
+/// merely created a pipe with our name first fails this, and gets neither the request nor the
+/// right to take the foreground.
+fn trusted_server(pipe: HANDLE) -> Result<u32, IpcError> {
+    let mut pid = 0u32;
+    // SAFETY: `pipe` is a connected client handle; the pid is written to a local.
+    unsafe { GetNamedPipeServerProcessId(pipe, &raw mut pid) }?;
+    // SAFETY: limited query access to the server process; the handle is closed by `Owned`.
+    let process = Owned(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }?);
+    if Identity::of_process(process.0)? != Identity::current()? {
+        return Err(IpcError::Untrusted);
+    }
+    let ours = std::env::current_exe()
+        .ok()
+        .and_then(|exe| std::fs::canonicalize(exe).ok());
+    match (image_path(process.0), ours) {
+        (Some(theirs), Some(ours)) if theirs == ours => Ok(pid),
+        _ => Err(IpcError::Untrusted),
+    }
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -122,7 +220,10 @@ struct Dacl(PSECURITY_DESCRIPTOR);
 
 impl Dacl {
     fn current_user() -> Result<Self, IpcError> {
-        let sddl = wide(&format!("D:P(A;;GA;;;{})(A;;GA;;;SY)", user_sid()?));
+        let sddl = wide(&format!(
+            "D:P(A;;GA;;;{})(A;;GA;;;SY)",
+            Identity::current()?.sid
+        ));
         let mut descriptor = PSECURITY_DESCRIPTOR::default();
         // SAFETY: `sddl` is NUL-terminated; the descriptor is freed with LocalFree on drop.
         unsafe {
@@ -173,27 +274,47 @@ fn overlapped(
     // SAFETY: waits on our own event, which the pending operation signals.
     let waited = unsafe { WaitForSingleObject(event.0, ms) };
     let mut done = 0u32;
-    if waited == WAIT_TIMEOUT {
+    if waited != WAIT_OBJECT_0 {
+        let err = if waited == WAIT_TIMEOUT {
+            IpcError::Timeout
+        } else {
+            windows::core::Error::from_thread().into()
+        };
         // SAFETY: cancels this operation, then waits for it to finish so `ov` is not used after
-        // this function returns.
+        // this function returns (also when the wait itself failed).
         unsafe {
             let _ = CancelIoEx(handle, Some(&raw const ov));
             let _ = GetOverlappedResult(handle, &raw const ov, &raw mut done, true);
         }
-        return Err(IpcError::Timeout);
+        return Err(err);
     }
     // SAFETY: the operation completed (the event is signalled); `ov` and `done` are locals.
     unsafe { GetOverlappedResult(handle, &raw const ov, &raw mut done, false) }?;
     Ok(done)
 }
 
-fn read_exact(handle: HANDLE, event: &Owned, out: &mut [u8]) -> Result<(), IpcError> {
+/// Time left until `deadline`; `Timeout` once it has passed.
+fn left(deadline: Instant) -> Result<Duration, IpcError> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        Err(IpcError::Timeout)
+    } else {
+        Ok(left)
+    }
+}
+
+fn read_exact(
+    handle: HANDLE,
+    event: &Owned,
+    out: &mut [u8],
+    deadline: Instant,
+) -> Result<(), IpcError> {
     let mut filled = 0;
     while filled < out.len() {
         let rest = &mut out[filled..];
         let ptr = rest.as_mut_ptr();
         let len = rest.len();
-        let n = overlapped(handle, event, Some(IO_TIMEOUT), |ov| {
+        let n = overlapped(handle, event, Some(left(deadline)?), |ov| {
             // SAFETY: `ptr..ptr+len` is a live, exclusively borrowed buffer that outlives the
             // operation (overlapped() waits for completion or cancellation).
             unsafe {
@@ -213,11 +334,16 @@ fn read_exact(handle: HANDLE, event: &Owned, out: &mut [u8]) -> Result<(), IpcEr
     Ok(())
 }
 
-fn write_all(handle: HANDLE, event: &Owned, bytes: &[u8]) -> Result<(), IpcError> {
+fn write_all(
+    handle: HANDLE,
+    event: &Owned,
+    bytes: &[u8],
+    deadline: Instant,
+) -> Result<(), IpcError> {
     let mut sent = 0;
     while sent < bytes.len() {
         let rest = &bytes[sent..];
-        let n = overlapped(handle, event, Some(IO_TIMEOUT), |ov| {
+        let n = overlapped(handle, event, Some(left(deadline)?), |ov| {
             // SAFETY: `rest` is borrowed for the whole operation (see read_exact).
             unsafe { WriteFile(handle, Some(rest), None, Some(ov)) }
         })?;
@@ -229,16 +355,20 @@ fn write_all(handle: HANDLE, event: &Owned, bytes: &[u8]) -> Result<(), IpcError
     Ok(())
 }
 
+/// Reads one message; the whole message must arrive within [`IO_TIMEOUT`], so a peer that
+/// trickles bytes cannot hold the other side.
 fn read_message(handle: HANDLE, event: &Owned) -> Result<Message, IpcError> {
+    let deadline = Instant::now() + IO_TIMEOUT;
     let mut header = [0u8; 4];
-    read_exact(handle, event, &mut header)?;
+    read_exact(handle, event, &mut header, deadline)?;
     let mut body = vec![0u8; protocol::body_len(header)?];
-    read_exact(handle, event, &mut body)?;
+    read_exact(handle, event, &mut body, deadline)?;
     protocol::decode(&body)
 }
 
 fn write_message(handle: HANDLE, event: &Owned, message: &Message) -> Result<(), IpcError> {
-    write_all(handle, event, &protocol::encode(message)?)
+    let deadline = Instant::now() + IO_TIMEOUT;
+    write_all(handle, event, &protocol::encode(message)?, deadline)
 }
 
 /// The pipe of the primary instance, created but not yet serving.
@@ -347,6 +477,12 @@ impl Server {
                 Ok(()) => true,
                 Err(err) if err.code() == ERROR_PIPE_CONNECTED.to_hresult() => true,
                 Err(err) if err.code() == ERROR_IO_PENDING.to_hresult() => false,
+                Err(err) if err.code() == ERROR_NO_DATA.to_hresult() => {
+                    // A client connected and left before we got to it: reset and wait again.
+                    // SAFETY: resets the instance so the next client can connect.
+                    let _ = unsafe { DisconnectNamedPipe(pipe) };
+                    continue;
+                }
                 Err(err) => return Err(err.into()),
             };
             if !connected {
@@ -386,7 +522,7 @@ impl Server {
                 // DisconnectNamedPipe discards unread data, so wait until the client has read the
                 // reply and closed its end (or the timeout passes for a client that never does).
                 let mut probe = [0u8; 1];
-                let _ = read_exact(pipe, &io, &mut probe);
+                let _ = read_exact(pipe, &io, &mut probe, Instant::now() + IO_TIMEOUT);
             }
             // SAFETY: drops the client so the next one can connect to this instance.
             let _ = unsafe { DisconnectNamedPipe(pipe) };
@@ -395,7 +531,9 @@ impl Server {
 }
 
 /// Sends `message` to the running instance and returns its reply. `NotRunning` when there is
-/// none. Lets the server take the foreground (it is about to show the window the user asked for).
+/// none; `Untrusted` when the pipe belongs to a process that is not our running instance (see
+/// the module docs). Lets the server take the foreground (it is about to show the window the
+/// user asked for).
 pub fn send(message: &Message, timeout: Duration) -> Result<Message, IpcError> {
     send_named(&pipe_name()?, message, timeout)
 }
@@ -405,7 +543,8 @@ pub fn send_named(name: &str, message: &Message, timeout: Duration) -> Result<Me
     let name = wide(name);
     let deadline = Instant::now() + timeout;
     let pipe = loop {
-        // SAFETY: `name` is NUL-terminated; the handle is owned by `Owned` below.
+        // SAFETY: `name` is NUL-terminated; the handle is owned by `Owned` below. The quality
+        // of service limits the server to identifying us: it cannot impersonate this process.
         let opened = unsafe {
             CreateFileW(
                 PCWSTR(name.as_ptr()),
@@ -413,7 +552,7 @@ pub fn send_named(name: &str, message: &Message, timeout: Duration) -> Result<Me
                 FILE_SHARE_NONE,
                 None,
                 OPEN_EXISTING,
-                FILE_FLAG_OVERLAPPED,
+                FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
                 None,
             )
         };
@@ -433,12 +572,12 @@ pub fn send_named(name: &str, message: &Message, timeout: Duration) -> Result<Me
             Err(err) => return Err(err.into()),
         }
     };
-    let mut server_pid = 0u32;
-    // SAFETY: `pipe` is a connected client handle; the pid is written to a local.
-    if unsafe { GetNamedPipeServerProcessId(pipe.0, &raw mut server_pid) }.is_ok() {
-        // SAFETY: plain call; failing only means the server may not take the foreground.
-        let _ = unsafe { AllowSetForegroundWindow(server_pid) };
-    }
+    let server_pid = trusted_server(pipe.0).map_err(|err| {
+        tracing::warn!(error = %err, "pipe server is not our running instance");
+        IpcError::Untrusted
+    })?;
+    // SAFETY: plain call; failing only means the server may not take the foreground.
+    let _ = unsafe { AllowSetForegroundWindow(server_pid) };
     let io = event()?;
     write_message(pipe.0, &io, message)?;
     read_message(pipe.0, &io)
@@ -524,9 +663,55 @@ mod tests {
     }
 
     #[test]
-    fn pipe_name_is_per_user() {
+    fn pipe_name_is_per_user_and_session() {
+        let me = Identity::current().unwrap();
         let name = pipe_name().unwrap();
-        assert!(name.starts_with(r"\\.\pipe\switch-explorer.S-1-"), "{name}");
+        let prefix = format!(r"\\.\pipe\switch-explorer.{}.{}.", me.sid, me.session);
+        assert!(me.sid.starts_with("S-1-"), "{name}");
+        assert!(name.starts_with(&prefix), "{name}");
+        assert_eq!(name.ends_with(".admin.v1"), me.elevated, "{name}");
         assert_eq!(name.rsplit('.').next(), Some("v1"));
+    }
+
+    #[test]
+    fn a_squatting_server_is_not_trusted() {
+        // Another program of the same user creates our pipe name first: the client refuses to
+        // send it anything.
+        let name = test_name("squat");
+        let short = name.trim_start_matches(r"\\.\pipe\");
+        let script = format!(
+            "$s = New-Object System.IO.Pipes.NamedPipeServerStream('{short}'); \
+             $s.WaitForConnection(); Start-Sleep -Seconds 5"
+        );
+        let mut squatter = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let result = loop {
+            match send_named(&name, &Message::Ping, Duration::from_millis(200)) {
+                Err(IpcError::NotRunning) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                other => break other,
+            }
+        };
+        let _ = squatter.kill();
+        let _ = squatter.wait();
+        assert!(matches!(result, Err(IpcError::Untrusted)), "{result:?}");
+    }
+
+    #[test]
+    fn this_process_is_a_trusted_server_of_itself() {
+        // The round-trip tests talk to a server in this same process, so they pass the server
+        // check; this pins the identity and image parts of it.
+        // SAFETY: the pseudo handle of this process needs no closing.
+        let process = unsafe { GetCurrentProcess() };
+        assert_eq!(
+            Identity::of_process(process).unwrap(),
+            Identity::current().unwrap()
+        );
+        let exe = std::fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
+        assert_eq!(image_path(process), Some(exe));
     }
 }

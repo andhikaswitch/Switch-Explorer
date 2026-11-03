@@ -17,7 +17,7 @@ Alasan di balik pilihan teknologi ada di `DECISIONS.md`.
 │ Watcher: ReadDirectoryChangesW, hanya folder yang sedang terbuka ──────────┤     │
 │ HotkeyService: RegisterHotKey untuk Hot Switch global (opsional) ──────────┤     │
 │ [lazy] sx-cloud: runtime tokio 2 thread, reqwest, OAuth loopback ──────────┘     │
-│ IPC server: \\.\pipe\switch-explorer.<SID>.v1                                    │
+│ IPC server: \\.\pipe\switch-explorer.<SID>.<session>[.admin].v1                  │
 └───────────────▲──────────────────────────────────▲───────────────────────────────┘
                 │ OpenPaths                          │ PickRequest / PickResult
    ┌────────────┴────────────┐        ┌──────────────┴──────────────────────────┐
@@ -255,20 +255,30 @@ pub struct DirSnapshot {
 
 ## 12. IPC
 
-- Nama pipe: `\\.\pipe\switch-explorer.<SID-user>.v1`. Arbitrase instance tunggal memakai pipe itu
-  sendiri: instance pertama membuatnya dengan `FILE_FLAG_FIRST_PIPE_INSTANCE` dan maksimum 1 instance,
-  sehingga proses berikutnya gagal membuat pipe (`ACCESS_DENIED`/`PIPE_BUSY`), lalu menjadi klien dan
-  meneruskan permintaannya. Tidak perlu mutex terpisah.
-- Semua I/O pipe overlapped dengan timeout 2 detik per pesan. Klien yang tersambung lalu diam tidak
-  memblokir server. Server menunggu klien menutup koneksi sebelum `DisconnectNamedPipe`, karena
-  disconnect membuang data yang belum dibaca.
-- Klien memanggil `AllowSetForegroundWindow(pid server)` agar window instance utama boleh maju ke depan.
+- Nama pipe: `\\.\pipe\switch-explorer.<SID-user>.<session id>[.admin].v1`. Nama pipe berlaku untuk
+  seluruh mesin, jadi sesi desktop kedua (RDP) dan window elevated masing-masing punya instance sendiri.
+- Arbitrase instance tunggal memakai pipe itu sendiri: instance pertama membuatnya dengan
+  `FILE_FLAG_FIRST_PIPE_INSTANCE` dan maksimum 1 instance, sehingga proses berikutnya gagal membuat pipe
+  (`ACCESS_DENIED`/`PIPE_BUSY`), lalu menjadi klien dan meneruskan permintaannya. Tidak perlu mutex
+  terpisah. Klien lain yang datang saat server sibuk menunggu lewat `WaitNamedPipeW`.
+- Semua I/O pipe overlapped dengan tenggat 2 detik per pesan utuh (bukan per potongan), jadi peer yang
+  mengirim byte sedikit demi sedikit tetap diputus. Klien yang tersambung lalu diam tidak memblokir server.
+  Server menunggu klien menutup koneksi sebelum `DisconnectNamedPipe`, karena disconnect membuang data yang
+  belum dibaca.
+- Klien memverifikasi server sebelum mengirim apa pun (`sx_ipc::pipe::trusted_server`):
+  `GetNamedPipeServerProcessId` → token proses itu harus punya SID, session, dan status elevasi yang sama,
+  dan path image-nya (setelah di-resolve) harus sama dengan exe klien. Gagal → `IpcError::Untrusted`,
+  peluncuran itu membuka window sendiri. Klien membuka pipe dengan `SECURITY_SQOS_PRESENT |
+  SECURITY_IDENTIFICATION`, sehingga server hanya bisa mengidentifikasi klien, tidak meng-impersonate.
+- Setelah server terverifikasi, klien memanggil `AllowSetForegroundWindow(pid server)` agar window
+  instance utama boleh maju ke depan.
+- Server membalas `Ack` hanya bila permintaan sampai ke window. Selain itu klien membuka window sendiri.
 - Framing: panjang `u32` little-endian + JSON (serde). Maksimum 1 MB per pesan.
 - Pesan: `Hello { version, client }`, `OpenPaths { paths, select, new_window }`, `Activate`,
   `UploadToDrive { paths }`, `PickRequest { .. }`, `PickResult { .. }`, `Ping`/`Pong`, `Shutdown`.
-- Keamanan: DACL hanya SID user saat ini (+ SYSTEM), `PIPE_REJECT_REMOTE_CLIENTS`. Shim memverifikasi
-  server lewat `GetNamedPipeServerProcessId` + path image harus sama dengan lokasi instalasi. Versi tidak
-  cocok → klien fallback (shim: dialog native).
+- Keamanan: DACL hanya SID user saat ini (+ SYSTEM), `PIPE_REJECT_REMOTE_CLIENTS`. Shim memakai verifikasi
+  server yang sama, dengan path image dibandingkan ke lokasi instalasi. Versi tidak cocok → klien fallback
+  (shim: dialog native).
 
 ## 13. Startup & shutdown
 

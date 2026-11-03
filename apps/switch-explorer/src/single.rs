@@ -38,7 +38,14 @@ pub fn claim(args: &Args) -> Role {
                 home: args.home,
             };
             match sx_ipc::send(&request, FORWARD_TIMEOUT) {
-                Ok(_) => Role::Forwarded,
+                Ok(Message::Ack) => Role::Forwarded,
+                Ok(reply) => {
+                    tracing::warn!(
+                        ?reply,
+                        "running instance did not take the request; opening a new one"
+                    );
+                    Role::Primary(None)
+                }
                 Err(err) => {
                     tracing::warn!(error = %err, "running instance did not answer; opening a new one");
                     Role::Primary(None)
@@ -52,8 +59,17 @@ pub fn claim(args: &Args) -> Role {
     }
 }
 
+/// Paths a single forwarded request may open; more than this is not a launch from Explorer or
+/// a shortcut.
+const MAX_FORWARDED_PATHS: usize = 64;
+
 /// Serves forwarded requests into the workspace's channel. The handle stops the server.
 pub fn serve(server: Server, requests: UnboundedSender<OpenRequest>) -> Option<ServerHandle> {
+    // Ack only what reached the window: a refused request makes the sender open its own window.
+    let deliver = move |request: OpenRequest| match requests.unbounded_send(request) {
+        Ok(()) => Message::Ack,
+        Err(_) => Message::Unknown,
+    };
     let started = server.serve(move |message| match message {
         Message::OpenPaths {
             paths,
@@ -61,17 +77,20 @@ pub fn serve(server: Server, requests: UnboundedSender<OpenRequest>) -> Option<S
             home,
             ..
         } => {
-            let _ = requests.unbounded_send(OpenRequest {
+            // The sender made its paths absolute; anything relative would resolve against our
+            // working directory instead of the sender's.
+            let paths = paths
+                .into_iter()
+                .filter(|p| p.is_absolute())
+                .take(MAX_FORWARDED_PATHS)
+                .collect();
+            deliver(OpenRequest {
                 paths,
-                select,
+                select: select.filter(|p| p.is_absolute()),
                 home,
-            });
-            Message::Ack
+            })
         }
-        Message::Activate => {
-            let _ = requests.unbounded_send(OpenRequest::default());
-            Message::Ack
-        }
+        Message::Activate => deliver(OpenRequest::default()),
         Message::Ping => Message::Pong,
         Message::Hello { .. } => Message::Ack,
         _ => Message::Unknown,

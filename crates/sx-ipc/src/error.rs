@@ -6,6 +6,8 @@ pub enum IpcError {
     NotRunning,
     #[error("another Switch Explorer instance owns the pipe")]
     AlreadyRunning,
+    #[error("the pipe belongs to a process that is not this user's Switch Explorer")]
+    Untrusted,
     #[error("the other instance did not answer in time")]
     Timeout,
     #[error("message of {0} bytes is larger than allowed")]
