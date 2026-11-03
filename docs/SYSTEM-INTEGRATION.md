@@ -192,8 +192,11 @@ Succeeded" sesuai skenario delete-on-paste.
 
 ## 12. Taskbar, notifikasi, hotkey global
 
-- `ITaskbarList3::SetProgressValue/SetProgressState` untuk progress operasi; flash taskbar saat operasi panjang
-  selesai di background.
+- `ITaskbarList3::SetProgressValue/SetProgressState` untuk progress operasi (`sx_shell::taskbar`,
+  `ops.taskbar_progress`): item selesai dari total item semua job yang berjalan; tak tentu bila total belum
+  diketahui; hilang saat tidak ada job. Panggilannya menunggu proses Explorer, jadi berjalan di `StaWorker`
+  sendiri, dan pembaruan digabung (hanya state terbaru yang dikirim). Flag mati → objeknya tidak dibuat.
+  Flash taskbar saat operasi panjang selesai di background menyusul.
 - Notifikasi Windows (opsional) untuk operasi panjang yang selesai saat app tidak fokus; butuh AppUserModelID
   `SwitchExplorer.App`.
 - **Hotkey global (Hot Switch & buka window):** `HotkeyService` di `sx-integration` membuat message-only

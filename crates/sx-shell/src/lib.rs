@@ -12,6 +12,7 @@ pub mod exec;
 pub mod icons;
 pub mod names;
 pub mod recycle;
+pub mod taskbar;
 pub mod worker;
 
 pub use appearance::OsAppearance;

@@ -102,6 +102,8 @@ pub(crate) struct OpsState {
     /// The clipboard thread: clipboard calls run there in order (a paste right after a copy
     /// sees that copy), off the UI thread.
     clipboard: Option<sx_shell::StaWorker>,
+    /// Progress on the taskbar button (`ops.taskbar_progress`); `None` when it is off.
+    pub taskbar: Option<sx_shell::taskbar::Taskbar>,
 }
 
 impl OpsState {
@@ -129,6 +131,25 @@ impl OpsState {
 
     pub fn running(&self) -> impl Iterator<Item = &Job> {
         self.jobs.iter().filter(|j| j.finished.is_none())
+    }
+
+    /// Shows the running jobs on the taskbar button: their items done of their items in all.
+    fn update_taskbar(&self) {
+        use sx_shell::taskbar::TaskbarState;
+        let Some(taskbar) = &self.taskbar else {
+            return;
+        };
+        let (count, done, total) = self.running().fold((0, 0, 0), |(n, d, t), job| {
+            (n + 1, d + job.progress.done, t + job.progress.total)
+        });
+        taskbar.set(match (count, total) {
+            (0, _) => TaskbarState::Idle,
+            (_, 0) => TaskbarState::Busy,
+            _ => TaskbarState::Progress {
+                done: done as u64,
+                total: total as u64,
+            },
+        });
     }
 
     /// Runs clipboard work on the clipboard thread and resolves with its result (`None` when
@@ -372,6 +393,7 @@ impl Workspace {
             cancel: cancel.clone(),
             finished: None,
         });
+        self.ops.update_taskbar();
         // Finished jobs older than the last few are forgotten.
         let finished = self
             .ops
@@ -421,6 +443,7 @@ impl Workspace {
                         if let Some(job) = this.ops.jobs.iter_mut().find(|j| j.id == id) {
                             job.progress = progress;
                         }
+                        this.ops.update_taskbar();
                         cx.notify();
                     }
                     JobEvent::Finished(outcome) => {
@@ -481,6 +504,7 @@ impl Workspace {
         if let Some(job) = self.ops.jobs.iter_mut().find(|j| j.id == id) {
             job.finished = Some(message.clone());
         }
+        self.ops.update_taskbar();
         // A cut is used up once everything moved; an error or a cancel keeps it for another try.
         if let Some(sequence) = self.ops.clear_clipboard_after.remove(&id)
             && !outcome.stopped_early()

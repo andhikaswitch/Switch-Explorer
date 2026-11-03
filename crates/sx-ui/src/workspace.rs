@@ -188,6 +188,13 @@ impl Workspace {
             pending_refresh: HashSet::new(),
             _subscriptions: subscriptions,
         };
+        if this.features.ops_taskbar_progress {
+            this.ops.taskbar = this.hwnd.and_then(|hwnd| {
+                sx_shell::taskbar::Taskbar::new(hwnd)
+                    .map_err(|err| tracing::debug!(error = %err, "taskbar progress unavailable"))
+                    .ok()
+            });
+        }
         let locations = if options.locations.is_empty() {
             vec![Location::Home]
         } else {

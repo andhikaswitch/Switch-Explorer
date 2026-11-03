@@ -32,6 +32,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Ikon sistem di daftar (cache terbatas `perf.icon_cache_entries`).
 - Pin/unpin folder di sidebar; nama `shell:` dan `~` di address bar.
 - ADR-021 (engine operasi file Fase 1), ADR-022 (watcher muat ulang debounce).
+- Progress operasi di tombol taskbar (`ops.taskbar_progress`).
 - Navigasi keyboard di luar daftar: `Tab`/`Shift+Tab` ke tab, tombol nav, breadcrumb, dan item sidebar;
   `F6`/`Shift+F6` antar area; `Enter`/`Space` mengaktifkan; cincin fokus hanya untuk fokus dari keyboard.
   Klik mouse tidak memindahkan fokus dari daftar.
