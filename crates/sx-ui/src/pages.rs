@@ -13,6 +13,7 @@ use rust_i18n::t;
 use sx_core::Location;
 use sx_theme::Token;
 
+use crate::focus::{Ring, TabStop as _};
 use crate::format;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -80,8 +81,10 @@ impl Workspace {
                     let id = ElementId::NamedInteger("pc-drive".into(), u64::from(drive.letter));
                     let lit = self.hovered.as_ref() == Some(&id);
                     let tint = |normal| if lit { hover_fg } else { normal };
+                    let focus = self.focus_stop(&id, cx);
                     div()
                         .id(id.clone())
+                        .tab_stop_ring(&focus, Ring::plain().highlighted(lit), cx)
                         .flex()
                         .gap(t.px(Token::SpaceLg))
                         .w(tile_w)

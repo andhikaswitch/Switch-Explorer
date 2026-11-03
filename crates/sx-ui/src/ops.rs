@@ -485,7 +485,12 @@ impl Workspace {
             None => done_text(done, origin).into(),
         };
         if !outcome.deleted.is_empty() {
-            message.push(' ');
+            if outcome.error.is_none() && done.is_noop() {
+                // Nothing went to the bin: only the permanent deletes are news.
+                message.clear();
+            } else {
+                message.push(' ');
+            }
             message.push_str(&deleted_text(outcome.deleted.len()));
         }
         let message = SharedString::from(message);

@@ -214,8 +214,8 @@ Semua shortcut bisa diatur ulang di Settings → Keyboard.
 | Preview pane / details pane | `Alt+P` / `Alt+Shift+P` |
 | Quick Look | `Space` |
 | Split view | `Ctrl+\` |
-| Pindah fokus area (command bar → sidebar → daftar) | `F6` / `Shift+F6` |
-| Pindah antar kontrol (tab, tombol, breadcrumb, item sidebar) | `Tab` / `Shift+Tab`; `Enter`/`Space` mengaktifkan |
+| Pindah fokus area (command bar → sidebar → daftar → toast bila ada Urungkan), juga dari kotak teks | `F6` / `Shift+F6` |
+| Pindah antar kontrol (tab, tombol, breadcrumb, item sidebar, kartu drive, tombol dialog/toast); di dialog hanya antar tombolnya | `Tab` / `Shift+Tab`; `Enter`/`Space` mengaktifkan |
 | Sidebar tampil/sembunyi | `Ctrl+B` |
 | Command palette | `Ctrl+Shift+P`, `F1` |
 | Quick open folder | `Ctrl+P` |

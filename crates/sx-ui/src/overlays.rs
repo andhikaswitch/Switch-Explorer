@@ -14,6 +14,7 @@ use rust_i18n::t;
 use sx_ops::Resolution;
 use sx_theme::Token;
 
+use crate::focus::{self, Ring, TabStop as _};
 use crate::ops::{Dialog, Job};
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -96,10 +97,15 @@ impl Workspace {
             .items_center()
             .justify_center()
             .bg(t.paint(Token::Scrim))
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 match event.keystroke.key.as_str() {
                     "escape" => this.dismiss_dialog(cx),
-                    "enter" if !matches!(this.ops.dialog, Some(Dialog::Conflict(_))) => {
+                    // Enter confirms only when no button has focus: on a button it clicks that
+                    // button (Cancel stays Cancel).
+                    "enter"
+                        if this.dialog_focus.is_focused(window)
+                            && !matches!(this.ops.dialog, Some(Dialog::Conflict(_))) =>
+                    {
                         this.confirm_dialog(cx);
                     }
                     _ => return,
@@ -131,6 +137,7 @@ impl Workspace {
         cx: &Context<Self>,
     ) -> AnyElement {
         let t = cx.tokens();
+        let confirm_focus = self.focus_stop(&ElementId::Name("dialog-confirm".into()), cx);
         let (bg, hover, fg) = if danger {
             (
                 t.paint(Token::ButtonDangerBg),
@@ -165,6 +172,7 @@ impl Workspace {
                     .child(
                         div()
                             .id("dialog-confirm")
+                            .tab_stop_ring(&confirm_focus, Ring::plain(), cx)
                             .flex()
                             .items_center()
                             .h(t.px(Token::SizeControl))
@@ -268,8 +276,10 @@ impl Workspace {
     /// "Do this for all N items" under the conflict sheet.
     fn apply_all_toggle(&self, checked: bool, remaining: usize, cx: &Context<Self>) -> AnyElement {
         let t = cx.tokens();
+        let focus = self.focus_stop(&ElementId::Name("conflict-all".into()), cx);
         div()
             .id("conflict-all")
+            .tab_stop_ring(&focus, Ring::plain(), cx)
             .flex()
             .items_center()
             .gap(t.px(Token::SpaceSm))
@@ -304,6 +314,7 @@ impl Workspace {
     // ---- Progress, toast ------------------------------------------------------------------
 
     fn job_card(&self, job: &Job, cx: &Context<Self>) -> AnyElement {
+        let cancel_id = ElementId::NamedInteger("job-cancel".into(), job.id);
         let t = cx.tokens();
         let fraction = if job.progress.total == 0 {
             0.0
@@ -328,7 +339,8 @@ impl Workspace {
                     )))
                     .child(
                         div()
-                            .id(ElementId::NamedInteger("job-cancel".into(), job.id))
+                            .id(cancel_id.clone())
+                            .tab_stop_ring(&self.focus_stop(&cancel_id, cx), Ring::plain(), cx)
                             .flex()
                             .items_center()
                             .justify_center()
@@ -404,7 +416,7 @@ impl Workspace {
             .gap(t.px(Token::SpaceMd))
             .children(running.into_iter().map(|job| card().child(job)))
             .children(self.ops.toast.as_ref().map(|toast| {
-                card().child(
+                focus::area(card().id("toast"), &self.toast_area).child(
                     div()
                         .flex()
                         .items_center()

@@ -73,5 +73,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Clipboard berjalan berurutan di satu thread; undo yang ditolak mode baca-saja tetap tersedia; undo/redo
   yang selesai setelah operasi baru tidak menulis ulang riwayat.
 - Instance elevated tidak bisa dikendalikan proses non-elevated lewat pipe.
+- Navigasi keyboard: Tab dan F6 kini benar-benar sampai ke kontrol (sebelumnya tidak ada tab stop). Fokus
+  pulih ke area atau daftar saat elemen yang fokus hilang (tab ditutup, tombol jadi nonaktif). Klik tombol
+  mouse apa pun tidak memindahkan fokus. Cincin fokus terlihat di item aktif sidebar dan tetap tampil saat
+  mouse bergerak. Tombol dialog, toast Urungkan, dan kartu drive bisa dijangkau keyboard; Enter di tombol
+  dialog mengklik tombol itu.
 - Ikon dimuat di worker STA yang memompa pesan, item yang terlihat lebih dulu; ikon lama tanpa alpha tidak
   lagi kehilangan piksel hitamnya.

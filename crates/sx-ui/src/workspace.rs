@@ -12,9 +12,9 @@ use futures::channel::mpsc;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, AppContext as _, Context, FocusHandle, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement as _, Render, ScrollStrategy, SharedString, Styled as _, Subscription, Window,
-    WindowBackgroundAppearance, div,
+    App, AppContext as _, Context, FocusHandle, Focusable as _, InteractiveElement as _,
+    IntoElement, KeyDownEvent, ParentElement as _, Render, ScrollStrategy, SharedString,
+    Styled as _, Subscription, Window, WindowBackgroundAppearance, div,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use rust_i18n::t;
@@ -103,6 +103,7 @@ pub struct Workspace {
     /// The areas `F6` moves between (with `list_focus`), and the chrome's tab stops.
     pub(crate) command_area: FocusHandle,
     pub(crate) sidebar_area: FocusHandle,
+    pub(crate) toast_area: FocusHandle,
     pub(crate) focus_stops: crate::focus::FocusStops,
     /// Start renaming the selected item on the next render (it needs the window).
     pub(crate) rename_pending: bool,
@@ -148,8 +149,11 @@ impl Workspace {
         let address = cx.new(|cx| {
             InputState::new(window, cx).placeholder(t!("nav.address_placeholder").to_string())
         });
-        let subscriptions = vec![cx.subscribe_in(&address, window, Self::on_address_event)];
-        let list_focus = cx.focus_handle();
+        let subscriptions = vec![
+            cx.subscribe_in(&address, window, Self::on_address_event),
+            cx.on_focus_lost(window, Self::restore_focus),
+        ];
+        let list_focus = cx.focus_handle().tab_stop(true);
         window.focus(&list_focus, cx);
         let undo_depth = options.features.ops_undo_depth;
         let (icons, loaded_icons) =
@@ -178,6 +182,7 @@ impl Workspace {
             dialog_focus: cx.focus_handle(),
             command_area: cx.focus_handle(),
             sidebar_area: cx.focus_handle(),
+            toast_area: cx.focus_handle(),
             focus_stops: crate::focus::FocusStops::default(),
             icons,
             rename_pending: false,
@@ -653,7 +658,12 @@ impl Workspace {
     fn leave_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.editing_address {
             self.editing_address = false;
-            window.focus(&self.list_focus, cx);
+            // Tab moved focus on to the next control: leave it there. Enter and Escape leave
+            // it on the field, which is about to go: the list takes it.
+            let field = self.address.read(cx).focus_handle(cx);
+            if window.focused(cx).is_none_or(|focused| focused == field) {
+                window.focus(&self.list_focus, cx);
+            }
             cx.notify();
         }
     }
@@ -986,6 +996,7 @@ fn hwnd(window: &Window) -> Option<isize> {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.focus_stops.begin_frame();
         if std::mem::take(&mut self.rename_pending) {
             self.begin_rename(window, cx);
         }

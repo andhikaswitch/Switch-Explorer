@@ -19,6 +19,7 @@ use sx_fs::Column;
 use sx_theme::Token;
 
 use crate::actions::{self, LIST_CONTEXT};
+use crate::focus::{Ring, TabStop as _};
 use crate::tab::Content;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -116,6 +117,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let listing = matches!(&self.tab().content, Content::Folder(s) if s.visible_len() > 0);
         let body: AnyElement = match (&self.tab().content, self.tab().location()) {
             (Content::Page, Location::Home) => self.render_home(cx).into_any_element(),
             (Content::Page, Location::ThisPc) => self.render_this_pc(cx).into_any_element(),
@@ -149,7 +151,24 @@ impl Workspace {
                     .text_color(t.color(Token::DangerText))
                     .child(notice)
             }))
-            .child(body)
+            .map(|el| {
+                if listing {
+                    el.child(body)
+                } else {
+                    // Pages and loading, empty or failed folders hold the list's focus too, so
+                    // F6 and a lost focus always have somewhere to land.
+                    el.child(
+                        div()
+                            .id("content-focus")
+                            .track_focus(&self.list_focus)
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_h_0()
+                            .child(body),
+                    )
+                }
+            })
     }
 
     fn centered(&self, text: Option<SharedString>, cx: &Context<Self>) -> AnyElement {
@@ -207,16 +226,20 @@ impl Workspace {
             t.color(Token::ButtonSecondaryFgHover),
         );
         let clear = gpui_kit::transparent_black();
+        let focus = self.focus_stop(&ElementId::Name(id.into()), cx);
         div()
             .id(id)
+            .tab_stop_ring(
+                &focus,
+                Ring::over(t.color(Token::ButtonSecondaryBorder)),
+                cx,
+            )
             .flex()
             .items_center()
             .h(t.px(Token::SizeControl))
             .px(t.px(Token::SpaceLg))
             .rounded(t.px(Token::RadiusSm))
             .bg(t.paint(Token::ButtonSecondaryBg))
-            .border_1()
-            .border_color(t.color(Token::ButtonSecondaryBorder))
             .text_color(t.color(Token::ButtonSecondaryFg))
             .hover(move |s| s.bg(hover).text_color(hover_fg).border_color(clear))
             .active(move |s| s.bg(pressed).text_color(hover_fg).border_color(clear))
@@ -239,7 +262,6 @@ impl Workspace {
             .id("details")
             .key_context(LIST_CONTEXT)
             .track_focus(&self.list_focus)
-            .tab_index(0)
             .flex()
             .flex_col()
             .flex_1()

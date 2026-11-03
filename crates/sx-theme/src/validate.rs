@@ -13,14 +13,14 @@ use crate::schema::Token::{
     ButtonPrimaryBgPressed, ButtonPrimaryFg, ButtonSecondaryBg, ButtonSecondaryBgHover,
     ButtonSecondaryBgPressed, ButtonSecondaryFg, ButtonSecondaryFgHover, CardHoverFg,
     CheckboxBorder, CheckboxCheck, CheckboxCheckedBg, DangerText, DropBlockedBorder,
-    DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing, HeaderFg,
-    InfoText, InputPlaceholder, NavItemActiveBg, NavItemActiveFg, NavItemFg, NavItemHoverBg,
-    NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg, OsdIconOff, OsdIconOn,
-    OsdStateOff, OsdStateOn, ProgressFill, RowSelectedBg, RowSelectedInactiveBg, SelectionBorder,
-    SliderFill, StatuschipOff, StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard,
-    SurfaceCardHover, SurfaceChip, SurfaceInput, SurfaceOverlay, TabActiveBg, TabActiveFg,
-    TabActiveIndicator, TabFg, ToastBg, ToastFg, ToggleOffBorder, ToggleOnBg, ToggleOnThumb,
-    WarningText,
+    DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing,
+    FocusRingOnHighlight, HeaderFg, InfoText, InputPlaceholder, NavItemActiveBg, NavItemActiveFg,
+    NavItemFg, NavItemHoverBg, NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg,
+    OsdIconOff, OsdIconOn, OsdStateOff, OsdStateOn, ProgressFill, RowSelectedBg,
+    RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff, StatuschipOn,
+    StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover, SurfaceChip, SurfaceInput,
+    SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg, ToastFg,
+    ToggleOffBorder, ToggleOnBg, ToggleOnThumb, WarningText,
 };
 
 /// A foreground/background requirement.
@@ -163,6 +163,19 @@ pub const PAIRS: &[ContrastPair] = &[
         &[FocusRing],
         &[BgSidebar, BgTitlebar, BgWindow],
         &[],
+        NON_TEXT,
+    ),
+    // A focused control can be highlighted at the same time (the active item, a stale hover).
+    pair(
+        &[FocusRingOnHighlight],
+        &[NavItemActiveBg, NavItemHoverBg, NavItemPressedBg],
+        &[BgSidebar],
+        NON_TEXT,
+    ),
+    pair(
+        &[FocusRingOnHighlight],
+        &[ButtonGhostBgHover, ButtonGhostBgPressed],
+        &[BgWindow],
         NON_TEXT,
     ),
     pair(

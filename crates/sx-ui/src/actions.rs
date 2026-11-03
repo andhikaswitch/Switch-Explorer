@@ -93,8 +93,16 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
     })
 }
 
-/// Shortcuts never fire while typing in a text input (ADR-014).
-fn predicate(context: CommandContext) -> Option<Rc<KeyBindingContextPredicate>> {
+/// Commands that also work while typing: moving between areas leaves a text input.
+const IN_INPUTS: &[&str] = &["view.next_area", "view.previous_area"];
+
+/// Shortcuts never fire while typing in a text input (ADR-014), except [`IN_INPUTS`].
+fn predicate(id: &str, context: CommandContext) -> Option<Rc<KeyBindingContextPredicate>> {
+    if IN_INPUTS.contains(&id) {
+        return KeyBindingContextPredicate::parse(WORKSPACE_CONTEXT)
+            .ok()
+            .map(Rc::new);
+    }
     let source = match context {
         CommandContext::Workspace => "Workspace && !Input",
         CommandContext::List => "List && !Input",
@@ -114,7 +122,7 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
             match KeyBinding::load(
                 keys,
                 action.boxed_clone(),
-                predicate(spec.context),
+                predicate(spec.id, spec.context),
                 false,
                 None,
                 cx,

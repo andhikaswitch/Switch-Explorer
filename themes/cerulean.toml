@@ -129,6 +129,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "button.ghost.bg_pressed" = "{accent.highlight_pressed}"
 "button.ghost.fg" = "{fg.primary}"
 "button.ghost.fg_hover" = "{fg.on_highlight}"
+"focus.ring_on_highlight" = "{fg.on_highlight}"
 "card.hover.fg" = "{fg.on_highlight}"
 "button.danger.bg" = "#C42B1C"
 "button.danger.bg_hover" = "#D13A2B"

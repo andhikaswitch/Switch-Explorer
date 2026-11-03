@@ -39,7 +39,7 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Garis | `border.subtle`, `border.strong`, `border.input`, `border.input_focus`, `divider` | Color |
 | Aksen (bidang) | `accent.highlight`, `accent.highlight_hover`, `accent.highlight_pressed`, `accent.solid`, `accent.solid_hover`, `accent.solid_pressed` | Paint |
 | Aksen (garis/teks) | `accent.text`, `accent.glow`, `accent.edge` | Color |
-| State | `hover.bg`, `pressed.bg`, `selection.bg`, `selection.border`, `selection.inactive_bg`, `focus.ring`, `drop_target.bg`, `drop_target.border`, `drop_blocked.border` | Color |
+| State | `hover.bg`, `pressed.bg`, `selection.bg`, `selection.border`, `selection.inactive_bg`, `focus.ring`, `focus.ring_on_highlight` (cincin fokus di atas kontrol yang sedang di-highlight), `drop_target.bg`, `drop_target.border`, `drop_blocked.border` | Color |
 | Navigasi | `nav.item.fg`, `nav.item.icon`, `nav.item.hover.bg`*, `nav.item.hover.fg`, `nav.item.pressed.bg`*, `nav.item.active.bg`*, `nav.item.active.fg`, `nav.item.active.edge`, `nav.item.active.glow`, `nav.section.fg` | Color (*Paint) |
 | Tab | `tab.fg`, `tab.hover.bg`, `tab.active.bg`*, `tab.active.fg`, `tab.active.indicator`* | Color (*Paint) |
 | Breadcrumb | `breadcrumb.fg`, `breadcrumb.current.fg`, `breadcrumb.hover.bg`, `breadcrumb.separator` | Color |
@@ -224,6 +224,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "button.ghost.bg_pressed" = "{accent.highlight_pressed}"
 "button.ghost.fg" = "{fg.primary}"
 "button.ghost.fg_hover" = "{fg.on_highlight}"
+"focus.ring_on_highlight" = "{fg.on_highlight}"
 "card.hover.fg" = "{fg.on_highlight}"
 "button.danger.bg" = "#C42B1C"
 "button.danger.bg_hover" = "#D13A2B"
@@ -512,6 +513,7 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 | `focus.ring`, `border.input`, `border.input_focus` | `bg.content`, `surface.input` | 3:1 |
 | `border.input`, `border.input_focus` | `bg.window` (address field di command bar) | 3:1 |
 | `focus.ring` | `bg.sidebar`, `bg.titlebar`, `bg.window` | 3:1 |
+| `focus.ring_on_highlight` | `nav.item.active.bg`, `nav.item.hover.bg`, `nav.item.pressed.bg` (di atas `bg.sidebar`); `button.ghost.bg_hover`, `…bg_pressed` (di atas `bg.window`) | 3:1 |
 | `checkbox.border`, `toggle.off.border`, `selection.border` | `bg.content` | 3:1 |
 | `drop_target.border`, `drop_blocked.border` | `bg.content` | 3:1 |
 | `slider.fill`, `progress.fill`, `toggle.on.bg` | `bg.content` | 3:1 |
