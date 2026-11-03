@@ -1,5 +1,8 @@
 //! Copy/cut/paste of files through the clipboard, interoperable with File Explorer (FEATURES.md
 //! F-OPS-01): `CF_HDROP` carries the paths and `Preferred DropEffect` says copy or move.
+//!
+//! Every call can block: another app may hold the clipboard (retries), and reading data another
+//! app renders on demand waits for that app. Call them off the UI thread.
 
 use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
@@ -8,10 +11,12 @@ use std::time::Duration;
 
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
-    RegisterClipboardFormatW, SetClipboardData,
+    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber,
+    IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
 };
-use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+use windows::Win32::System::Memory::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
+};
 use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY, DROPEFFECT_MOVE};
 use windows::Win32::UI::Shell::{DROPFILES, DragQueryFileW, HDROP};
 use windows::core::w;
@@ -62,33 +67,45 @@ impl Drop for Open {
     }
 }
 
-/// A movable global block filled by `fill`; freed unless the clipboard takes ownership.
-fn global(len: usize, fill: impl FnOnce(&mut [u8])) -> Result<HGLOBAL, ShellError> {
-    // SAFETY: allocates, locks, fills and unlocks a block we own; the slice covers exactly the
-    // allocated length.
+/// A movable global block we own; freed on drop unless the clipboard took it.
+struct Global(HGLOBAL);
+
+impl Drop for Global {
+    fn drop(&mut self) {
+        // SAFETY: the block is ours (the clipboard did not take it) and is freed once.
+        let _ = unsafe { GlobalFree(Some(self.0)) };
+    }
+}
+
+/// A movable global block of `len` bytes filled by `fill`.
+fn global(len: usize, fill: impl FnOnce(&mut [u8])) -> Result<Global, ShellError> {
+    // SAFETY: allocates a block we own (freed by `Global` unless handed over), then locks, fills
+    // and unlocks it; the slice covers exactly the allocated length.
     unsafe {
-        let block = GlobalAlloc(GMEM_MOVEABLE, len).map_err(ShellError::Com)?;
-        let ptr = GlobalLock(block).cast::<u8>();
+        let block = Global(GlobalAlloc(GMEM_MOVEABLE, len).map_err(ShellError::Com)?);
+        let ptr = GlobalLock(block.0).cast::<u8>();
         if ptr.is_null() {
-            let _ = GlobalFree(Some(block));
             return Err(ShellError::Com(windows::core::Error::from_thread()));
         }
         fill(std::slice::from_raw_parts_mut(ptr, len));
-        let _ = GlobalUnlock(block);
+        let _ = GlobalUnlock(block.0);
         Ok(block)
     }
 }
 
-fn set(format: u32, block: HGLOBAL) -> Result<(), ShellError> {
-    // SAFETY: hands the block to the clipboard; on success the clipboard owns it, on failure we
-    // free it.
-    unsafe {
-        if let Err(err) = SetClipboardData(format, Some(HANDLE(block.0))) {
-            let _ = GlobalFree(Some(block));
-            return Err(ShellError::Com(err));
-        }
-    }
+fn set(format: u32, block: Global) -> Result<(), ShellError> {
+    // SAFETY: hands the block to the clipboard. On success the clipboard owns it, so our guard is
+    // forgotten; on failure the guard frees it.
+    unsafe { SetClipboardData(format, Some(HANDLE(block.0.0))) }.map_err(ShellError::Com)?;
+    std::mem::forget(block);
     Ok(())
+}
+
+/// Changes whenever the clipboard content changes. Read it with [`read`] and pass it to
+/// [`clear_if_unchanged`] so a later copy by the user (in any app) is never wiped.
+pub fn sequence() -> u32 {
+    // SAFETY: a plain query.
+    unsafe { GetClipboardSequenceNumber() }
 }
 
 /// Puts files on the clipboard as Explorer does.
@@ -152,6 +169,10 @@ pub fn read() -> Result<Option<ClipboardFiles>, ShellError> {
             .ok()
             .and_then(|h| {
                 let block = HGLOBAL(h.0);
+                // Another app wrote this format; never read past its block.
+                if GlobalSize(block) < 4 {
+                    return None;
+                }
                 let ptr = GlobalLock(block).cast::<u8>();
                 if ptr.is_null() {
                     return None;
@@ -166,11 +187,17 @@ pub fn read() -> Result<Option<ClipboardFiles>, ShellError> {
     }
 }
 
-/// Clears the clipboard after a cut has been pasted (the files are no longer where it says).
-pub fn clear(owner: Option<isize>) -> Result<(), ShellError> {
+/// Clears the clipboard after a cut has been pasted (the files are no longer where it says),
+/// unless its content changed since `sequence` (see [`sequence`]). Returns whether it cleared.
+pub fn clear_if_unchanged(sequence: u32, owner: Option<isize>) -> Result<bool, ShellError> {
     let _open = Open::new(owner)?;
+    // Checked while the clipboard is open, so no other app can change it in between.
+    if self::sequence() != sequence {
+        return Ok(false);
+    }
     // SAFETY: the clipboard is open on this thread.
-    unsafe { EmptyClipboard() }.map_err(ShellError::Com)
+    unsafe { EmptyClipboard() }.map_err(ShellError::Com)?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -189,8 +216,12 @@ mod tests {
             cut: true,
         };
         write(&files, None).unwrap();
-        assert_eq!(read().unwrap(), Some(files));
-        clear(None).unwrap();
+        let before = sequence();
+        assert_eq!(read().unwrap(), Some(files.clone()));
+        // A newer copy is never wiped.
+        write(&files, None).unwrap();
+        assert!(!clear_if_unchanged(before, None).unwrap());
+        assert!(clear_if_unchanged(sequence(), None).unwrap());
         assert_eq!(read().unwrap(), None);
     }
 }

@@ -152,11 +152,19 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 
 ## 10. Clipboard
 
-- Copy/cut: `OleSetClipboard` dengan `IDataObject` shell + format `Preferred DropEffect` (`DROPEFFECT_COPY`
-  atau `DROPEFFECT_MOVE` untuk cut) sehingga paste di Explorer bekerja dan sebaliknya.
-- Paste: `OleGetClipboard` → `CF_HDROP`/"Shell IDList Array" + `Preferred DropEffect` → rencana operasi;
-  setelah cut-paste berhasil, set "Paste Succeeded" sesuai skenario delete-on-paste.
-- Saat keluar: `OleFlushClipboard` agar isi clipboard tetap tersedia.
+Fase 1 (`sx_shell::clipboard`):
+- Copy/cut: clipboard Win32 dengan `CF_HDROP` + `Preferred DropEffect` (`DROPEFFECT_COPY`, atau
+  `DROPEFFECT_MOVE` untuk cut), sehingga paste di Explorer bekerja dan sebaliknya. Data langsung diisi (tanpa
+  delayed rendering), jadi tidak perlu `OleFlushClipboard` saat keluar.
+- Paste: `CF_HDROP` + `Preferred DropEffect` (ukuran blok dicek dengan `GlobalSize`) → rencana operasi.
+- Semua akses clipboard berjalan di thread sendiri, bukan UI thread: app lain bisa memegang clipboard
+  (dicoba ulang), dan data yang di-render app lain saat diminta menunggu app itu.
+- Setelah cut-paste selesai **tanpa error dan tanpa batal**, clipboard dikosongkan, tetapi hanya bila
+  `GetClipboardSequenceNumber` masih sama dengan saat dibaca (dicek saat clipboard terbuka). Salinan baru
+  user di app mana pun tidak pernah terhapus.
+
+Fase 2: `IDataObject` shell lewat `OleSetClipboard` (untuk "Shell IDList Array", item virtual) dan "Paste
+Succeeded" sesuai skenario delete-on-paste.
 
 ## 11. Operasi file & elevasi
 

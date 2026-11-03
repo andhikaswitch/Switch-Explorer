@@ -54,7 +54,8 @@ pub(crate) struct PendingPaste {
     pub index: usize,
     pub decisions: HashMap<PathBuf, Resolution>,
     pub apply_all: bool,
-    pub clear_clipboard: bool,
+    /// For a cut: the clipboard sequence when it was read, to clear it after the move.
+    pub clipboard_sequence: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -95,6 +96,8 @@ pub(crate) struct OpsState {
     pub renaming: Option<Renaming>,
     /// Operations that began before a crash and never ended (from the journal).
     pub interrupted: Vec<(u64, Op)>,
+    /// Cut-paste jobs and the clipboard sequence to clear once they have moved everything.
+    clear_clipboard_after: HashMap<u64, u32>,
 }
 
 impl OpsState {
@@ -202,6 +205,32 @@ fn job_label(op: &Op, origin: Origin) -> SharedString {
     }
 }
 
+/// Runs blocking work on its own thread and resolves with its result (`None` if it panicked or
+/// the thread could not start). For the clipboard, which can wait on another app, and for file
+/// system checks, which can take seconds on a network folder: never on the UI thread.
+fn off_thread<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> impl Future<Output = Option<T>> {
+    let (tx, rx) = futures::channel::oneshot::channel();
+    let spawned = std::thread::Builder::new()
+        .name("sx-blocking".into())
+        .spawn(move || {
+            if let Ok(value) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
+                let _ = tx.send(value);
+            }
+        });
+    if let Err(err) = &spawned {
+        tracing::error!(error = %err, "cannot start a worker thread");
+    }
+    async move {
+        spawned.ok()?;
+        rx.await.ok()
+    }
+}
+
+/// What `paste` read: the files, the conflicts with the destination, the clipboard sequence.
+type ClipboardRead = Result<Option<(ClipboardFiles, Vec<Conflict>, u32)>, sx_shell::ShellError>;
+
 /// The message once a job is done.
 fn done_text(op: &Op, origin: Origin) -> SharedString {
     let count = op.item_count();
@@ -291,10 +320,10 @@ impl Workspace {
         true
     }
 
-    /// Starts an operation on its own STA thread.
-    pub(crate) fn run_op(&mut self, op: Op, origin: Origin, cx: &mut Context<Self>) {
+    /// Starts an operation on its own STA thread; returns the job id.
+    pub(crate) fn run_op(&mut self, op: Op, origin: Origin, cx: &mut Context<Self>) -> Option<u64> {
         if !self.writable(cx) {
-            return;
+            return None;
         }
         let journal_id = self.ops.journal.as_mut().and_then(|j| {
             j.begin(&op)
@@ -350,7 +379,7 @@ impl Workspace {
             });
         if let Err(err) = spawned {
             tracing::error!(error = %err, "cannot start an operation thread");
-            return;
+            return None;
         }
         cx.notify();
         cx.spawn(async move |this, cx| {
@@ -372,6 +401,7 @@ impl Workspace {
             }
         })
         .detach();
+        Some(id)
     }
 
     /// Records what the job did (journal, undo or redo) and tells the user. A job that stopped
@@ -416,6 +446,20 @@ impl Workspace {
         }
         if let Some(job) = self.ops.jobs.iter_mut().find(|j| j.id == id) {
             job.finished = Some(message.clone());
+        }
+        // A cut is used up once everything moved; an error or a cancel keeps it for another try.
+        if let Some(sequence) = self.ops.clear_clipboard_after.remove(&id)
+            && !outcome.stopped_early()
+        {
+            let owner = self.hwnd;
+            cx.spawn(async move |_, _| {
+                if let Some(Err(err)) =
+                    off_thread(move || clipboard::clear_if_unchanged(sequence, owner)).await
+                {
+                    tracing::debug!(error = %err, "clipboard");
+                }
+            })
+            .detach();
         }
         if outcome.error.is_some() && done.is_noop() {
             self.notice = Some(message);
@@ -483,11 +527,22 @@ impl Workspace {
         if paths.is_empty() {
             return;
         }
-        if let Err(err) = clipboard::write(&ClipboardFiles { paths, cut }, self.hwnd) {
-            tracing::debug!(error = %err, "clipboard");
-            self.notice = Some(t!("ops.clipboard_busy").into());
-            cx.notify();
-        }
+        let owner = self.hwnd;
+        cx.spawn(async move |this, cx| {
+            let written =
+                off_thread(move || clipboard::write(&ClipboardFiles { paths, cut }, owner)).await;
+            if let Some(Ok(())) = written {
+                return;
+            }
+            if let Some(Err(err)) = written {
+                tracing::debug!(error = %err, "clipboard");
+            }
+            let _ = this.update(cx, |this, cx| {
+                this.notice = Some(t!("ops.clipboard_busy").into());
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// `Ctrl+Shift+C`: the selected paths in quotes, one per line, as Windows 11 copies them.
@@ -508,6 +563,8 @@ impl Workspace {
         cx.write_to_clipboard(ClipboardItem::new_string(text));
     }
 
+    /// Reads the clipboard and checks the destination off the UI thread, then pastes or asks
+    /// about conflicts.
     pub(crate) fn paste(&mut self, cx: &mut Context<Self>) {
         let Some(dest) = self.tab().location().as_path().map(Path::to_path_buf) else {
             return;
@@ -515,18 +572,45 @@ impl Workspace {
         if !self.writable(cx) {
             return;
         }
-        let files = match clipboard::read() {
-            Ok(Some(files)) if !files.paths.is_empty() => files,
-            Ok(_) => return,
-            Err(err) => {
+        cx.spawn(async move |this, cx| {
+            let target = dest.clone();
+            let read = off_thread(move || -> ClipboardRead {
+                let sequence = clipboard::sequence();
+                Ok(clipboard::read()?
+                    .filter(|files| !files.paths.is_empty())
+                    .map(|files| {
+                        let conflicts = sx_ops::plan::conflicts(&files.paths, &target);
+                        (files, conflicts, sequence)
+                    }))
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| this.on_clipboard_read(dest, read, cx));
+        })
+        .detach();
+    }
+
+    fn on_clipboard_read(
+        &mut self,
+        dest: PathBuf,
+        read: Option<ClipboardRead>,
+        cx: &mut Context<Self>,
+    ) {
+        let (files, conflicts, sequence) = match read {
+            Some(Ok(Some(read))) => read,
+            Some(Ok(None)) => return,
+            Some(Err(err)) => {
                 tracing::debug!(error = %err, "clipboard");
+                self.notice = Some(t!("ops.clipboard_busy").into());
+                cx.notify();
+                return;
+            }
+            None => {
                 self.notice = Some(t!("ops.clipboard_busy").into());
                 cx.notify();
                 return;
             }
         };
         let mode = if files.cut { Mode::Move } else { Mode::Copy };
-        let conflicts = sx_ops::plan::conflicts(&files.paths, &dest);
         let pending = PendingPaste {
             sources: files.paths,
             dest,
@@ -535,7 +619,7 @@ impl Workspace {
             index: 0,
             decisions: HashMap::new(),
             apply_all: false,
-            clear_clipboard: files.cut,
+            clipboard_sequence: files.cut.then_some(sequence),
         };
         if pending.conflicts.is_empty() {
             self.finish_paste(pending, cx);
@@ -574,20 +658,31 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Plans the paste with the decisions (off the UI thread: "Keep both" checks names on disk)
+    /// and runs it.
     fn finish_paste(&mut self, pending: PendingPaste, cx: &mut Context<Self>) {
-        let decisions = pending.decisions;
-        let op = sx_ops::plan::paste(&pending.sources, &pending.dest, pending.mode, |c| {
-            decisions
-                .get(&c.source)
-                .copied()
-                .unwrap_or(Resolution::Skip)
-        });
-        if let Some(op) = op {
-            self.run_op(op, Origin::User, cx);
-            if pending.clear_clipboard {
-                let _ = clipboard::clear(self.hwnd);
-            }
-        }
+        let sequence = pending.clipboard_sequence;
+        cx.spawn(async move |this, cx| {
+            let planned = off_thread(move || {
+                let decisions = pending.decisions;
+                sx_ops::plan::paste(&pending.sources, &pending.dest, pending.mode, |c| {
+                    decisions
+                        .get(&c.source)
+                        .copied()
+                        .unwrap_or(Resolution::Skip)
+                })
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                let Some(Some(op)) = planned else {
+                    return;
+                };
+                if let (Some(id), Some(sequence)) = (this.run_op(op, Origin::User, cx), sequence) {
+                    this.ops.clear_clipboard_after.insert(id, sequence);
+                }
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn confirm_dialog(&mut self, cx: &mut Context<Self>) {
@@ -640,15 +735,30 @@ impl Workspace {
         if !self.writable(cx) {
             return;
         }
-        let name = sx_ops::name::keep_both(&dir, &t!("ops.new_folder_name"), Path::exists);
-        self.tab_mut().rename_after_load = Some(name.clone());
-        self.run_op(
-            Op::NewFolder {
-                path: dir.join(name),
-            },
-            Origin::User,
-            cx,
-        );
+        let tab_id = self.tab().id;
+        let base = t!("ops.new_folder_name").into_owned();
+        cx.spawn(async move |this, cx| {
+            // Finding a free number checks names on disk: off the UI thread.
+            let folder = dir.clone();
+            let Some(name) =
+                off_thread(move || sx_ops::name::keep_both(&folder, &base, Path::exists)).await
+            else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                if let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id) {
+                    tab.rename_after_load = Some(name.clone());
+                }
+                this.run_op(
+                    Op::NewFolder {
+                        path: dir.join(name),
+                    },
+                    Origin::User,
+                    cx,
+                );
+            });
+        })
+        .detach();
     }
 
     // ---- Inline rename (F2) ---------------------------------------------------------------
@@ -726,12 +836,8 @@ impl Workspace {
         let Some(dir) = renaming.from.parent() else {
             return;
         };
+        // A taken name is reported by the operation itself, which checks on its worker thread.
         let to = dir.join(&name);
-        let case_only = name.eq_ignore_ascii_case(&renaming.original);
-        if to.exists() && !case_only {
-            self.notice = Some(t!("ops.exists", name = name).into());
-            return;
-        }
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == renaming.tab_id) {
             tab.reveal_after_refresh = Some(name);
         }
