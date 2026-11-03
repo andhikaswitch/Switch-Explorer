@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod command;
+pub mod drag;
 pub mod entry;
 pub mod error;
 pub mod event;

@@ -136,6 +136,11 @@ Dragging (internal atau OLE):
 
 `scroll_terakhir` dicatat dari semua event scroll (wheel, touchpad pan, scrollbar) di window mana pun.
 
+Implementasi: `sx_core::drag` (logika murni, waktu dan posisi diberikan pemanggil). `DragPolicy` diisi dari
+snapshot switch; `DragPolicy::may_start`/`may_drop`/`effect` = aturan §5.3; `DragGuard` = state machine di
+atas. Policy saat tombol ditekan berlaku sampai drag selesai, jadi Hot Switch tidak memutus drag yang
+sedang berjalan. Sambungan ke OLE dan daftar menyusul bersama DnD.
+
 ### 5.5 Preset "Anti salah drag"
 
 | Flag | Nilai preset |

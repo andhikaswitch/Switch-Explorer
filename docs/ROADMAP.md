@@ -69,6 +69,8 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
 - [ ] `CommandRegistry`; command palette (`Ctrl+Shift+P`); quick open (`Ctrl+P`).
 - [ ] OLE drag & drop dua arah (termasuk virtual files) + drag internal ke folder/sidebar/breadcrumb/tab.
 - [ ] **Drag Guard** lengkap (DEVELOPER-MODE.md §5) + preset "Anti salah drag" + test state machine.
+      Progres: aturan §5.3 dan state machine §5.4 di `sx_core::drag` dengan tabel test; preset bisa di-toggle
+      lewat Hot Switch. Belum: sambungan ke DnD.
 - [ ] **Hot Switch**: `Ctrl+Shift+D`, chord `Ctrl+K` (F, D, S, E, G, L, H, X, T, R, K); OSD ≤ 50 ms; chip status;
       badge title bar; hint saat diblokir; persisten/sesi; chord tidak aktif di input teks.
       Progres: semua binding kecuali `K` (panel), OSD (ganti di tempat, hover menahan, fade), chip "Drag: …"
