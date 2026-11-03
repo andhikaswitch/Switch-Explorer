@@ -11,6 +11,14 @@ pub struct Pair {
     pub to: PathBuf,
 }
 
+/// A recycled item: where it was, and its own slot in the Recycle Bin. Undo brings back exactly
+/// this item, never another one recycled from the same path.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Binned {
+    pub original: PathBuf,
+    pub slot: PathBuf,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Op {
@@ -21,14 +29,14 @@ pub enum Op {
     NewFolder {
         path: PathBuf,
     },
-    /// Copies; `replaced` items were moved to the Recycle Bin first (the user chose Replace),
-    /// at `replaced_at` (a [`crate::Trash`] stamp, set when it ran).
+    /// Copies; `replaced` items are moved to the Recycle Bin first (the user chose Replace).
+    /// `replaced_slots` is where they went, set when it ran.
     Copy {
         pairs: Vec<Pair>,
         #[serde(default)]
         replaced: Vec<PathBuf>,
         #[serde(default)]
-        replaced_at: Option<u64>,
+        replaced_slots: Vec<Binned>,
     },
     /// Moves; `replaced` as for `Copy`.
     Move {
@@ -36,20 +44,20 @@ pub enum Op {
         #[serde(default)]
         replaced: Vec<PathBuf>,
         #[serde(default)]
-        replaced_at: Option<u64>,
+        replaced_slots: Vec<Binned>,
     },
-    /// Moves to the Recycle Bin; `at` is the trash stamp, set when it ran.
+    /// Moves to the Recycle Bin; `binned` is where each item went, set when it ran.
     Recycle {
         paths: Vec<PathBuf>,
         #[serde(default)]
-        at: Option<u64>,
+        binned: Vec<Binned>,
     },
-    /// Brings recycled items back to these original paths (undo of `Recycle`): for each path,
-    /// the earliest item recycled at or after `since` (the most recent one without it).
+    /// Brings recycled items back (undo of `Recycle`). `restored` is where each one came back,
+    /// set when it ran: its original path, or "name (2)" when that name was taken again.
     Restore {
-        paths: Vec<PathBuf>,
+        items: Vec<Binned>,
         #[serde(default)]
-        since: Option<u64>,
+        restored: Vec<PathBuf>,
     },
     /// Permanent delete; cannot be undone.
     Delete {
@@ -63,12 +71,39 @@ pub enum Op {
 }
 
 impl Op {
-    /// The operation that undoes this one, or `None` for permanent deletes.
+    /// An operation that did nothing (what an operation that failed at once has done).
+    pub fn nothing() -> Self {
+        Self::Batch { ops: Vec::new() }
+    }
+
+    /// Whether running this changed nothing, so there is nothing to undo.
+    pub fn is_noop(&self) -> bool {
+        match self {
+            Self::Rename { .. } | Self::NewFolder { .. } => false,
+            Self::Copy {
+                pairs,
+                replaced_slots,
+                ..
+            }
+            | Self::Move {
+                pairs,
+                replaced_slots,
+                ..
+            } => pairs.is_empty() && replaced_slots.is_empty(),
+            Self::Recycle { paths, .. } | Self::Delete { paths } => paths.is_empty(),
+            Self::Restore { items, .. } => items.is_empty(),
+            Self::Batch { ops } => ops.iter().all(Op::is_noop),
+        }
+    }
+
+    /// The operation that undoes this one, or `None` for permanent deletes. Built from what an
+    /// operation did (the `Outcome` of running it), so recycled items come back from their own
+    /// slots and restored items are recycled again under the name they came back with.
     pub fn inverse(&self) -> Option<Op> {
-        let restore_replaced = |replaced: &Vec<PathBuf>, at: &Option<u64>| {
-            (!replaced.is_empty()).then(|| Op::Restore {
-                paths: replaced.clone(),
-                since: *at,
+        let restore_replaced = |slots: &Vec<Binned>| {
+            (!slots.is_empty()).then(|| Op::Restore {
+                items: slots.clone(),
+                restored: Vec::new(),
             })
         };
         Some(match self {
@@ -78,18 +113,18 @@ impl Op {
             },
             Self::NewFolder { path } => Self::Recycle {
                 paths: vec![path.clone()],
-                at: None,
+                binned: Vec::new(),
             },
             Self::Copy {
                 pairs,
-                replaced,
-                replaced_at,
+                replaced_slots,
+                ..
             } => {
                 let recycle = Self::Recycle {
                     paths: pairs.iter().map(|p| p.to.clone()).collect(),
-                    at: None,
+                    binned: Vec::new(),
                 };
-                match restore_replaced(replaced, replaced_at) {
+                match restore_replaced(replaced_slots) {
                     Some(restore) => Self::Batch {
                         ops: vec![recycle, restore],
                     },
@@ -98,8 +133,8 @@ impl Op {
             }
             Self::Move {
                 pairs,
-                replaced,
-                replaced_at,
+                replaced_slots,
+                ..
             } => {
                 let back = Self::Move {
                     pairs: pairs
@@ -110,22 +145,22 @@ impl Op {
                         })
                         .collect(),
                     replaced: Vec::new(),
-                    replaced_at: None,
+                    replaced_slots: Vec::new(),
                 };
-                match restore_replaced(replaced, replaced_at) {
+                match restore_replaced(replaced_slots) {
                     Some(restore) => Self::Batch {
                         ops: vec![back, restore],
                     },
                     None => back,
                 }
             }
-            Self::Recycle { paths, at } => Self::Restore {
-                paths: paths.clone(),
-                since: *at,
+            Self::Recycle { binned, .. } => Self::Restore {
+                items: binned.clone(),
+                restored: Vec::new(),
             },
-            Self::Restore { paths, .. } => Self::Recycle {
-                paths: paths.clone(),
-                at: None,
+            Self::Restore { restored, .. } => Self::Recycle {
+                paths: restored.clone(),
+                binned: Vec::new(),
             },
             Self::Delete { .. } => return None,
             Self::Batch { ops } => Self::Batch {
@@ -139,9 +174,8 @@ impl Op {
         match self {
             Self::Rename { .. } | Self::NewFolder { .. } => 1,
             Self::Copy { pairs, .. } | Self::Move { pairs, .. } => pairs.len(),
-            Self::Recycle { paths, .. } | Self::Restore { paths, .. } | Self::Delete { paths } => {
-                paths.len()
-            }
+            Self::Recycle { paths, .. } | Self::Delete { paths } => paths.len(),
+            Self::Restore { items, .. } => items.len(),
             Self::Batch { ops } => ops.iter().map(Op::item_count).sum(),
         }
     }
@@ -155,6 +189,13 @@ mod tests {
         PathBuf::from(s)
     }
 
+    fn binned(original: &str, slot: &str) -> Binned {
+        Binned {
+            original: p(original),
+            slot: p(slot),
+        }
+    }
+
     #[test]
     fn inverses() {
         let rename = Op::Rename {
@@ -162,15 +203,28 @@ mod tests {
             to: p(r"C:\b"),
         };
         assert_eq!(rename.inverse().unwrap().inverse().unwrap(), rename);
+        let slot = binned(r"C:\a", r"C:\$Recycle.Bin\S-1\$R1");
         assert_eq!(
             Op::Recycle {
                 paths: vec![p(r"C:\a")],
-                at: Some(7),
+                binned: vec![slot.clone()],
             }
             .inverse(),
             Some(Op::Restore {
-                paths: vec![p(r"C:\a")],
-                since: Some(7),
+                items: vec![slot.clone()],
+                restored: vec![],
+            })
+        );
+        // A restore that had to rename recycles the renamed item, not whatever now has the name.
+        assert_eq!(
+            Op::Restore {
+                items: vec![slot],
+                restored: vec![p(r"C:\a (2)")],
+            }
+            .inverse(),
+            Some(Op::Recycle {
+                paths: vec![p(r"C:\a (2)")],
+                binned: vec![],
             })
         );
         assert_eq!(Op::Delete { paths: vec![] }.inverse(), None);
@@ -184,13 +238,34 @@ mod tests {
                 to: p(r"D:\dst\a.txt"),
             }],
             replaced: vec![p(r"D:\dst\a.txt")],
-            replaced_at: Some(1),
+            replaced_slots: vec![binned(r"D:\dst\a.txt", r"D:\$Recycle.Bin\S-1\$R1.txt")],
         };
         let Some(Op::Batch { ops }) = copy.inverse() else {
             panic!("expected a batch");
         };
         assert!(matches!(ops[0], Op::Recycle { .. }));
-        assert!(matches!(ops[1], Op::Restore { .. }));
+        assert!(matches!(&ops[1], Op::Restore { items, .. } if items.len() == 1));
+    }
+
+    #[test]
+    fn noops() {
+        assert!(Op::nothing().is_noop());
+        assert!(
+            Op::Recycle {
+                paths: vec![],
+                binned: vec![],
+            }
+            .is_noop()
+        );
+        // A copy that stopped after recycling what it was replacing still has something to undo.
+        assert!(
+            !Op::Copy {
+                pairs: vec![],
+                replaced: vec![p(r"D:\a")],
+                replaced_slots: vec![binned(r"D:\a", r"D:\$R1")],
+            }
+            .is_noop()
+        );
     }
 
     #[test]
@@ -201,5 +276,14 @@ mod tests {
         let json = serde_json::to_string(&op).unwrap();
         assert_eq!(json, r#"{"kind":"new_folder","path":"C:\\New folder"}"#);
         assert_eq!(serde_json::from_str::<Op>(&json).unwrap(), op);
+        // Records written before items carried their slot still read (without undo data).
+        let old = r#"{"kind":"recycle","paths":["C:\\a"],"at":1762000000}"#;
+        assert_eq!(
+            serde_json::from_str::<Op>(old).unwrap(),
+            Op::Recycle {
+                paths: vec![p(r"C:\a")],
+                binned: vec![],
+            }
+        );
     }
 }

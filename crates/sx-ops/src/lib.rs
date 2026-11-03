@@ -17,8 +17,8 @@ pub mod plan;
 pub mod undo;
 
 pub use error::OpsError;
-pub use exec::{Cancel, Outcome, Progress, Trash, run};
+pub use exec::{Cancel, Outcome, Progress, Recycled, Restored, Trash, run};
 pub use journal::Journal;
-pub use op::{Op, Pair};
+pub use op::{Binned, Op, Pair};
 pub use plan::{Conflict, Mode, Resolution};
 pub use undo::UndoStack;

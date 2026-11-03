@@ -12,6 +12,7 @@ futures.workspace = true
 sx-win.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+windows-core.workspace = true
 
 [dependencies.windows]
 workspace = true

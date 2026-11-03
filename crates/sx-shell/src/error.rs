@@ -19,6 +19,11 @@ pub enum ShellError {
     Thread(std::io::Error),
     #[error("the shell worker stopped before answering")]
     WorkerGone,
+    #[error("the shell could not process the item: {source}")]
+    Item {
+        path: PathBuf,
+        source: windows::core::Error,
+    },
     #[error("the operation was cancelled")]
     Aborted,
     #[error("the item is not in the Recycle Bin")]
@@ -31,7 +36,7 @@ impl ShellError {
     /// The Win32 error code (`ERROR_*`) behind a failed open, when there is one.
     pub fn win32_code(&self) -> Option<u32> {
         match self {
-            Self::Open { source, .. } | Self::Com(source) => {
+            Self::Open { source, .. } | Self::Item { source, .. } | Self::Com(source) => {
                 sx_win::win32_code(source.code().0 as u32)
             }
             _ => None,

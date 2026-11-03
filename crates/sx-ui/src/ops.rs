@@ -16,7 +16,10 @@ use gpui_kit::{
 use rust_i18n::t;
 use sx_core::Location;
 use sx_ops::name::NameError;
-use sx_ops::{Cancel, Conflict, Journal, Mode, Op, OpsError, Progress, Resolution, UndoStack};
+use sx_ops::{
+    Binned, Cancel, Conflict, Journal, Mode, Op, OpsError, Outcome, Progress, Resolution, UndoStack,
+};
+use sx_shell::ShellError;
 use sx_shell::clipboard::{self, ClipboardFiles};
 
 use crate::workspace::Workspace;
@@ -124,18 +127,53 @@ struct ShellTrash {
 }
 
 impl sx_ops::Trash for ShellTrash {
-    fn recycle(&self, paths: &[PathBuf]) -> Result<u64, OpsError> {
-        sx_shell::recycle::recycle(paths, self.owner).map_err(|e| OpsError::Trash(e.to_string()))
+    fn recycle(&self, paths: &[PathBuf]) -> sx_ops::Recycled {
+        let recycled = sx_shell::recycle::recycle(paths, self.owner);
+        sx_ops::Recycled {
+            binned: recycled
+                .binned
+                .into_iter()
+                .map(|(original, slot)| Binned { original, slot })
+                .collect(),
+            deleted: recycled.deleted,
+            cancelled: recycled.cancelled,
+            error: recycled.error.map(trash_error),
+        }
     }
 
-    fn restore(&self, paths: &[PathBuf], since: Option<u64>) -> Result<(), OpsError> {
-        sx_shell::recycle::restore(paths, since).map_err(|e| OpsError::Trash(e.to_string()))
+    fn restore(&self, items: &[Binned]) -> sx_ops::Restored {
+        let request: Vec<(PathBuf, PathBuf)> = items
+            .iter()
+            .map(|b| (b.original.clone(), b.slot.clone()))
+            .collect();
+        let restored = sx_shell::recycle::restore(&request);
+        sx_ops::Restored {
+            done: restored
+                .done
+                .into_iter()
+                .filter_map(|(ix, back)| Some((items.get(ix)?.clone(), back)))
+                .collect(),
+            error: restored.error.map(trash_error),
+        }
+    }
+}
+
+/// Shell failures as the engine's errors, keeping the item and the Win32 code for the message.
+fn trash_error(err: ShellError) -> OpsError {
+    let code = err.win32_code();
+    match err {
+        ShellError::NotRecycled(path) => OpsError::NotInRecycleBin(path),
+        ShellError::Item { path, .. } | ShellError::Open { path, .. } if code.is_some() => {
+            let code = code.map_or(0, |c| c as i32);
+            OpsError::io(&path, std::io::Error::from_raw_os_error(code))
+        }
+        other => OpsError::Trash(other.to_string()),
     }
 }
 
 enum JobEvent {
     Progress(Progress),
-    Finished(Result<sx_ops::Outcome, OpsError>),
+    Finished(Outcome),
 }
 
 fn file_name(path: &Path) -> String {
@@ -185,6 +223,16 @@ fn done_text(op: &Op, origin: Origin) -> SharedString {
         (_, Op::NewFolder { .. } | Op::Batch { .. }) => t!("ops.done"),
     }
     .into()
+}
+
+/// The note added when the Recycle Bin could not take some items and the user agreed to delete
+/// them permanently in the shell's warning.
+fn deleted_text(count: usize) -> String {
+    if count == 1 {
+        t!("ops.deleted_instead_one").into_owned()
+    } else {
+        t!("ops.deleted_instead", count = count).into_owned()
+    }
 }
 
 pub(crate) fn name_error(err: &NameError) -> SharedString {
@@ -280,7 +328,7 @@ impl Workspace {
         }
         let (tx, mut rx) = mpsc::unbounded::<JobEvent>();
         let owner = self.hwnd;
-        let planned = op.clone();
+        let planned = op;
         let spawned = std::thread::Builder::new()
             .name("sx-op".into())
             .spawn(move || {
@@ -292,8 +340,11 @@ impl Workspace {
                         let _ = progress_tx.unbounded_send(JobEvent::Progress(p.clone()));
                     })
                 }))
-                .unwrap_or_else(|_| {
-                    Err(OpsError::Trash("the operation stopped unexpectedly".into()))
+                .unwrap_or_else(|_| Outcome {
+                    done: Op::nothing(),
+                    cancelled: false,
+                    error: Some(OpsError::Trash("the operation stopped unexpectedly".into())),
+                    deleted: Vec::new(),
                 });
                 let _ = tx.unbounded_send(JobEvent::Finished(result));
             });
@@ -311,8 +362,8 @@ impl Workspace {
                         }
                         cx.notify();
                     }
-                    JobEvent::Finished(result) => {
-                        this.on_job_finished(id, journal_id, &op, origin, &result, cx);
+                    JobEvent::Finished(outcome) => {
+                        this.on_job_finished(id, journal_id, origin, &outcome, cx);
                     }
                 });
                 if alive.is_err() {
@@ -323,50 +374,53 @@ impl Workspace {
         .detach();
     }
 
+    /// Records what the job did (journal, undo or redo) and tells the user. A job that stopped
+    /// early still records the part it did, so that part can be undone.
     fn on_job_finished(
         &mut self,
         id: u64,
         journal_id: Option<u64>,
-        planned: &Op,
         origin: Origin,
-        result: &Result<sx_ops::Outcome, OpsError>,
+        outcome: &Outcome,
         cx: &mut Context<Self>,
     ) {
-        let (done, message, undo) = match result {
-            Ok(outcome) => {
-                if origin == Origin::User && self.features.ops_undo {
-                    self.ops.undo.record(outcome.done.clone());
-                }
-                let text = if outcome.cancelled {
-                    t!("ops.cancelled").into()
-                } else {
-                    done_text(&outcome.done, origin)
-                };
-                let undoable = origin != Origin::Undo && outcome.done.inverse().is_some();
-                (
-                    outcome.done.clone(),
-                    text,
-                    undoable && self.features.ops_undo,
-                )
-            }
-            Err(err) => {
+        let done = &outcome.done;
+        match origin {
+            Origin::User if self.features.ops_undo => self.ops.undo.record(done.clone()),
+            Origin::User => {}
+            Origin::Undo => self.ops.undo.undone(done),
+            Origin::Redo => self.ops.undo.redone(done.clone()),
+        }
+        let mut message: String = match &outcome.error {
+            Some(err) => {
                 tracing::debug!(error = %err, "operation failed");
-                (planned.clone(), ops_error(err), false)
+                ops_error(err).into()
             }
+            None if outcome.cancelled => t!("ops.cancelled").into_owned(),
+            None => done_text(done, origin).into(),
         };
+        if !outcome.deleted.is_empty() {
+            message.push(' ');
+            message.push_str(&deleted_text(outcome.deleted.len()));
+        }
+        let message = SharedString::from(message);
+        let undo = origin != Origin::Undo
+            && self.features.ops_undo
+            && !done.is_noop()
+            && done.inverse().is_some();
         if let (Some(journal), Some(journal_id)) = (self.ops.journal.as_mut(), journal_id) {
-            let error = result.as_ref().err().map(ToString::to_string);
-            let cancelled = result.as_ref().is_ok_and(|o| o.cancelled);
-            if let Err(err) = journal.end(journal_id, &done, cancelled, error) {
+            let error = outcome.error.as_ref().map(ToString::to_string);
+            if let Err(err) = journal.end(journal_id, done, outcome.cancelled, error) {
                 tracing::warn!(error = %err, "journal");
             }
         }
         if let Some(job) = self.ops.jobs.iter_mut().find(|j| j.id == id) {
             job.finished = Some(message.clone());
         }
-        if result.is_err() {
+        if outcome.error.is_some() && done.is_noop() {
             self.notice = Some(message);
         } else {
+            // Also after an error when part of the job was done: that part can be undone.
             self.show_toast(message, undo, cx);
         }
         // Without a watcher (perf.watcher off) the folder would not update by itself.
@@ -407,7 +461,14 @@ impl Workspace {
                 self.ops.dialog = Some(Dialog::ConfirmRecycle(paths));
                 cx.notify();
             } else {
-                self.run_op(Op::Recycle { paths, at: None }, Origin::User, cx);
+                self.run_op(
+                    Op::Recycle {
+                        paths,
+                        binned: Vec::new(),
+                    },
+                    Origin::User,
+                    cx,
+                );
             }
         } else if self.features.ops_confirm_permanent_delete {
             self.ops.dialog = Some(Dialog::ConfirmDelete(paths));
@@ -532,7 +593,14 @@ impl Workspace {
     pub(crate) fn confirm_dialog(&mut self, cx: &mut Context<Self>) {
         match self.ops.dialog.take() {
             Some(Dialog::ConfirmRecycle(paths)) => {
-                self.run_op(Op::Recycle { paths, at: None }, Origin::User, cx);
+                self.run_op(
+                    Op::Recycle {
+                        paths,
+                        binned: Vec::new(),
+                    },
+                    Origin::User,
+                    cx,
+                );
             }
             Some(Dialog::ConfirmDelete(paths)) => {
                 self.run_op(Op::Delete { paths }, Origin::User, cx);
@@ -704,9 +772,12 @@ impl Workspace {
             Op::Copy { pairs, .. } | Op::Move { pairs, .. } => pairs
                 .first()
                 .and_then(|p| p.to.parent().map(Path::to_path_buf)),
-            Op::Recycle { paths, .. } | Op::Restore { paths, .. } | Op::Delete { paths } => paths
+            Op::Recycle { paths, .. } | Op::Delete { paths } => paths
                 .first()
                 .and_then(|p| p.parent().map(Path::to_path_buf)),
+            Op::Restore { items, .. } => items
+                .first()
+                .and_then(|b| b.original.parent().map(Path::to_path_buf)),
             Op::Batch { .. } => None,
         };
         if let Some(path) = path {

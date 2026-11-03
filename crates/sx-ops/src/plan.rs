@@ -130,12 +130,12 @@ pub fn paste(
         Mode::Copy => Op::Copy {
             pairs,
             replaced,
-            replaced_at: None,
+            replaced_slots: Vec::new(),
         },
         Mode::Move => Op::Move {
             pairs,
             replaced,
-            replaced_at: None,
+            replaced_slots: Vec::new(),
         },
     })
 }

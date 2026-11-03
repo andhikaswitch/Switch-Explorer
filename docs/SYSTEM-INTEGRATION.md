@@ -166,6 +166,12 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 - `IFileOperation` (STA ops-shell) untuk Recycle Bin, namespace shell (ponsel/MTP, ZIP), dan lokasi yang
   butuh admin: Windows menampilkan dialog UAC dan menjalankan operasi dengan hak tinggi lewat COM elevation.
   Progress diambil lewat `IFileOperationProgressSink` dengan UI bawaan disembunyikan.
+- Recycle & restore (`sx_shell::recycle`): satu sink per item. `PostDeleteItem` memberi slot `$R…` item di
+  Recycle Bin (atau tanpa hasil = dihapus permanen setelah peringatan shell). Restore = `MoveItem` dari slot
+  itu ke folder asal (`FOF_RENAMEONCOLLISION`), `PostMoveItem` memberi path akhir, lalu file `$I…`
+  pasangannya dihapus. Hanya `$I` di samping slot `$R` di dalam folder `$Recycle.Bin` yang pernah dihapus.
+  Sink memanggil `Compare` (`SICHINT_CANONICAL`) agar laporan untuk isi folder tidak tercampur dengan item
+  itu sendiri. Callback yang berisi logika dibungkus `catch_unwind`; sisanya hanya mengembalikan `S_OK`.
 
 ## 12. Taskbar, notifikasi, hotkey global
 

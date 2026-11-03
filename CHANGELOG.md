@@ -47,3 +47,13 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Path Win32 selalu verbatim dan dinormalisasi; path relatif ditolak; nama lossy memakai nama asli
   (SYSTEM-INTEGRATION §15).
 - Pesan error menyebut penyebab + solusi (drive belum siap, jaringan, tidak ada aplikasi, file dipakai).
+
+### Fixed
+- Single instance: peluncuran berikutnya hanya meneruskan path ke Switch Explorer milik user yang sama
+  (SID, sesi, elevasi, dan exe yang sama). Pipe yang "diduduki" proses lain ditolak, dan nama pipe kini per
+  sesi dan per elevasi.
+- Undo delete/Replace memulihkan item persis yang di-recycle (slot `$R` dari shell), tidak meninggalkan
+  entri hantu `$I` di Recycle Bin, dan tidak pernah menimpa file baru: item kembali sebagai "nama (2)", dan
+  redo me-recycle item itu.
+- Operasi yang berhenti di tengah (error, batal, item ditolak Recycle Bin) tetap bisa di-undo untuk bagian
+  yang sudah jalan. Item yang dihapus permanen setelah peringatan shell disebut di toast.

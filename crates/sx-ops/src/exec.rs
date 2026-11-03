@@ -1,23 +1,48 @@
 //! Runs an [`Op`] (blocking; call it on a worker, never on the UI thread). Progress is reported
 //! per item, cancel is checked between items and between files inside folders, and nothing is
 //! ever overwritten: Replace decisions were turned into "recycle the old one first" by the plan.
+//!
+//! An operation that stops early (cancel, an error, an item the Recycle Bin refused) still
+//! reports what it did, item by item, so the journal and undo cover exactly that part.
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::error::OpsError;
-use crate::op::{Op, Pair};
+use crate::op::{Binned, Op, Pair};
+
+/// What the Recycle Bin did with a request, item by item.
+#[derive(Debug, Default)]
+pub struct Recycled {
+    /// Items now in the Recycle Bin, in request order.
+    pub binned: Vec<Binned>,
+    /// Items the Recycle Bin could not take (too large, a network drive) that were deleted
+    /// permanently after the user agreed in the shell's warning.
+    pub deleted: Vec<PathBuf>,
+    /// The user declined that warning, so the remaining items stayed where they were.
+    pub cancelled: bool,
+    /// Why the remaining items stayed where they were.
+    pub error: Option<OpsError>,
+}
+
+/// What a restore did, item by item.
+#[derive(Debug, Default)]
+pub struct Restored {
+    /// Each item that is back, with the path it came back at.
+    pub done: Vec<(Binned, PathBuf)>,
+    /// Why the remaining items are still in the Recycle Bin.
+    pub error: Option<OpsError>,
+}
 
 /// The Recycle Bin, provided by the shell (`sx-shell`) in the app and by a folder in tests.
 pub trait Trash: Send + Sync {
-    /// Recycles `paths` and returns a stamp taken just before (seconds since the epoch for the
-    /// real Recycle Bin), so the same items can be found again by [`Trash::restore`].
-    fn recycle(&self, paths: &[PathBuf]) -> Result<u64, OpsError>;
-    /// Restores recycled items to these original paths: for each path, the earliest item
-    /// recycled at or after `since`, or the most recent one when `since` is `None`. (Undoing a
-    /// Replace recycles the copy first; the replaced item is the older of the two.)
-    fn restore(&self, paths: &[PathBuf], since: Option<u64>) -> Result<(), OpsError>;
+    /// Recycles `paths` as far as it gets: an item that cannot go does not hide what happened
+    /// to the others.
+    fn recycle(&self, paths: &[PathBuf]) -> Recycled;
+    /// Restores these items from their slots. An item whose original name is taken again comes
+    /// back as "name (2)" instead of replacing anything; a missing slot does not stop the rest.
+    fn restore(&self, items: &[Binned]) -> Restored;
 }
 
 /// Progress of a running operation (reported at most once per item).
@@ -44,11 +69,46 @@ impl Cancel {
     }
 }
 
-/// What was actually done: the part of the op that completed (for the journal and undo).
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// What was actually done.
+#[derive(Debug)]
 pub struct Outcome {
+    /// The part of the op that completed (for the journal and undo).
     pub done: Op,
     pub cancelled: bool,
+    /// Why it stopped before the end; `done` still holds what completed before.
+    pub error: Option<OpsError>,
+    /// Items deleted permanently instead of recycled (the user agreed in the shell's warning).
+    pub deleted: Vec<PathBuf>,
+}
+
+impl Outcome {
+    fn finished(done: Op) -> Self {
+        Self {
+            done,
+            cancelled: false,
+            error: None,
+            deleted: Vec::new(),
+        }
+    }
+
+    fn failed(done: Op, error: OpsError) -> Self {
+        Self {
+            error: Some(error),
+            ..Self::finished(done)
+        }
+    }
+
+    fn cancelled(done: Op) -> Self {
+        Self {
+            cancelled: true,
+            ..Self::finished(done)
+        }
+    }
+
+    /// The operation stopped before doing everything it planned.
+    pub fn stopped_early(&self) -> bool {
+        self.cancelled || self.error.is_some()
+    }
 }
 
 pub fn run(
@@ -56,7 +116,7 @@ pub fn run(
     trash: &dyn Trash,
     cancel: &Cancel,
     progress: &mut dyn FnMut(&Progress),
-) -> Result<Outcome, OpsError> {
+) -> Outcome {
     let mut state = Progress {
         total: op.item_count(),
         ..Progress::default()
@@ -70,48 +130,58 @@ fn run_inner(
     cancel: &Cancel,
     progress: &mut dyn FnMut(&Progress),
     state: &mut Progress,
-) -> Result<Outcome, OpsError> {
-    let finished = |done: Op| Outcome {
-        done,
-        cancelled: false,
-    };
+) -> Outcome {
     match op {
         Op::Rename { from, to } => {
             if to.exists() && !same_item(from, to) {
-                return Err(OpsError::Exists(to.clone()));
+                return Outcome::failed(Op::nothing(), OpsError::Exists(to.clone()));
             }
-            fs::rename(from, to).map_err(|e| OpsError::io(from, e))?;
-            Ok(finished(op.clone()))
+            match fs::rename(from, to) {
+                Ok(()) => Outcome::finished(op.clone()),
+                Err(e) => Outcome::failed(Op::nothing(), OpsError::io(from, e)),
+            }
         }
-        Op::NewFolder { path } => {
-            fs::create_dir(path).map_err(|e| OpsError::io(path, e))?;
-            Ok(finished(op.clone()))
-        }
+        Op::NewFolder { path } => match fs::create_dir(path) {
+            Ok(()) => Outcome::finished(op.clone()),
+            Err(e) => Outcome::failed(Op::nothing(), OpsError::io(path, e)),
+        },
         Op::Recycle { paths, .. } => {
-            let at = trash.recycle(paths)?;
-            Ok(finished(Op::Recycle {
-                paths: paths.clone(),
-                at: Some(at),
-            }))
+            let recycled = trash.recycle(paths);
+            Outcome {
+                done: Op::Recycle {
+                    paths: recycled.binned.iter().map(|b| b.original.clone()).collect(),
+                    binned: recycled.binned,
+                },
+                cancelled: recycled.cancelled,
+                error: recycled.error,
+                deleted: recycled.deleted,
+            }
         }
-        Op::Restore { paths, since } => {
-            trash.restore(paths, *since)?;
-            Ok(finished(op.clone()))
+        Op::Restore { items, .. } => {
+            let restored = trash.restore(items);
+            let (items, restored_at) = restored.done.into_iter().unzip();
+            let done = Op::Restore {
+                items,
+                restored: restored_at,
+            };
+            match restored.error {
+                Some(err) => Outcome::failed(done, err),
+                None => Outcome::finished(done),
+            }
         }
         Op::Delete { paths } => {
             let mut done = Vec::new();
             for path in paths {
                 report(progress, state, path);
                 if cancel.is_cancelled() {
-                    return Ok(Outcome {
-                        done: Op::Delete { paths: done },
-                        cancelled: true,
-                    });
+                    return Outcome::cancelled(Op::Delete { paths: done });
                 }
-                remove(path)?;
+                if let Err(err) = remove(path) {
+                    return Outcome::failed(Op::Delete { paths: done }, err);
+                }
                 done.push(path.clone());
             }
-            Ok(finished(Op::Delete { paths: done }))
+            Outcome::finished(Op::Delete { paths: done })
         }
         Op::Copy {
             pairs, replaced, ..
@@ -129,19 +199,34 @@ fn run_inner(
         ),
         Op::Batch { ops } => {
             let mut done = Vec::new();
+            let mut deleted = Vec::new();
             for step in ops {
-                let outcome = run_inner(step, trash, cancel, progress, state)?;
+                let outcome = run_inner(step, trash, cancel, progress, state);
+                deleted.extend(outcome.deleted);
                 done.push(outcome.done);
-                if outcome.cancelled {
-                    return Ok(Outcome {
+                if outcome.cancelled || outcome.error.is_some() {
+                    return Outcome {
                         done: Op::Batch { ops: done },
-                        cancelled: true,
-                    });
+                        cancelled: outcome.cancelled,
+                        error: outcome.error,
+                        deleted,
+                    };
                 }
             }
-            Ok(finished(Op::Batch { ops: done }))
+            Outcome {
+                deleted,
+                ..Outcome::finished(Op::Batch { ops: done })
+            }
         }
     }
+}
+
+/// How far one item of a move got.
+enum Moved {
+    Done,
+    /// A move across volumes was cancelled after (part of) the copy, before the source was
+    /// removed: the source is intact and the target is a copy to undo.
+    CopyOnly,
 }
 
 /// Copies or moves `pairs`; `replaced` targets are recycled first (the user chose Replace).
@@ -154,48 +239,91 @@ fn transfer(
     cancel: &Cancel,
     progress: &mut dyn FnMut(&Progress),
     state: &mut Progress,
-) -> Result<Outcome, OpsError> {
-    let replaced_at = if replaced.is_empty() {
-        None
+) -> Outcome {
+    let recycled = if replaced.is_empty() {
+        Recycled::default()
     } else {
-        Some(trash.recycle(replaced)?)
+        trash.recycle(replaced)
     };
-    let rebuild = |pairs| {
+    let replaced_slots = recycled.binned;
+    let rebuild = |pairs: Vec<Pair>| {
+        let replaced = replaced_slots.iter().map(|b| b.original.clone()).collect();
+        let replaced_slots = replaced_slots.clone();
         if moving {
             Op::Move {
                 pairs,
-                replaced: replaced.to_vec(),
-                replaced_at,
+                replaced,
+                replaced_slots,
             }
         } else {
             Op::Copy {
                 pairs,
-                replaced: replaced.to_vec(),
-                replaced_at,
+                replaced,
+                replaced_slots,
             }
         }
     };
+    let mut out = Outcome {
+        deleted: recycled.deleted,
+        ..Outcome::finished(Op::nothing())
+    };
+    if recycled.error.is_some() || recycled.cancelled {
+        // Something the user chose to replace is still there: copy nothing over it.
+        out.done = rebuild(Vec::new());
+        out.error = recycled.error;
+        out.cancelled = recycled.cancelled;
+        return out;
+    }
     let mut done = Vec::new();
+    let mut partial = None;
     for pair in pairs {
         report(progress, state, &pair.from);
         if cancel.is_cancelled() {
-            return Ok(Outcome {
-                done: rebuild(done),
-                cancelled: true,
-            });
+            out.cancelled = true;
+            break;
         }
-        check_target(pair)?;
-        if moving {
-            move_item(pair, cancel, state)?;
+        if let Err(err) = check_target(pair) {
+            out.error = Some(err);
+            break;
+        }
+        let result = if moving {
+            move_item(pair, cancel, state)
         } else {
-            copy_tree(&pair.from, &pair.to, cancel, state)?;
+            copy_tree(&pair.from, &pair.to, cancel, state).map(|()| Moved::Done)
+        };
+        match result {
+            Ok(Moved::Done) => done.push(pair.clone()),
+            Ok(Moved::CopyOnly) => {
+                partial = Some(pair.clone());
+                out.cancelled = true;
+                break;
+            }
+            Err(err) => {
+                // A copy that failed halfway left part of the item behind: undo recycles it. (A
+                // failed move keeps its source, so its partial target is left for the user.)
+                if !moving && fs::symlink_metadata(&pair.to).is_ok() {
+                    done.push(pair.clone());
+                }
+                out.error = Some(err);
+                break;
+            }
         }
-        done.push(pair.clone());
     }
-    Ok(Outcome {
-        done: rebuild(done),
-        cancelled: false,
-    })
+    let main = rebuild(done);
+    out.done = match partial {
+        Some(pair) => Op::Batch {
+            ops: vec![
+                main,
+                Op::Copy {
+                    pairs: vec![pair],
+                    replaced: Vec::new(),
+                    replaced_slots: Vec::new(),
+                },
+            ],
+        },
+        None => main,
+    };
+    out
 }
 
 fn report(progress: &mut dyn FnMut(&Progress), state: &mut Progress, current: &Path) {
@@ -229,19 +357,21 @@ fn volume(path: &Path) -> Option<String> {
 
 /// Same volume: a rename. Across volumes: copy, check, then remove the source
 /// (`.claude/rules/file-ops-safety.md`).
-fn move_item(pair: &Pair, cancel: &Cancel, state: &mut Progress) -> Result<(), OpsError> {
+fn move_item(pair: &Pair, cancel: &Cancel, state: &mut Progress) -> Result<Moved, OpsError> {
     if volume(&pair.from).is_some() && volume(&pair.from) == volume(&pair.to) {
-        return fs::rename(&pair.from, &pair.to).map_err(|e| OpsError::io(&pair.from, e));
+        fs::rename(&pair.from, &pair.to).map_err(|e| OpsError::io(&pair.from, e))?;
+        return Ok(Moved::Done);
     }
     copy_tree(&pair.from, &pair.to, cancel, state)?;
     if cancel.is_cancelled() {
-        return Ok(());
+        return Ok(Moved::CopyOnly);
     }
     let (source, copied) = (tree_size(&pair.from)?, tree_size(&pair.to)?);
     if source != copied {
         return Err(OpsError::VerifyFailed(pair.to.clone()));
     }
-    remove(&pair.from)
+    remove(&pair.from)?;
+    Ok(Moved::Done)
 }
 
 /// Copies a file or a folder tree. Links inside folders (junctions, symlinks) are not followed:
@@ -309,15 +439,15 @@ fn remove(path: &Path) -> Result<(), OpsError> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
 
     use super::*;
+    use crate::name;
 
-    /// A Recycle Bin in a temp folder: recycled items are moved there and back.
+    /// A Recycle Bin in a temp folder: recycled items are moved to numbered slots and back.
     pub struct FolderTrash {
         pub bin: PathBuf,
-        /// (original path, slot in the bin, stamp)
-        items: Mutex<Vec<(PathBuf, PathBuf, u64)>>,
+        next: AtomicUsize,
     }
 
     impl FolderTrash {
@@ -325,43 +455,67 @@ pub(crate) mod tests {
             fs::create_dir_all(&bin).unwrap();
             Self {
                 bin,
-                items: Mutex::default(),
+                next: AtomicUsize::new(1),
             }
         }
     }
 
     impl Trash for FolderTrash {
-        fn recycle(&self, paths: &[PathBuf]) -> Result<u64, OpsError> {
-            let mut items = self.items.lock().unwrap();
-            let stamp = items.len() as u64;
+        fn recycle(&self, paths: &[PathBuf]) -> Recycled {
+            let mut out = Recycled::default();
             for path in paths {
-                let slot = self.bin.join(format!("{}", items.len()));
-                fs::rename(path, &slot).map_err(|e| OpsError::io(path, e))?;
-                items.push((path.clone(), slot, stamp));
+                let slot = self
+                    .bin
+                    .join(format!("$R{}", self.next.fetch_add(1, Ordering::Relaxed)));
+                if let Err(e) = fs::rename(path, &slot) {
+                    out.error = Some(OpsError::io(path, e));
+                    break;
+                }
+                out.binned.push(Binned {
+                    original: path.clone(),
+                    slot,
+                });
             }
-            Ok(stamp)
+            out
         }
 
-        fn restore(&self, paths: &[PathBuf], since: Option<u64>) -> Result<(), OpsError> {
-            let mut items = self.items.lock().unwrap();
-            for path in paths {
-                let matching = |(original, _, at): &(PathBuf, PathBuf, u64)| {
-                    original == path && since.is_none_or(|s| *at >= s)
-                };
-                let ix = match since {
-                    Some(_) => items.iter().position(matching),
-                    None => items.iter().rposition(matching),
+        fn restore(&self, items: &[Binned]) -> Restored {
+            let mut out = Restored::default();
+            for item in items {
+                if fs::symlink_metadata(&item.slot).is_err() {
+                    out.error
+                        .get_or_insert_with(|| OpsError::NotInRecycleBin(item.original.clone()));
+                    continue;
                 }
-                .ok_or_else(|| OpsError::NotInRecycleBin(path.clone()))?;
-                let (original, slot, _) = items.remove(ix);
-                fs::rename(&slot, &original).map_err(|e| OpsError::io(&slot, e))?;
+                let (Some(dir), Some(file)) = (item.original.parent(), item.original.file_name())
+                else {
+                    continue;
+                };
+                let target = dir.join(name::keep_both(dir, &file.to_string_lossy(), Path::exists));
+                match fs::rename(&item.slot, &target) {
+                    Ok(()) => out.done.push((item.clone(), target)),
+                    Err(e) => {
+                        out.error.get_or_insert(OpsError::io(&item.slot, e));
+                    }
+                }
             }
-            Ok(())
+            out
         }
     }
 
     fn quiet() -> impl FnMut(&Progress) {
         |_| {}
+    }
+
+    fn undo(outcome: &Outcome, trash: &FolderTrash) -> Outcome {
+        let outcome = run(
+            &outcome.done.inverse().unwrap(),
+            trash,
+            &Cancel::default(),
+            &mut quiet(),
+        );
+        assert!(outcome.error.is_none(), "{:?}", outcome.error);
+        outcome
     }
 
     #[test]
@@ -381,45 +535,34 @@ pub(crate) mod tests {
                 to: dst.join("src"),
             }],
             replaced: vec![],
-            replaced_at: None,
+            replaced_slots: vec![],
         };
-        let outcome = run(&copy, &trash, &cancel, &mut quiet()).unwrap();
+        let outcome = run(&copy, &trash, &cancel, &mut quiet());
+        assert!(!outcome.stopped_early());
         assert_eq!(
             fs::read(dst.join("src").join("sub").join("b.txt")).unwrap(),
             b"world"
         );
         // Undo recycles the copy; the source is untouched.
-        run(
-            &outcome.done.inverse().unwrap(),
-            &trash,
-            &cancel,
-            &mut quiet(),
-        )
-        .unwrap();
+        undo(&outcome, &trash);
         assert!(!dst.join("src").exists() && src.join("a.txt").exists());
 
         let rename = Op::Rename {
             from: src.join("a.txt"),
             to: src.join("A.txt"),
         };
-        run(&rename, &trash, &cancel, &mut quiet()).unwrap();
+        assert!(!run(&rename, &trash, &cancel, &mut quiet()).stopped_early());
         let moving = Op::Move {
             pairs: vec![Pair {
                 from: src.join("A.txt"),
                 to: dst.join("A.txt"),
             }],
             replaced: vec![],
-            replaced_at: None,
+            replaced_slots: vec![],
         };
-        let outcome = run(&moving, &trash, &cancel, &mut quiet()).unwrap();
+        let outcome = run(&moving, &trash, &cancel, &mut quiet());
         assert!(dst.join("A.txt").exists());
-        run(
-            &outcome.done.inverse().unwrap(),
-            &trash,
-            &cancel,
-            &mut quiet(),
-        )
-        .unwrap();
+        undo(&outcome, &trash);
         assert!(src.join("A.txt").exists() && !dst.join("A.txt").exists());
     }
 
@@ -438,12 +581,11 @@ pub(crate) mod tests {
                 to: a.join("x.txt"),
             }],
             replaced: vec![],
-            replaced_at: None,
+            replaced_slots: vec![],
         };
-        assert!(matches!(
-            run(&over, &trash, &cancel, &mut quiet()),
-            Err(OpsError::Exists(_))
-        ));
+        let outcome = run(&over, &trash, &cancel, &mut quiet());
+        assert!(matches!(outcome.error, Some(OpsError::Exists(_))));
+        assert!(outcome.done.is_noop());
         assert_eq!(fs::read(a.join("x.txt")).unwrap(), b"2");
         let into = Op::Copy {
             pairs: vec![Pair {
@@ -451,12 +593,10 @@ pub(crate) mod tests {
                 to: a.join("inner"),
             }],
             replaced: vec![],
-            replaced_at: None,
+            replaced_slots: vec![],
         };
-        assert!(matches!(
-            run(&into, &trash, &cancel, &mut quiet()),
-            Err(OpsError::IntoItself(_))
-        ));
+        let outcome = run(&into, &trash, &cancel, &mut quiet());
+        assert!(matches!(outcome.error, Some(OpsError::IntoItself(_))));
     }
 
     #[test]
@@ -467,25 +607,101 @@ pub(crate) mod tests {
         fs::create_dir(&dst).unwrap();
         fs::write(root.path().join("x.txt"), b"new").unwrap();
         fs::write(dst.join("x.txt"), b"old").unwrap();
-        let cancel = Cancel::default();
         let op = Op::Copy {
             pairs: vec![Pair {
                 from: root.path().join("x.txt"),
                 to: dst.join("x.txt"),
             }],
             replaced: vec![dst.join("x.txt")],
-            replaced_at: None,
+            replaced_slots: vec![],
         };
-        let outcome = run(&op, &trash, &cancel, &mut quiet()).unwrap();
+        let outcome = run(&op, &trash, &Cancel::default(), &mut quiet());
         assert_eq!(fs::read(dst.join("x.txt")).unwrap(), b"new");
-        run(
-            &outcome.done.inverse().unwrap(),
-            &trash,
-            &cancel,
-            &mut quiet(),
-        )
-        .unwrap();
+        undo(&outcome, &trash);
         assert_eq!(fs::read(dst.join("x.txt")).unwrap(), b"old");
+    }
+
+    #[test]
+    fn a_failure_keeps_what_was_done_for_undo() {
+        let root = tempfile::tempdir().unwrap();
+        let trash = FolderTrash::new(root.path().join("bin"));
+        let (a, gone, b) = (
+            root.path().join("a.txt"),
+            root.path().join("gone.txt"),
+            root.path().join("b.txt"),
+        );
+        fs::write(&a, b"a").unwrap();
+        fs::write(&b, b"b").unwrap();
+        let op = Op::Recycle {
+            paths: vec![a.clone(), gone, b.clone()],
+            binned: vec![],
+        };
+        let outcome = run(&op, &trash, &Cancel::default(), &mut quiet());
+        assert!(outcome.error.is_some());
+        assert!(!a.exists() && b.exists(), "stops at the failing item");
+        assert_eq!(outcome.done.item_count(), 1);
+        undo(&outcome, &trash);
+        assert_eq!(fs::read(&a).unwrap(), b"a");
+    }
+
+    #[test]
+    fn restore_never_replaces_and_redo_recycles_what_came_back() {
+        let root = tempfile::tempdir().unwrap();
+        let trash = FolderTrash::new(root.path().join("bin"));
+        let file = root.path().join("x.txt");
+        fs::write(&file, b"recycled").unwrap();
+        let recycled = run(
+            &Op::Recycle {
+                paths: vec![file.clone()],
+                binned: vec![],
+            },
+            &trash,
+            &Cancel::default(),
+            &mut quiet(),
+        );
+        // The user makes a new x.txt before undoing.
+        fs::write(&file, b"new").unwrap();
+        let restored = undo(&recycled, &trash);
+        let back = root.path().join("x (2).txt");
+        assert_eq!(fs::read(&back).unwrap(), b"recycled");
+        assert_eq!(fs::read(&file).unwrap(), b"new");
+        // Redo is the inverse of what the undo did: it recycles "x (2).txt", not the new file.
+        undo(&restored, &trash);
+        assert!(!back.exists());
+        assert_eq!(fs::read(&file).unwrap(), b"new");
+    }
+
+    #[test]
+    fn a_missing_slot_does_not_stop_the_rest_of_a_restore() {
+        let root = tempfile::tempdir().unwrap();
+        let trash = FolderTrash::new(root.path().join("bin"));
+        let (a, b) = (root.path().join("a.txt"), root.path().join("b.txt"));
+        fs::write(&a, b"a").unwrap();
+        fs::write(&b, b"b").unwrap();
+        let recycled = run(
+            &Op::Recycle {
+                paths: vec![a.clone(), b.clone()],
+                binned: vec![],
+            },
+            &trash,
+            &Cancel::default(),
+            &mut quiet(),
+        );
+        let Op::Recycle { binned, .. } = &recycled.done else {
+            panic!("expected a recycle");
+        };
+        // The user empties the first item from the Recycle Bin.
+        fs::remove_file(&binned[0].slot).unwrap();
+        let outcome = run(
+            &recycled.done.inverse().unwrap(),
+            &trash,
+            &Cancel::default(),
+            &mut quiet(),
+        );
+        assert!(matches!(outcome.error, Some(OpsError::NotInRecycleBin(_))));
+        assert!(!a.exists());
+        assert_eq!(fs::read(&b).unwrap(), b"b");
+        assert_eq!(outcome.done.item_count(), 1);
     }
 
     #[test]
@@ -509,15 +725,14 @@ pub(crate) mod tests {
         let op = Op::Copy {
             pairs,
             replaced: vec![],
-            replaced_at: None,
+            replaced_slots: vec![],
         };
         let outcome = run(&op, &trash, &cancel, &mut |p: &Progress| {
             seen += 1;
             if p.done == 2 {
                 cancel.cancel();
             }
-        })
-        .unwrap();
+        });
         assert!(outcome.cancelled);
         assert_eq!(outcome.done.item_count(), 2, "{seen} reports");
     }

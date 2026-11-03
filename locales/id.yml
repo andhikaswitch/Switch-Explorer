@@ -88,6 +88,7 @@ ops:
   done_move_one: "1 item dipindahkan."
   done_recycle_one: "1 item dipindahkan ke Recycle Bin."
   done_restore_one: "1 item dipulihkan."
+  deleted_instead_one: "1 item tidak bisa masuk Recycle Bin dan dihapus permanen."
   done_delete_one: "1 item dihapus permanen."
   new_folder_name: Folder baru
   copying: "Menyalin %{count} item"
@@ -102,6 +103,7 @@ ops:
   done_move: "%{count} item dipindahkan."
   done_recycle: "%{count} item dipindahkan ke Recycle Bin."
   done_restore: "%{count} item dipulihkan."
+  deleted_instead: "%{count} item tidak bisa masuk Recycle Bin dan dihapus permanen."
   done_delete: "%{count} item dihapus permanen."
   done_rename: "Diganti nama menjadi \"%{name}\"."
   undone: Diurungkan.

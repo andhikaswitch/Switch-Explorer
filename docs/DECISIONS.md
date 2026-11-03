@@ -223,7 +223,7 @@ Risiko diterima. Keduanya tetap tercatat di ROADMAP dan wajib lulus sebelum rili
 - Copy memakai `std::fs::copy` (`CopyFileExW`).
 - Move dalam volume yang sama memakai `rename`. Move antar volume memakai copy → cek ukuran → hapus sumber.
 
-Recycle Bin dan restore lewat shell (`IFileOperation` + enumerasi Recycle Bin).
+Recycle Bin dan restore lewat shell (`IFileOperation` dengan progress sink per item).
 
 Alasan:
 - Kebijakan konflik, journal, undo, dan cancel harus milik kita (`.claude/rules/file-ops-safety.md`).
@@ -236,8 +236,21 @@ Konsekuensi:
 - `CopyFile2` dengan callback progress dan cancel, serta `IFileOperation` khusus untuk elevasi, masuk Fase 2.
 
 Replace tidak pernah menimpa. Item lama dipindah ke Recycle Bin dulu, sehingga undo bisa memulihkannya.
-Setiap recycle membawa cap waktu, dan restore memilih item paling awal yang dihapus sejak cap itu. Dengan
-begitu, undo Replace mengembalikan item yang benar walau path yang sama ada dua kali di Recycle Bin.
+
+Undo memulihkan item persis yang di-recycle, bukan item lain dari path yang sama:
+- Progress sink (`IFileOperationProgressSink::PostDeleteItem`) mencatat slot tiap item di Recycle Bin
+  (`$R…`). Slot itu disimpan di operasi (`Op::Recycle.binned`, `Op::Copy.replaced_slots`) dan di journal.
+- Restore memindahkan item dari slotnya ke folder asal dengan `FOF_RENAMEONCOLLISION`, lalu menghapus file
+  metadata `$I…` miliknya seperti Restore di Explorer. `PostMoveItem` melaporkan path akhir ("nama (2)"
+  bila nama aslinya sudah dipakai lagi).
+- Redo dibangun dari kebalikan hasil undo, sehingga redo me-recycle "nama (2)", bukan file baru milik user.
+- Versi awal Fase 1 mencocokkan item lewat cap waktu dalam detik. Itu bisa memilih versi yang salah bila
+  path yang sama di-recycle dua kali dalam detik yang sama, jadi diganti.
+
+Operasi yang berhenti di tengah (cancel, error, item yang ditolak Recycle Bin) tetap melaporkan bagian yang
+sudah jalan (`Outcome.done`). Journal dan undo mencakup persis bagian itu. Item yang terlalu besar untuk
+Recycle Bin hanya dihapus permanen setelah user setuju di peringatan shell (`FOF_WANTNUKEWARNING`), lalu
+disebut di toast.
 
 ## ADR-022 — Watcher: muat ulang debounce, bukan diff inkremental
 
