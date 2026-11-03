@@ -16,5 +16,5 @@ pub use error::SettingsError;
 pub use flags::{FLAGS, Features, meta};
 pub use hotswitch::{DEFAULT_BINDINGS, HotSwitchAction, HotSwitchBinding, PRESETS, Preset};
 pub use meta::{FlagMeta, Group, Scope, Stability, Visibility};
-pub use store::{Change, SettingsStore};
+pub use store::{Change, PendingWrite, SettingsStore};
 pub use value::{FlagKind, FlagValue};

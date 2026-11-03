@@ -15,6 +15,7 @@ use toml_edit::{DocumentMut, Item};
 
 use crate::error::SettingsError;
 use crate::flags::{FLAGS, Features, meta};
+use crate::hotswitch::{HotSwitchAction, preset};
 use crate::meta::{FlagMeta, Stability};
 use crate::value::{FlagKind, FlagValue};
 
@@ -32,6 +33,21 @@ pub struct Change {
     pub persisted: bool,
 }
 
+/// A `settings.toml` write, taken from the store so it can run on another thread (it touches
+/// the disk). Writes must run in the order they were taken.
+#[derive(Debug)]
+pub struct PendingWrite {
+    path: PathBuf,
+    text: String,
+}
+
+impl PendingWrite {
+    /// Atomic replace, keeping the previous file as `.bak`.
+    pub fn write(self) -> Result<(), SettingsError> {
+        write_atomic(&self.path, self.text.as_bytes())
+    }
+}
+
 #[derive(Debug)]
 pub struct SettingsStore {
     path: Option<PathBuf>,
@@ -41,6 +57,8 @@ pub struct SettingsStore {
     session: BTreeMap<&'static str, FlagValue>,
     snapshot: Arc<Features>,
     dirty: bool,
+    /// Presets turned on by Hot Switch, with the values they replaced (for this session).
+    presets: BTreeMap<&'static str, Vec<(&'static str, FlagValue)>>,
 }
 
 impl SettingsStore {
@@ -90,6 +108,7 @@ impl SettingsStore {
             persisted,
             session: BTreeMap::new(),
             dirty: false,
+            presets: BTreeMap::new(),
         }
     }
 
@@ -118,6 +137,18 @@ impl SettingsStore {
         let meta = meta(id).ok_or_else(|| SettingsError::UnknownFlag(id.to_string()))?;
         let value = meta.kind.check(meta.id, value)?;
         self.guard(meta, &value, source)?;
+        self.set_unguarded(meta.id, value, source)
+    }
+
+    /// [`Self::set`] for a value already checked against the switch's kind and guards.
+    fn set_unguarded(
+        &mut self,
+        id: &str,
+        value: FlagValue,
+        source: ChangeSource,
+    ) -> Result<Change, SettingsError> {
+        let meta = meta(id).ok_or_else(|| SettingsError::UnknownFlag(id.to_string()))?;
+        let value = meta.kind.check(meta.id, value)?;
         let persist = match source {
             ChangeSource::Cli => false,
             ChangeSource::HotSwitch => self.snapshot.hotswitch_persist,
@@ -171,6 +202,58 @@ impl SettingsStore {
             .collect()
     }
 
+    /// Hot Switch preset: the first time, applies the preset's values and remembers the ones
+    /// they replaced; the next time, puts those back. A preset applies whole or not at all.
+    pub fn toggle_preset(
+        &mut self,
+        id: &str,
+        source: ChangeSource,
+    ) -> Result<Vec<Change>, SettingsError> {
+        let preset = preset(id).ok_or_else(|| SettingsError::UnknownPreset(id.to_string()))?;
+        if let Some(previous) = self.presets.remove(preset.id) {
+            // The values it replaced were valid before: they go back as they were.
+            return previous
+                .into_iter()
+                .map(|(flag, value)| self.set_unguarded(flag, value, source))
+                .collect();
+        }
+        let mut values = Vec::with_capacity(preset.values.len());
+        for (flag, raw) in preset.values {
+            let meta = meta(flag).ok_or_else(|| SettingsError::UnknownFlag((*flag).to_string()))?;
+            let value = meta.kind.parse_cli(meta.id, raw)?;
+            // Preset values are applied by the preset, not toggled one by one: only the
+            // Developer Mode rule applies, not `hotswitchable`.
+            self.guard(meta, &value, ChangeSource::User)?;
+            values.push((meta.id, value));
+        }
+        let backup = values
+            .iter()
+            .map(|(flag, _)| (*flag, self.effective(flag)))
+            .collect();
+        let changes = values
+            .into_iter()
+            .map(|(flag, value)| self.set_unguarded(flag, value, source))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.presets.insert(preset.id, backup);
+        Ok(changes)
+    }
+
+    /// Whether Hot Switch turned this preset on in this session.
+    pub fn preset_active(&self, id: &str) -> bool {
+        self.presets.contains_key(id)
+    }
+
+    /// Runs one Hot Switch binding. The panel action changes nothing here.
+    pub fn run_hotswitch(&mut self, action: HotSwitchAction) -> Result<Vec<Change>, SettingsError> {
+        let source = ChangeSource::HotSwitch;
+        match action {
+            HotSwitchAction::Toggle(id) => Ok(vec![self.toggle(id, source)?]),
+            HotSwitchAction::Group(ids) => self.toggle_group(ids, source),
+            HotSwitchAction::Preset(id) => self.toggle_preset(id, source),
+            HotSwitchAction::Panel => Ok(Vec::new()),
+        }
+    }
+
     /// Applies `--set id=value` to the session layer.
     pub fn apply_cli(&mut self, assignment: &str) -> Result<Change, SettingsError> {
         let (id, raw) = assignment
@@ -181,13 +264,20 @@ impl SettingsStore {
         self.set(meta.id, value, ChangeSource::Cli)
     }
 
-    /// Writes `settings.toml`: only values that differ from the default, unknown keys and
-    /// comments preserved, atomic replace with a `.bak` of the previous file.
+    /// Writes `settings.toml` now (see [`Self::take_write`]).
     pub fn save(&mut self) -> Result<(), SettingsError> {
-        let Some(path) = self.path.clone() else {
-            self.dirty = false;
-            return Ok(());
-        };
+        self.take_write().map_or(Ok(()), PendingWrite::write)
+    }
+
+    /// The `settings.toml` write for the persisted changes, if any: only values that differ
+    /// from the default, unknown keys and comments preserved. Rendering it is cheap; writing it
+    /// touches the disk, so the caller can do that on another thread.
+    pub fn take_write(&mut self) -> Option<PendingWrite> {
+        if !self.dirty {
+            return None;
+        }
+        self.dirty = false;
+        let path = self.path.clone()?;
         let defaults = Features::default();
         self.doc["schema"] = toml_edit::value(SCHEMA);
         for meta in FLAGS {
@@ -200,9 +290,10 @@ impl SettingsStore {
                     .insert(meta.id, Item::Value(value.to_toml()));
             }
         }
-        write_atomic(&path, self.doc.to_string().as_bytes())?;
-        self.dirty = false;
-        Ok(())
+        Some(PendingWrite {
+            path,
+            text: self.doc.to_string(),
+        })
     }
 
     fn effective(&self, id: &str) -> FlagValue {
@@ -299,6 +390,78 @@ mod tests {
         let path = dir.path().join("settings.toml");
         fs::write(&path, text).unwrap();
         SettingsStore::load(&path).unwrap()
+    }
+
+    #[test]
+    fn presets_turn_on_and_back_off() {
+        let mut store = SettingsStore::in_memory();
+        store
+            .set("dnd.threshold_px", FlagValue::Int(9), ChangeSource::User)
+            .unwrap();
+        let on = store
+            .toggle_preset("anti_drag", ChangeSource::HotSwitch)
+            .unwrap();
+        assert!(store.preset_active("anti_drag"));
+        assert!(on.iter().any(|c| c.id == "dnd.threshold_px"));
+        assert_eq!(store.get("dnd.threshold_px"), Some(FlagValue::Int(14)));
+        assert_eq!(
+            store.get("sidebar.pins_locked"),
+            Some(FlagValue::Bool(true))
+        );
+        store
+            .toggle_preset("anti_drag", ChangeSource::HotSwitch)
+            .unwrap();
+        assert!(!store.preset_active("anti_drag"));
+        assert_eq!(store.get("dnd.threshold_px"), Some(FlagValue::Int(9)));
+        assert_eq!(
+            store.get("sidebar.pins_locked"),
+            Some(FlagValue::Bool(false))
+        );
+        assert!(matches!(
+            store.toggle_preset("nope", ChangeSource::HotSwitch),
+            Err(SettingsError::UnknownPreset(_))
+        ));
+    }
+
+    #[test]
+    fn hot_switch_bindings_run() {
+        let mut store = SettingsStore::in_memory();
+        let changes = store
+            .run_hotswitch(HotSwitchAction::Toggle("view.show_hidden"))
+            .unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].value, FlagValue::Bool(true));
+        let group = store
+            .run_hotswitch(HotSwitchAction::Group(&[
+                "dnd.external_out",
+                "dnd.external_in",
+            ]))
+            .unwrap();
+        assert!(group.iter().all(|c| c.value == FlagValue::Bool(false)));
+        assert_eq!(store.run_hotswitch(HotSwitchAction::Panel).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn writes_are_taken_once_and_can_run_elsewhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.toml");
+        let (mut store, _) = SettingsStore::load(&path).unwrap();
+        assert!(store.take_write().is_none(), "nothing changed");
+        store
+            .set(
+                "view.show_hidden",
+                FlagValue::Bool(true),
+                ChangeSource::User,
+            )
+            .unwrap();
+        let write = store.take_write().unwrap();
+        assert!(store.take_write().is_none(), "taken");
+        std::thread::spawn(move || write.write())
+            .join()
+            .unwrap()
+            .unwrap();
+        let (again, _) = SettingsStore::load(&path).unwrap();
+        assert!(again.snapshot().view_show_hidden);
     }
 
     #[test]

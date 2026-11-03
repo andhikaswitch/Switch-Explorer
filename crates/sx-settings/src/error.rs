@@ -18,6 +18,8 @@ pub enum SettingsError {
     NotHotSwitchable(&'static str),
     #[error("`{0}` is experimental and needs Developer Mode")]
     NeedsDeveloperMode(&'static str),
+    #[error("unknown preset `{0}`")]
+    UnknownPreset(String),
     #[error("`--set` expects id=value, got `{0}`")]
     BadAssignment(String),
     #[error("cannot read the settings file: {source}")]
