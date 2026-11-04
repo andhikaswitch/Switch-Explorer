@@ -838,6 +838,8 @@ impl Workspace {
         if !self.writable(cx) {
             return;
         }
+        // The new folder is selected for renaming once listed; a filter could hide it.
+        self.set_filter("", cx);
         let tab_id = self.tab().id;
         let base = t!("ops.new_folder_name").into_owned();
         cx.spawn(async move |this, cx| {

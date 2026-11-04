@@ -274,8 +274,9 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 
 ### 8.8 Responsif
 
-- Lebar < 720 px: sidebar otomatis jadi rail 56 px.
-- Lebar < 560 px: preview pane disembunyikan; kotak cari menjadi ikon.
+- Lebar < 720 px: sidebar otomatis jadi rail 56 px; kotak cari menjadi ikon (dibuka dengan klik atau
+  `Ctrl+F`, terlipat lagi saat kosong dan kehilangan fokus).
+- Lebar minimum window 560 px: preview pane disembunyikan.
 - Kolom details menyusut berurutan: Tipe → Diubah; Nama dan Ukuran selalu terlihat.
 - Lebar kolom Diubah, Tipe, dan Ukuran bisa diseret di tepi kirinya pada header (kursor resize kolom, garis
   `divider` saat disorot), 56–480 px; Nama mengambil sisanya. Lebar berlaku per tab selama sesi; mode
@@ -348,7 +349,7 @@ dengan bahasa Windows pengguna.
 | Tombol bahaya | `button.danger.bg` | `…bg_hover` | gelap 5% | ring | opasitas 40% |
 | Toggle | off: border `toggle.off.border` | +`hover.bg` | on: `toggle.on.bg`, thumb `toggle.on.thumb` | ring | opasitas 40% |
 | Checkbox | border `checkbox.border` | +`hover.bg` | `checkbox.checked.bg` + `checkbox.check` | ring | opasitas 40% |
-| Input | `surface.input` + `border.input` | border lebih kuat | — | `border.input_focus` | `fg.disabled` |
+| Input | `surface.input` + `border.input` | `border.input_hover` | — | `border.input_focus` + cincin fokus | `fg.disabled` |
 | Menu konteks | `surface.overlay`, `shadow.popover` | `hover.bg` | `pressed.bg` | ring | `fg.disabled` |
 | Dialog/sheet | `surface.overlay`, `scrim`, `shadow.dialog` | — | — | fokus terperangkap | — |
 | Toast | `toast.bg`, `toast.fg` | tahan timer | — | dapat difokus via F6 | — |

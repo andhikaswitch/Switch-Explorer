@@ -14,7 +14,11 @@ impl Workspace {
         let tab = self.tab();
         let mut left: Vec<SharedString> = Vec::new();
         if let Some(snapshot) = tab.snapshot() {
-            left.push(format::item_count(snapshot.visible_len()));
+            left.push(if tab.filter.is_empty() {
+                format::item_count(snapshot.visible_len())
+            } else {
+                format::filtered_count(snapshot.visible_len(), snapshot.unfiltered_len())
+            });
             let (count, bytes) = tab.selection_summary();
             if count > 0 {
                 let mut text = format::selected_count(count).to_string();

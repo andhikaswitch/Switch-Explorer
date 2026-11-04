@@ -1,7 +1,7 @@
 //! One tab: its history, the listing it shows, selection and scroll state.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -57,6 +57,9 @@ pub struct Tab {
     selection_summary: Cell<Option<(u64, usize, usize, u64)>>,
     /// Widths of the fixed details columns, as dragged in the header.
     pub columns: crate::details::ColumnWidths,
+    /// What the search box filters this folder by, as typed (F-SRCH-01); cleared when the tab
+    /// goes to another folder.
+    pub filter: String,
 }
 
 impl Tab {
@@ -79,6 +82,7 @@ impl Tab {
             reveal_after_refresh: None,
             selection_summary: Cell::new(None),
             columns: crate::details::ColumnWidths::default(),
+            filter: String::new(),
         }
     }
 
@@ -146,12 +150,44 @@ impl Tab {
         (count, bytes)
     }
 
+    /// Changes the listing in place (sort order, filter) and keeps the selection and the focus
+    /// on the same entries, where they are still shown. Returns the focused row afterwards.
+    pub fn change_listing(&mut self, change: impl FnOnce(&mut DirSnapshot)) -> Option<u32> {
+        let Content::Folder(snapshot) = &mut self.content else {
+            return None;
+        };
+        let selected: HashSet<u32> = self
+            .selection
+            .iter()
+            .filter_map(|row| snapshot.row(row as usize).map(|e| e.index))
+            .collect();
+        let focus = self
+            .selection
+            .focus()
+            .and_then(|row| snapshot.row(row as usize).map(|e| e.index));
+        change(Arc::make_mut(snapshot));
+        let rows: Vec<u32> = if selected.is_empty() {
+            Vec::new()
+        } else {
+            (0..snapshot.visible_len() as u32)
+                .filter(|&r| {
+                    snapshot
+                        .row(r as usize)
+                        .is_some_and(|e| selected.contains(&e.index))
+                })
+                .collect()
+        };
+        let focus_row = focus.and_then(|ix| snapshot.row_of(ix)).map(|r| r as u32);
+        self.selection.restore(rows, focus_row);
+        focus_row
+    }
+
     pub fn clear_row_cache(&self) {
         self.rows.borrow_mut().clear();
     }
 
     /// Display strings of a visible row, formatted once and cached (the cache is cleared when
-    /// `view.show_extensions` changes).
+    /// `view.show_extensions` or the filter changes).
     pub fn row_text(&self, row: usize, show_extensions: bool) -> Option<RowText> {
         let snapshot = self.snapshot()?;
         let entry = snapshot.row(row)?;
@@ -161,7 +197,11 @@ impl Tab {
         }
         Some(
             rows.entry(entry.index)
-                .or_insert_with(|| format::row_text(&entry, show_extensions))
+                .or_insert_with(|| {
+                    let mut text = format::row_text(&entry, show_extensions);
+                    text.matched = crate::search::match_range(&text.name, &snapshot.view().filter);
+                    text
+                })
                 .clone(),
         )
     }

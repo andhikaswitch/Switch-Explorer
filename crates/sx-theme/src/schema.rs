@@ -78,6 +78,8 @@ define_tokens! {
     BorderStrong = "border.strong": Color,
     BorderInput = "border.input": Color,
     BorderInputFocus = "border.input_focus": Color,
+    // A text field under the pointer (stronger than `border.input`, not the focus colour).
+    BorderInputHover = "border.input_hover": Color,
     Divider = "divider": Color,
     // Accent fields
     AccentHighlight = "accent.highlight": Paint,
@@ -129,6 +131,8 @@ define_tokens! {
     RowSelectedBg = "row.selected.bg": Color,
     RowSelectedBorder = "row.selected.border": Color,
     RowSelectedInactiveBg = "row.selected_inactive.bg": Color,
+    // The part of a name that matches the filter or search (shown bold).
+    MatchFg = "match.fg": Color,
     TileHoverBg = "tile.hover.bg": Color,
     TileSelectedBg = "tile.selected.bg": Color,
     // Buttons
@@ -263,6 +267,8 @@ define_tokens! {
     SizeOsdMinWidth = "size.osd_min_width": Number,
     SizeOsdMaxWidth = "size.osd_max_width": Number,
     SizeOsdOffset = "size.osd_offset": Number,
+    // The search box in the command bar (DESIGN.md §8.1).
+    SizeSearchWidth = "size.search_width": Number,
     FocusRingWidth = "focus.ring_width": Number,
     // Opacity of disabled controls (0..1).
     OpacityDisabled = "opacity.disabled": Number,

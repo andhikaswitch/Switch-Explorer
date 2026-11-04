@@ -75,7 +75,7 @@ impl FocusStops {
 /// buttons, the hover gradient and the Tide Slash cannot hide it; it takes no layout space. (A
 /// spread shadow would not do: GPUI paints shadows as a filled shape under the element, which
 /// shows through a transparent control.)
-fn ring(radius: Pixels, cx: &App) -> Div {
+pub(crate) fn ring(radius: Pixels, cx: &App) -> Div {
     let t = cx.tokens();
     let width = t.px(Token::FocusRingWidth);
     div()

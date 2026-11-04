@@ -74,6 +74,14 @@ status:
   selected_one: 1 dipilih
   selected: "%{count} dipilih"
   free: "%{drive} sisa %{free}"
+  filtered: "%{shown} dari %{total} item"
+  filtered_one: "%{shown} dari 1 item"
+search:
+  label: Cari di folder ini
+  placeholder: "Cari di %{folder}"
+  no_match: "Tidak ada yang cocok dengan \"%{query}\" di folder ini. Periksa ejaannya, atau kosongkan pencarian."
+  clear: Kosongkan pencarian
+  clear_tip: Kosongkan pencarian (Esc)
 size:
   bytes: "%{n} byte"
 ops:

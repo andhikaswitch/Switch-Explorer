@@ -129,7 +129,11 @@ impl Workspace {
             }
             (Content::Failed(message), _) => self.render_failure(message.clone(), cx),
             (Content::Folder(snapshot), _) if snapshot.visible_len() == 0 => {
-                self.centered(Some(t!("details.empty").into()), cx)
+                if self.tab().filter.is_empty() {
+                    self.centered(Some(t!("details.empty").into()), cx)
+                } else {
+                    self.render_no_match(cx)
+                }
             }
             (Content::Folder(_), _) => self.render_details(window, cx).into_any_element(),
         };
@@ -181,6 +185,35 @@ impl Workspace {
             .p(t.px(Token::Space2xl))
             .text_color(t.color(Token::FgMuted))
             .children(text)
+            .into_any_element()
+    }
+
+    /// Nothing in the folder matches the filter: say so, and offer to clear it.
+    fn render_no_match(&self, cx: &Context<Self>) -> AnyElement {
+        let t = cx.tokens();
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .items_center()
+            .justify_center()
+            .gap(t.px(Token::SpaceLg))
+            .p(t.px(Token::Space2xl))
+            .child(
+                div()
+                    .max_w(t.px(Token::SizeSidebar) * 2.0)
+                    .text_center()
+                    .text_color(t.color(Token::FgSecondary))
+                    .child(SharedString::from(t!(
+                        "search.no_match",
+                        query = crate::search::quoted_query(&self.tab().filter)
+                    ))),
+            )
+            .child(
+                self.text_button("search-clear", t!("search.clear").into(), cx, |this, cx| {
+                    this.set_filter("", cx);
+                }),
+            )
             .into_any_element()
     }
 
@@ -640,7 +673,11 @@ impl Workspace {
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .child(text.name)
+                            .child(crate::search::highlighted(
+                                text.name,
+                                text.matched,
+                                s.match_fg,
+                            ))
                             .into_any_element(),
                     }),
             )
@@ -711,6 +748,8 @@ struct RowStyle {
     icon: Pixels,
     space_sm: Pixels,
     radius: Pixels,
+    /// The colour of the filter's match in names.
+    match_fg: Hsla,
 }
 
 impl RowStyle {
@@ -729,6 +768,7 @@ impl RowStyle {
             icon: t.px(Token::SizeIconSm),
             space_sm: t.px(Token::SpaceSm),
             radius: t.px(Token::RadiusSm),
+            match_fg: t.color(Token::MatchFg),
         }
     }
 }

@@ -87,6 +87,14 @@ pub struct Workspace {
     pub(crate) list_focus: FocusHandle,
     pub(crate) address: gpui_kit::Entity<InputState>,
     pub(crate) editing_address: bool,
+    /// The search box (F-SRCH-01); it shows the active tab's filter.
+    pub(crate) search: gpui_kit::Entity<InputState>,
+    /// What the search box was last given (tab id, text) and the place its placeholder names;
+    /// see `sync_search`.
+    pub(crate) search_shown: Option<(u64, String)>,
+    pub(crate) search_place: Option<(u64, Location)>,
+    /// The search box is open although the window is narrow (it folds into an icon there).
+    pub(crate) search_open: bool,
     pub(crate) drives: Vec<Drive>,
     pub(crate) pins: Vec<Pin>,
     pins_file: Option<PathBuf>,
@@ -158,8 +166,10 @@ impl Workspace {
         let address = cx.new(|cx| {
             InputState::new(window, cx).placeholder(t!("nav.address_placeholder").to_string())
         });
+        let search = cx.new(|cx| InputState::new(window, cx));
         let subscriptions = vec![
             cx.subscribe_in(&address, window, Self::on_address_event),
+            cx.subscribe_in(&search, window, Self::on_search_event),
             cx.on_focus_lost(window, Self::restore_focus),
         ];
         let list_focus = cx.focus_handle().tab_stop(true);
@@ -177,6 +187,10 @@ impl Workspace {
             list_focus,
             address,
             editing_address: false,
+            search,
+            search_shown: None,
+            search_place: None,
+            search_open: false,
             drives: Vec::new(),
             pins: crate::pins::load(options.pins_file.as_deref())
                 .into_iter()
@@ -433,6 +447,8 @@ impl Workspace {
         let refresh = refresh && matches!(tab.content, Content::Folder(_));
         if !refresh {
             tab.watcher = None;
+            // Another folder: the filter was for the old one.
+            tab.filter.clear();
         }
         let cancel = tab.begin_load();
         let Location::Path(path) = tab.location().clone() else {
@@ -455,7 +471,7 @@ impl Workspace {
         let view = ViewOptions {
             show_hidden: features.view_show_hidden,
             show_system: features.view_show_system,
-            filter: String::new(),
+            filter: tab.filter.clone(),
         };
         cx.notify();
         let started = Instant::now();
@@ -497,7 +513,14 @@ impl Workspace {
             return;
         }
         match result {
-            Ok(snapshot) => {
+            Ok(mut snapshot) => {
+                if snapshot.view().filter != sx_fs::fold_case(&tab.filter) {
+                    let view = ViewOptions {
+                        filter: tab.filter.clone(),
+                        ..snapshot.view().clone()
+                    };
+                    snapshot.set_view(view);
+                }
                 tracing::debug!(
                     entries = snapshot.len(),
                     ms = started.elapsed().as_secs_f64() * 1000.0,
@@ -844,27 +867,7 @@ impl Workspace {
                 let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id) else {
                     return;
                 };
-                let Content::Folder(snapshot) = &mut tab.content else {
-                    return;
-                };
-                let selected: HashSet<u32> = tab
-                    .selection
-                    .iter()
-                    .filter_map(|row| snapshot.row(row as usize).map(|e| e.index))
-                    .collect();
-                let focus = tab
-                    .selection
-                    .focus()
-                    .and_then(|row| snapshot.row(row as usize).map(|e| e.index));
-                Arc::make_mut(snapshot).apply_order(spec, order);
-                let rows = (0..snapshot.visible_len() as u32).filter(|&r| {
-                    snapshot
-                        .row(r as usize)
-                        .is_some_and(|e| selected.contains(&e.index))
-                });
-                let focus_row = focus.and_then(|ix| snapshot.row_of(ix)).map(|r| r as u32);
-                let rows: Vec<u32> = rows.collect();
-                tab.selection.restore(rows, focus_row);
+                let focus_row = tab.change_listing(|snapshot| snapshot.apply_order(spec, order));
                 tab.clear_row_cache();
                 if let Some(row) = focus_row {
                     tab.scroll
@@ -1012,6 +1015,7 @@ fn hwnd(window: &Window) -> Option<isize> {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.focus_stops.begin_frame();
+        self.sync_search(window, cx);
         self.focused_now = window.focused(cx);
         // The toast holds its timer while it has focus (keyboard users reaching for Undo).
         self.ops.toast_focused = self.toast_area.contains_focused(window, cx);
@@ -1068,6 +1072,9 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|this, _: &actions::FocusAddress, window, cx| {
                 this.edit_address(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &actions::SearchFilter, window, cx| {
+                this.focus_search(window, cx);
             }))
             .on_action(cx.listener(|this, _: &actions::TabNew, window, cx| {
                 this.open_tab(Location::Home, cx);

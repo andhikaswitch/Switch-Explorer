@@ -74,6 +74,14 @@ status:
   selected_one: 1 selected
   selected: "%{count} selected"
   free: "%{drive} %{free} free"
+  filtered: "%{shown} of %{total} items"
+  filtered_one: "%{shown} of 1 item"
+search:
+  label: Search this folder
+  placeholder: "Search %{folder}"
+  no_match: "Nothing in this folder matches \"%{query}\". Check the spelling, or clear the search."
+  clear: Clear search
+  clear_tip: Clear search (Esc)
 size:
   bytes: "%{n} bytes"
 ops:

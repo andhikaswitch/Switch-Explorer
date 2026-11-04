@@ -232,7 +232,7 @@ impl Workspace {
 
     pub(crate) fn render_command_bar(
         &self,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let t = cx.tokens();
@@ -271,7 +271,8 @@ impl Workspace {
             .child(self.nav_button("nav-up", IconName::ArrowUp, can_up, cx, Workspace::go_up))
             .child(
                 self.nav_button("nav-refresh", IconName::RefreshCw, true, cx, |this, cx| {
-                    this.load(cx);
+                    let id = this.tab().id;
+                    this.load_tab(id, true, cx);
                     this.refresh_drives(cx);
                 }),
             )
@@ -289,6 +290,7 @@ impl Workspace {
                     cx,
                     Workspace::toggle_pin,
                 ))
+                .child(self.render_search_box(window, cx))
             })
     }
 
@@ -360,9 +362,11 @@ impl Workspace {
 
     fn render_address(&self, cx: &Context<Self>) -> impl IntoElement {
         let t = cx.tokens();
-        let strong = t.color(Token::BorderInputFocus);
+        let hover = t.color(Token::BorderInputHover);
+        let radius = t.px(Token::RadiusSm);
         let field = div()
             .id("address")
+            .relative()
             .flex()
             .flex_1()
             .min_w_0()
@@ -370,18 +374,19 @@ impl Workspace {
             .h(t.px(Token::SizeControl))
             .ml(t.px(Token::SpaceSm))
             .px(t.px(Token::SpaceXs))
-            .rounded(t.px(Token::RadiusSm))
+            .rounded(radius)
             .bg(t.paint(Token::SurfaceInput))
             .border_1();
         if self.editing_address {
             return field
                 .border_color(t.color(Token::BorderInputFocus))
+                .child(crate::focus::ring(radius, cx))
                 .child(Input::new(&self.address).appearance(false).h_full())
                 .into_any_element();
         }
         field
             .border_color(t.color(Token::BorderInput))
-            .hover(move |s| s.border_color(strong))
+            .hover(move |s| s.border_color(hover))
             .overflow_hidden()
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                 this.edit_address(window, cx);

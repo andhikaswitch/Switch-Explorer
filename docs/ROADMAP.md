@@ -82,7 +82,9 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
 - [ ] Filter instan + pencarian rekursif + integrasi Everything.
       Progres: mesin pencarian rekursif di `sx-search` (operator `ext:`, `size:`, `modified:`, `kind:`,
       wildcard, frasa berkutip; hasil streaming, batal, link tidak diikuti, folder tak terbaca dilewati).
-      Belum: kotak cari + kolom Path di UI, filter instan, Everything.
+      Filter instan (F-SRCH-01) selesai: kotak cari di command bar, highlight `match.fg`, "x dari y item",
+      `Ctrl+F`/`Esc`/`↓`; terukur di release 0,1 ms per ketikan untuk 10k item dan ~1 ms untuk 100k.
+      Belum: pencarian rekursif di UI (kolom Path), Everything.
 - [ ] Split view, session restore, mode tampilan per folder, checkbox seleksi, floating action bar.
 - [ ] Home dashboard (gauge, kategori pintar, pinned, terbaru, aktivitas); halaman Aktivitas; Recycle Bin view.
 - [ ] Properties (`Alt+Enter`), copy path, buka terminal/VS Code, mode baca-saja, elevasi via `IFileOperation`.

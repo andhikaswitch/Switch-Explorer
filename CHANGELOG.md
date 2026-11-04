@@ -47,6 +47,14 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   Klik mouse tidak memindahkan fokus dari daftar.
 - Gerbang kontras mencakup lapisan di bawah latar dan 27 kelompok pasangan, termasuk indikator non-teks
   3:1 (THEMING §11).
+- Filter instan di kotak cari (`Ctrl+F`):
+  - Folder aktif difilter per ketikan, dan bagian nama yang cocok ditulis tebal.
+  - Status bar menulis "x dari y item".
+  - Bila tidak ada yang cocok, muncul pesan beserta tombol "Kosongkan pencarian".
+  - `Esc` mengosongkan filter; filter disimpan per tab.
+  - Di window sempit, kotak cari menjadi ikon.
+  - Token baru `match.fg`, `size.search_width`, dan `border.input_hover`.
+  - Kotak alamat dan kotak cari memakai cincin fokus standar saat fokus.
 
 ### Changed
 - ARCHITECTURE §8.4: perubahan tema dipicu notifikasi registry, bukan `WM_SETTINGCHANGE`.

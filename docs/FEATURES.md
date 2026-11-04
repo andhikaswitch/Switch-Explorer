@@ -125,6 +125,23 @@ Setiap fitur punya ID `F-AREA-nn`, prioritas (P0/P1/P2), dan fase (F0–F8). Fla
 | F-SRCH-04 | Fuzzy (palette & quick open) via nucleo (`search.fuzzy`) | P1 | F2 |
 | F-SRCH-05 | Cari isi file teks/kode (`search.content`, beta) | P2 | F7 |
 
+Kotak cari (F-SRCH-01) ada di ujung kanan command bar untuk folder ("Cari di Received"), tidak untuk
+Home, This PC, dan Recycle Bin.
+
+- Mengetik memfilter folder aktif per ketikan: substring nama, tanpa membedakan huruf besar/kecil. Bagian nama
+  yang cocok ditulis tebal dengan `match.fg`.
+- Seleksi dan fokus tetap pada item yang masih tampil. Status bar menulis "3 dari 6 item".
+- Bila tidak ada yang cocok, daftar diganti pesan beserta tombol "Kosongkan pencarian". Tombol × di kotak
+  (24 px, tooltip menyebut `Esc`) melakukan hal yang sama.
+- `Esc` mengosongkan filter dan kembali ke daftar. `↓` atau `Enter` pindah ke daftar dan memilih baris
+  pertama bila belum ada yang dipilih.
+- Filter milik tab: pindah tab menampilkan filter tab itu, dan pindah folder (termasuk back/forward)
+  mengosongkannya. Refresh dan watcher mempertahankannya.
+- Folder baru (`Ctrl+Shift+N`) mengosongkan filter dulu, supaya folder itu terlihat untuk di-rename.
+- Yang diketik selama folder masih dimuat tetap berlaku begitu daftarnya datang.
+- Di window lebih sempit dari 720 px kotak cari menjadi ikon. Ikon itu atau `Ctrl+F` membukanya, dan kotak
+  terlipat lagi saat fokus keluar dalam keadaan kosong.
+
 ## F-PREV — Preview
 
 | ID | Fitur | P | Fase |

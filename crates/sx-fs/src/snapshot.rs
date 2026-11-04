@@ -124,6 +124,8 @@ pub struct DirSnapshot {
     order: Vec<u32>,
     /// `order` after hidden/system/filter rules.
     visible: Vec<u32>,
+    /// Entries the hidden/system rules show, whatever the filter.
+    unfiltered: usize,
     sort: SortSpec,
     view: ViewOptions,
 }
@@ -139,6 +141,7 @@ impl Default for DirSnapshot {
             lossy_names: Vec::new(),
             order: Vec::new(),
             visible: Vec::new(),
+            unfiltered: 0,
             sort: SortSpec::default(),
             view: ViewOptions::default(),
         }
@@ -168,6 +171,11 @@ impl DirSnapshot {
         self.visible.len()
     }
 
+    /// Entries shown without the filter (the "of 207 items" next to a filtered count).
+    pub fn unfiltered_len(&self) -> usize {
+        self.unfiltered
+    }
+
     /// The entry at a visible row.
     pub fn row(&self, row: usize) -> Option<EntryView<'_>> {
         self.visible.get(row).map(|&ix| self.view_of(ix))
@@ -184,6 +192,11 @@ impl DirSnapshot {
 
     pub fn sort_spec(&self) -> SortSpec {
         self.sort
+    }
+
+    /// The options in effect; `filter` is case-folded (see [`fold_case`]).
+    pub fn view(&self) -> &ViewOptions {
+        &self.view
     }
 
     /// The path of an entry inside `dir`, built from its exact name (lossy names included).
@@ -242,8 +255,11 @@ impl DirSnapshot {
             // offsets.
             push_lowercase_same_len(&mut self.names_lower, &raw.name);
             self.order.push(index);
-            if self.passes(index) {
-                self.visible.push(index);
+            if self.shown(index) {
+                self.unfiltered += 1;
+                if self.matches(index) {
+                    self.visible.push(index);
+                }
             }
         }
     }
@@ -275,24 +291,43 @@ impl DirSnapshot {
     }
 
     pub fn set_view(&mut self, mut view: ViewOptions) {
-        let mut filter = String::with_capacity(view.filter.len());
-        push_lowercase_same_len(&mut filter, &view.filter);
-        view.filter = filter;
+        view.filter = fold_case(&view.filter);
+        // Typing on narrows the filter: only what is shown now can still match.
+        let narrowing = view.show_hidden == self.view.show_hidden
+            && view.show_system == self.view.show_system
+            && view.filter.contains(self.view.filter.as_str());
         self.view = view;
-        self.rebuild_visible();
+        if narrowing {
+            let mut visible = std::mem::take(&mut self.visible);
+            visible.retain(|&ix| self.matches(ix));
+            self.visible = visible;
+        } else {
+            self.rebuild_visible();
+        }
     }
 
     fn rebuild_visible(&mut self) {
-        let visible: Vec<u32> = self
-            .order
-            .iter()
-            .copied()
-            .filter(|&ix| self.passes(ix))
-            .collect();
+        let mut unfiltered = 0;
+        let mut visible = Vec::with_capacity(self.visible.len());
+        for &ix in &self.order {
+            if self.shown(ix) {
+                unfiltered += 1;
+                if self.matches(ix) {
+                    visible.push(ix);
+                }
+            }
+        }
         self.visible = visible;
+        self.unfiltered = unfiltered;
     }
 
-    fn passes(&self, ix: u32) -> bool {
+    /// The filter box.
+    fn matches(&self, ix: u32) -> bool {
+        self.view.filter.is_empty() || self.lower(ix).contains(&self.view.filter)
+    }
+
+    /// The hidden/system rules.
+    fn shown(&self, ix: u32) -> bool {
         let rec = &self.entries[ix as usize];
         if !self.view.show_hidden && rec.attrs & FILE_ATTRIBUTE_HIDDEN != 0 {
             return false;
@@ -300,10 +335,7 @@ impl DirSnapshot {
         // Protected OS files are hidden+system; they need both switches.
         let protected = rec.attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)
             == FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
-        if protected && !self.view.show_system {
-            return false;
-        }
-        self.view.filter.is_empty() || self.lower(ix).contains(&self.view.filter)
+        !protected || self.view.show_system
     }
 
     fn compare(&self, spec: SortSpec, a: u32, b: u32, keys: Option<&NameKeys>) -> Ordering {
@@ -378,6 +410,15 @@ impl DirSnapshot {
         self.exts.push(ext);
         ix
     }
+}
+
+/// `text` lowercased the way names are stored for filtering: a character whose lowercase form
+/// has a different UTF-8 length is kept as-is, so byte offsets in the result are offsets in
+/// `text` too (a match found in the folded name can be highlighted in the original).
+pub fn fold_case(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    push_lowercase_same_len(&mut out, text);
+    out
 }
 
 /// Appends `name` lowercased character by character, keeping a character as-is when its
@@ -493,6 +534,78 @@ mod tests {
         });
         assert_eq!(names(&snap), ["file2.txt", "file10.txt"]);
         assert_eq!(snap.row_of(1), Some(0));
+    }
+
+    fn filter(snap: &mut DirSnapshot, text: &str) -> Vec<String> {
+        snap.set_view(ViewOptions {
+            filter: text.into(),
+            ..ViewOptions::default()
+        });
+        names(snap).into_iter().map(String::from).collect()
+    }
+
+    #[test]
+    fn narrowing_and_widening_the_filter() {
+        let mut snap = sample();
+        snap.sort(SortSpec::default());
+        let all_t = ["Zeta", "file2.txt", "file10.txt", "photo.JPG"];
+        assert_eq!(filter(&mut snap, "T"), all_t);
+        assert_eq!(filter(&mut snap, "tx"), ["file2.txt", "file10.txt"]);
+        assert_eq!(filter(&mut snap, "10.tx"), ["file10.txt"]);
+        // Back to a shorter filter: everything that matches it again, in sort order.
+        assert_eq!(filter(&mut snap, "t"), all_t);
+        assert_eq!(snap.unfiltered_len(), 5);
+        // Hidden entries stay hidden without a filter.
+        assert_eq!(filter(&mut snap, "").len(), 5);
+        assert_eq!(snap.unfiltered_len(), 5);
+        assert_eq!(snap.view().filter, "");
+    }
+
+    /// Filter cost per keystroke (PERFORMANCE.md: <= 8 ms for 10k entries).
+    #[test]
+    #[ignore = "timing; run in release with --ignored --nocapture"]
+    fn filter_timing() {
+        for count in [10_000_u64, 100_000] {
+            let batch: Vec<RawEntry> = (0..count)
+                .map(|i| {
+                    let name = format!("Photo {i:06} – Holiday Report.JPG");
+                    raw(&name, EntryKind::File, i, i as i64, 0)
+                })
+                .collect();
+            let mut snap = DirSnapshot::default();
+            snap.push_batch(&batch);
+            snap.sort(SortSpec::default());
+            for text in ["h", "ho", "hol", "holx", "hol", "", "report"] {
+                let started = std::time::Instant::now();
+                snap.set_view(ViewOptions {
+                    filter: text.into(),
+                    ..ViewOptions::default()
+                });
+                let clone = std::time::Instant::now();
+                let copy = snap.clone();
+                println!(
+                    "{count} entries, filter {text:?}: {:.2} ms ({} rows), clone {:.2} ms",
+                    (clone - started).as_secs_f64() * 1000.0,
+                    snap.visible_len(),
+                    clone.elapsed().as_secs_f64() * 1000.0,
+                );
+                drop(copy);
+            }
+        }
+    }
+
+    #[test]
+    fn fold_case_keeps_byte_offsets() {
+        for text in ["Report.PDF", "İstanbul", "ÉMILE", "日本語", "ẞig"] {
+            let folded = fold_case(text);
+            assert_eq!(folded.len(), text.len());
+            assert!(
+                folded
+                    .char_indices()
+                    .all(|(at, _)| text.is_char_boundary(at))
+            );
+        }
+        assert_eq!(fold_case("Report.PDF"), "report.pdf");
     }
 
     #[test]

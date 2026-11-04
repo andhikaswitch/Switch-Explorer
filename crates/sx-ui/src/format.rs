@@ -10,6 +10,8 @@ use sx_win::{Drive, DriveKind};
 #[derive(Clone, Debug)]
 pub struct RowText {
     pub name: SharedString,
+    /// The part of `name` that matches the filter, to show in bold.
+    pub matched: Option<std::ops::Range<usize>>,
     pub modified: SharedString,
     pub kind: SharedString,
     pub size: SharedString,
@@ -41,6 +43,7 @@ pub fn row_text(entry: &EntryView<'_>, show_extensions: bool) -> RowText {
     }
     RowText {
         name: SharedString::from(name.to_string()),
+        matched: None,
         modified: sx_win::format::file_time(entry.modified)
             .unwrap_or_default()
             .into(),
@@ -121,6 +124,15 @@ pub fn item_count(count: usize) -> SharedString {
         t!("status.items_one").into()
     } else {
         t!("status.items", count = count).into()
+    }
+}
+
+/// `12 of 207 items` while the search box filters the folder.
+pub fn filtered_count(shown: usize, total: usize) -> SharedString {
+    if total == 1 {
+        t!("status.filtered_one", shown = shown).into()
+    } else {
+        t!("status.filtered", shown = shown, total = total).into()
     }
 }
 
