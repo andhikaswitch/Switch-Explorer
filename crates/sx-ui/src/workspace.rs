@@ -116,6 +116,8 @@ pub struct Workspace {
     pub(crate) palette: Option<crate::palette::Palette>,
     /// Folders opened this session, most recent first (quick open; never written to disk).
     pub(crate) recent_folders: Vec<PathBuf>,
+    /// The newest shell menu asked for; an older one does not open.
+    pub(crate) menu_ticket: std::rc::Rc<std::cell::Cell<u64>>,
     pub(crate) next_osd: u64,
     /// One-line message about the last failed action (cause + fix, DESIGN.md §10).
     pub(crate) notice: Option<SharedString>,
@@ -215,6 +217,7 @@ impl Workspace {
             osd: None,
             palette: None,
             recent_folders: Vec::new(),
+            menu_ticket: std::rc::Rc::default(),
             next_osd: 0,
             notice: None,
             hwnd: hwnd(window),
@@ -1220,6 +1223,10 @@ impl Workspace {
         )
         .on_action(cx.listener(|this, _: &actions::QuickOpen, window, cx| {
             this.open_palette(crate::palette::PaletteMode::Folders, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::NativeMenu, window, cx| {
+            let at = this.keyboard_menu_point(cx);
+            this.open_native_menu(at, false, window, cx);
         }))
     }
 }

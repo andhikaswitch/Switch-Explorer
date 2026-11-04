@@ -262,7 +262,7 @@ fn job_label(op: &Op, origin: Origin) -> SharedString {
 /// Runs blocking work on its own thread and resolves with its result (`None` if it panicked or
 /// the thread could not start). For the clipboard, which can wait on another app, and for file
 /// system checks, which can take seconds on a network folder: never on the UI thread.
-fn off_thread<T: Send + 'static>(
+pub(crate) fn off_thread<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> impl Future<Output = Option<T>> {
     let (tx, rx) = futures::channel::oneshot::channel();
@@ -597,6 +597,16 @@ impl Workspace {
 
     pub(crate) fn delete_selection(&mut self, permanent: bool, cx: &mut Context<Self>) {
         let paths = self.selected_paths();
+        self.delete_paths(paths, permanent, cx);
+    }
+
+    /// Deletes these items (to the Recycle Bin unless `permanent`), with the usual confirmation.
+    pub(crate) fn delete_paths(
+        &mut self,
+        paths: Vec<PathBuf>,
+        permanent: bool,
+        cx: &mut Context<Self>,
+    ) {
         if paths.is_empty() || !self.writable(cx) {
             return;
         }
@@ -669,9 +679,13 @@ impl Workspace {
     /// Reads the clipboard and checks the destination off the UI thread, then pastes or asks
     /// about conflicts.
     pub(crate) fn paste(&mut self, cx: &mut Context<Self>) {
-        let Some(dest) = self.tab().location().as_path().map(Path::to_path_buf) else {
-            return;
-        };
+        if let Some(dest) = self.tab().location().as_path().map(Path::to_path_buf) {
+            self.paste_into(dest, cx);
+        }
+    }
+
+    /// Pastes the clipboard's files into `dest`, with conflict decisions, journal and undo.
+    pub(crate) fn paste_into(&mut self, dest: PathBuf, cx: &mut Context<Self>) {
         if !self.writable(cx) {
             return;
         }

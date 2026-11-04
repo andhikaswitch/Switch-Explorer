@@ -88,6 +88,10 @@ fn main() -> anyhow::Result<()> {
             // GPUI platform start-up (DirectX, DirectWrite) is most of the cold start.
             tracing::debug!(ms = started.elapsed().as_secs_f64() * 1000.0, "app running");
             gpui_kit::init(cx);
+            // OS modal loops (the shell's menu) run from this thread's host window (ADR-015).
+            if let Err(err) = sx_shell::modal::init() {
+                tracing::warn!(error = %err, "modal host unavailable: shell menus will not open");
+            }
             sx_ui::actions::bind(&registry, cx);
             tracing::debug!(ms = started.elapsed().as_secs_f64() * 1000.0, "kit ready");
             if let Some(handle) = ipc {

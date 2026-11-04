@@ -68,6 +68,8 @@ pub struct Tab {
     typed_at: Option<Instant>,
     /// Rows that fit the viewport, measured during the last render (for Page Up/Down).
     pub page_rows: Cell<usize>,
+    /// Where the rows were painted last frame (a menu opened from the keyboard goes there).
+    pub rows_bounds: std::rc::Rc<Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
     /// Watches the listed folder (`perf.watcher`); dropped when the tab navigates away.
     pub watcher: Option<sx_win::DirWatcher>,
     /// A folder just created here: select it and start renaming once it is listed.
@@ -105,6 +107,7 @@ impl Tab {
             type_ahead: String::new(),
             typed_at: None,
             page_rows: Cell::new(10),
+            rows_bounds: std::rc::Rc::default(),
             watcher: None,
             rename_after_load: None,
             reveal_after_refresh: None,

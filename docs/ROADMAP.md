@@ -66,6 +66,13 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
 ## Fase 2 — Paritas Explorer + Drag Guard + Hot Switch
 
 - [ ] Context menu bertema + "Tampilkan opsi lain" (menu native, forwarding pesan), menu background & sidebar.
+      Progres: menu native selesai.
+      - `sx_shell::menu` di atas modal host `sx_shell::modal` (ADR-015).
+      - Menu item dan menu latar folder, dengan submenu berikon lewat subclass.
+      - Rename, Hapus, dan Tempel dijalankan sendiri.
+      - Tema dark/light ikut `integration.native_menu_dark`.
+      - Klik kanan (sementara juga tanpa `Shift`) dan `Shift+F10` menempatkan menu di baris yang fokus.
+      Belum: menu bertema, menu sidebar.
 - [ ] `CommandRegistry`; command palette (`Ctrl+Shift+P`); quick open (`Ctrl+P`).
       Progres: command palette selesai (DESIGN §8.9; fuzzy dengan matcher sendiri, ADR-023). Isinya
       command, switch beserta statusnya, dan tempat; label command ada dalam en dan id. Quick open (`Ctrl+P`)

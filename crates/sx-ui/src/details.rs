@@ -185,6 +185,22 @@ impl Workspace {
                         div()
                             .id("content-focus")
                             .track_focus(&self.list_focus)
+                            // An empty or still loading folder has a menu too.
+                            .when(self.tab().location().as_path().is_some(), |el| {
+                                el.on_mouse_up(
+                                    MouseButton::Right,
+                                    cx.listener(
+                                        |this, event: &gpui_kit::MouseUpEvent, window, cx| {
+                                            this.open_native_menu(
+                                                Some(event.position),
+                                                event.modifiers.shift,
+                                                window,
+                                                cx,
+                                            );
+                                        },
+                                    ),
+                                )
+                            })
                             .flex()
                             .flex_col()
                             .flex_1()
@@ -336,7 +352,34 @@ impl Workspace {
                 // The scrollbar overlays the rows below the header; its colours come through
                 // the theme bridge (`scrollbar.*`).
                 div()
+                    .id("rows-area")
                     .relative()
+                    .child({
+                        let bounds = self.tab().rows_bounds.clone();
+                        gpui_kit::canvas(move |area, _, _| bounds.set(Some(area)), |_, (), _, _| {})
+                            .absolute()
+                            .size_full()
+                    })
+                    // The empty area below the rows: the folder's menu.
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, _, window, cx| {
+                            window.focus(&this.list_focus, cx);
+                            this.tab_mut().selection.clear();
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Right,
+                        cx.listener(|this, event: &gpui_kit::MouseUpEvent, window, cx| {
+                            this.open_native_menu(
+                                Some(event.position),
+                                event.modifiers.shift,
+                                window,
+                                cx,
+                            );
+                        }),
+                    )
                     .flex()
                     .flex_col()
                     .flex_1()
@@ -669,25 +712,7 @@ impl Workspace {
             .when(state.selected && !state.focused, |el| el.bg(s.inactive_bg))
             .when(state.is_focus, |el| el.border_color(s.focus_ring))
             .when(!state.selected, |el| el.hover(move |st| st.bg(hover)))
-            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
-                window.focus(&this.list_focus, cx);
-                let m = event.modifiers();
-                if event.click_count() >= 2 && !m.control && !m.shift {
-                    this.select_row(row, false, false);
-                    this.open_row(row, false, cx);
-                } else {
-                    this.select_row(row, m.shift, m.control);
-                }
-                cx.notify();
-            }))
-            .on_mouse_down(
-                gpui_kit::MouseButton::Middle,
-                cx.listener(move |this, _, _, cx| {
-                    if this.row_kind(row).is_some_and(EntryKind::is_container) {
-                        this.open_row(row, true, cx);
-                    }
-                }),
-            )
+            .map(|el| self.row_pointer(el, row, cx))
             .child(
                 div()
                     .flex()
@@ -741,6 +766,50 @@ impl Workspace {
 }
 
 impl Workspace {
+    /// What the mouse does on a row: click selects (`Ctrl`/`Shift` extend), double-click opens,
+    /// middle-click opens a folder in a new tab, right button selects and opens the menu.
+    fn row_pointer(&self, el: Stateful<Div>, row: usize, cx: &Context<Self>) -> Stateful<Div> {
+        el.on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+            window.focus(&this.list_focus, cx);
+            let m = event.modifiers();
+            if event.click_count() >= 2 && !m.control && !m.shift {
+                this.select_row(row, false, false);
+                this.open_row(row, false, cx);
+            } else {
+                this.select_row(row, m.shift, m.control);
+            }
+            cx.notify();
+        }))
+        .on_mouse_down(
+            gpui_kit::MouseButton::Middle,
+            cx.listener(move |this, _, _, cx| {
+                if this.row_kind(row).is_some_and(EntryKind::is_container) {
+                    this.open_row(row, true, cx);
+                }
+            }),
+        )
+        // Right button: the row joins the selection when pressed (as in Explorer), and
+        // the menu opens when the button is released.
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, _, window, cx| {
+                cx.stop_propagation();
+                window.focus(&this.list_focus, cx);
+                if !this.tab().selection.contains(row as u32) {
+                    this.select_row(row, false, false);
+                }
+                cx.notify();
+            }),
+        )
+        .on_mouse_up(
+            MouseButton::Right,
+            cx.listener(|this, event: &gpui_kit::MouseUpEvent, window, cx| {
+                cx.stop_propagation();
+                this.open_native_menu(Some(event.position), event.modifiers.shift, window, cx);
+            }),
+        )
+    }
+
     /// The inline rename field when `row` is the item being renamed (F-OPS-03). Escape
     /// cancels; Enter or leaving the field commits.
     fn rename_field(&self, row: usize, cx: &Context<Self>) -> Option<AnyElement> {

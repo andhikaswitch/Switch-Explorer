@@ -67,6 +67,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - Huruf yang cocok ditulis tebal, dan shortcut tampil di sisi kanan.
   - Setelah palette tertutup, fokus kembali ke tempat semula.
 - ADR-023: matcher fuzzy sendiri di `sx-search`, bukan nucleo.
+- Menu konteks Windows (klik kanan, `Shift`+klik kanan untuk verb tambahan, `Shift+F10`):
+  - Untuk item terpilih dan area kosong folder, termasuk entri pihak ketiga dan submenu berikon.
+  - Rename, Hapus, dan Tempel dari menu itu tercatat di journal dan bisa di-undo.
 - Quick open (`Ctrl+P`): lompat ke tab terbuka, folder pinned, folder yang dibuka di sesi ini, atau drive,
   dengan pencocokan fuzzy pada nama dan path.
 

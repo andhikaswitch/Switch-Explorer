@@ -82,7 +82,7 @@ Setiap fitur punya ID `F-AREA-nn`, prioritas (P0/P1/P2), dan fase (F0–F8). Fla
 | ID | Fitur | P | Fase |
 |---|---|---|---|
 | F-CTX-01 | Menu bertema: Buka, Buka di tab baru, Buka dengan ▸, Potong, Salin, Tempel, Ganti nama, Hapus, Salin path, Upload ke Drive ▸ (tujuan favorit + Pilih…), Pindahkan ke Drive…, Kompres, Pin ke sidebar, Properties, **Tampilkan opsi lain** | P0 | F2 |
-| F-CTX-02 | "Tampilkan opsi lain" / `Shift+F10` / `Shift`+klik kanan = menu native (`IContextMenu`), termasuk entri pihak ketiga (7-Zip, VS Code) | P0 | F2 |
+| F-CTX-02 | "Tampilkan opsi lain" / `Shift+F10` / `Shift`+klik kanan = menu native (`IContextMenu`), termasuk entri pihak ketiga (7-Zip, VS Code). Rename, Hapus, dan Tempel dari menu itu dijalankan Switch Explorer sendiri (journal, undo) pada item tempat menu dibuka. Sampai menu bertema siap, klik kanan biasa juga membuka menu ini. Tanpa seleksi, menu yang muncul adalah menu latar folder (Baru ▸, Properties). | P0 | F2 |
 | F-CTX-03 | Menu area kosong: Tampilan ▸, Urutkan ▸, Baru ▸, Tempel, Buka terminal di sini, Properties | P0 | F2 |
 | F-CTX-04 | Menu item sidebar: Buka, Buka di tab baru, Unpin, Naik/Turun, Properties | P0 | F2 |
 | F-CTX-05 | Setiap item menu adalah command dari `CommandRegistry` (label & shortcut sama dengan palette) | P0 | F2 |

@@ -260,6 +260,8 @@ command:
     quick_open: Buka folder
   sidebar:
     pin: Pin atau lepas pin folder ini
+menu:
+  failed: Windows tidak bisa menampilkan menunya di sini. Coba lagi; bila terus gagal, mulai ulang Switch Explorer.
 palette:
   label: Command palette
   label_folders: Buka cepat

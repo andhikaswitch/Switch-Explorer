@@ -14,6 +14,7 @@ mod focus;
 mod format;
 mod hotswitch;
 mod icons;
+mod menu;
 mod ops;
 mod overlays;
 mod pages;

@@ -155,6 +155,8 @@ pub const BUILTIN: &[CommandSpec] = &[
     cmd("file.cut", List, &["ctrl-x"], true, true),
     cmd("file.paste", Workspace, &["ctrl-v"], true, true),
     cmd("file.copy_path", List, &["ctrl-shift-c"], true, true),
+    // The shell's own menu for the selection, or for the folder with nothing selected.
+    cmd("menu.more_options", Workspace, &["shift-f10"], false, false),
     cmd("edit.undo", Workspace, &["ctrl-z"], true, false),
     cmd("edit.redo", Workspace, &["ctrl-y"], true, false),
     cmd("edit.select_all", List, &["ctrl-a"], true, false),

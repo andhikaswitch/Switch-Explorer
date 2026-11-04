@@ -260,6 +260,8 @@ command:
     quick_open: Go to a folder
   sidebar:
     pin: Pin or unpin this folder
+menu:
+  failed: Windows could not show its menu here. Try again; if it keeps failing, restart Switch Explorer.
 palette:
   label: Command palette
   label_folders: Quick open
