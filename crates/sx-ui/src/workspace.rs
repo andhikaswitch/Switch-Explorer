@@ -1262,6 +1262,11 @@ impl Workspace {
         .on_action(cx.listener(|this, _: &actions::QuickOpen, window, cx| {
             this.open_palette(crate::palette::PaletteMode::Folders, window, cx);
         }))
+        .on_action(
+            cx.listener(|this, _: &actions::HotSwitchPanel, window, cx| {
+                this.open_palette(crate::palette::PaletteMode::Switches, window, cx);
+            }),
+        )
         .on_action(cx.listener(|this, _: &actions::NativeMenu, window, cx| {
             if let Some((location, at)) = this.focused_sidebar_item(window) {
                 if let Some(path) = location.as_path() {

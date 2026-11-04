@@ -79,6 +79,8 @@ mono = ["Cascadia Mono", "Consolas"]
 "size.search_width" = 240
 "size.palette_width" = 560
 "size.menu_width" = 260
+"size.toggle_width" = 40
+"size.toggle_height" = 20
 "focus.ring_width" = 2
 "opacity.disabled" = 0.4
 
@@ -258,6 +260,9 @@ mono = ["Cascadia Mono", "Consolas"]
 "border.input" = "#5A7394"
 "border.input_focus" = "{pal.lagoon}"
 "border.input_hover" = "lighten({border.input}, 0.14)"
+# Lighter than an input's outline: an off toggle also sits on selected and pressed rows (as in
+# Windows, where the off outline matches the thumb).
+"toggle.off.border" = "{fg.muted}"
 "divider" = "alpha(#EAF4FF, 0.08)"
 "accent.text" = "{pal.accent.400}"
 "accent.glow" = "alpha({pal.accent.500}, 0.55)"

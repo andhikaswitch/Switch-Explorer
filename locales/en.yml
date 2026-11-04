@@ -190,7 +190,16 @@ flag:
     readonly_mode: Read-only mode
 preset:
   anti_drag: Anti accidental drag
+preset_title:
+  anti_drag: Anti accidental drag preset
 hotswitch:
+  panel_title: Hot Switch
+  panel_hint: Enter or Space turns the selected switch on or off; the panel stays open. Esc closes it.
+  panel_blocked: On hold
+  section_drag: Drag and drop
+  section_view: View and safety
+  state_on: "On"
+  state_off: "Off"
   impact:
     files_still_on: File dragging is still on.
     folders_still_on: Folder dragging is still on.
@@ -215,13 +224,16 @@ hotswitch:
   preset_on: "%{name} preset on (%{count} switches changed)"
   preset_off: "%{name} preset off"
   again: "Toggle: %{keys}"
-  blocked: "Not in effect: all dragging is off."
+  held: "On hold while \"%{name}\" is off."
+  held_hint: "On hold while \"%{name}\" is off. Turn it on with %{keys}."
+  held_hint_nokeys: "On hold while \"%{name}\" is off. Turn it on first."
   needs_dev: "%{name} needs Developer Mode"
   needs_dev_hint: Turn on Developer Mode in Settings first.
   failed: "This switch can't change right now. Restart Switch Explorer and try again."
   chip_on: "Drag: on"
   chip_partial: "Drag: partly on"
   chip_off: "Drag: off"
+  chip_hint: "Opens the Hot Switch panel (%{keys})"
   tip_on: "on"
   tip_off: "off"
   badge: Drag off
@@ -263,6 +275,8 @@ command:
   app:
     transfer_panel: Show the transfer panel
     quick_open: Go to a folder
+  hotswitch:
+    panel: Open the Hot Switch panel
   sidebar:
     pin: Pin or unpin this folder
 menu:
@@ -278,6 +292,7 @@ palette:
   label_folders: Quick open
   placeholder: Type a command, a switch or a place
   placeholder_folders: Type the name of an open, pinned or recent folder
+  placeholder_switches: Search switches
   open_tab: Already open
   empty: "Nothing matches \"%{query}\". Try fewer letters."
   empty_folders: "No open, pinned or recent folder matches \"%{query}\". To go to any folder, type its path in the address bar (Ctrl+L)."

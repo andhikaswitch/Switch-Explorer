@@ -30,6 +30,7 @@ actions!(
         NativeMenu,
         ContextMenuKey,
         FileProperties,
+        HotSwitchPanel,
         TabNew,
         TabClose,
         TabNext,
@@ -90,6 +91,7 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "menu.context" => Box::new(ContextMenuKey),
         "file.open_new_tab" => Box::new(OpenInNewTab),
         "file.properties" => Box::new(FileProperties),
+        "hotswitch.panel" => Box::new(HotSwitchPanel),
         "tab.new" => Box::new(TabNew),
         "tab.close" => Box::new(TabClose),
         "tab.next" => Box::new(TabNext),
@@ -128,6 +130,12 @@ pub(crate) fn palette_commands() -> Vec<(&'static sx_core::CommandSpec, Box<dyn 
 /// Commands that also work while typing: moving between areas leaves a text input.
 const IN_INPUTS: &[&str] = &["view.next_area", "view.previous_area"];
 
+/// The palette's modes: their shortcuts also work in its field, to switch mode (DESIGN.md §8.9).
+const IN_PALETTE: &[&str] = &["app.command_palette", "app.quick_open", "hotswitch.panel"];
+
+/// The key context of the open palette.
+pub(crate) const PALETTE_CONTEXT: &str = "Palette";
+
 /// Shortcuts never fire while typing in a text input (ADR-014), except [`IN_INPUTS`].
 fn predicate(id: &str, context: CommandContext) -> Option<Rc<KeyBindingContextPredicate>> {
     if IN_INPUTS.contains(&id) {
@@ -150,17 +158,25 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
         let Some(action) = action_for(spec.id) else {
             continue;
         };
+        let in_palette = IN_PALETTE
+            .contains(&spec.id)
+            .then(|| {
+                KeyBindingContextPredicate::parse(PALETTE_CONTEXT)
+                    .ok()
+                    .map(Rc::new)
+            })
+            .flatten();
         for keys in spec.bindings {
-            match KeyBinding::load(
-                keys,
-                action.boxed_clone(),
-                predicate(spec.id, spec.context),
-                false,
-                None,
-                cx,
-            ) {
-                Ok(binding) => bindings.push(binding),
-                Err(err) => tracing::warn!(command = spec.id, keys, error = ?err, "bad binding"),
+            for context in [predicate(spec.id, spec.context), in_palette.clone()] {
+                if context.is_none() {
+                    continue;
+                }
+                match KeyBinding::load(keys, action.boxed_clone(), context, false, None, cx) {
+                    Ok(binding) => bindings.push(binding),
+                    Err(err) => {
+                        tracing::warn!(command = spec.id, keys, error = ?err, "bad binding");
+                    }
+                }
             }
         }
     }
@@ -191,7 +207,7 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
 /// in text inputs, where they would eat what is typed; single combinations work anywhere.
 fn bind_hot_switches(bindings: &mut Vec<KeyBinding>, cx: &App) {
     for (binding, spec) in DEFAULT_BINDINGS.iter().enumerate() {
-        // The Hot Switch panel comes later; its keys stay free.
+        // The panel is a command of the registry (`hotswitch.panel`), bound with the others.
         if matches!(spec.action, HotSwitchAction::Panel) {
             continue;
         }

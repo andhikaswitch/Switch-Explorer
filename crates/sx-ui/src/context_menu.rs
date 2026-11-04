@@ -26,11 +26,8 @@ use sx_shell::menu::MenuTarget;
 use sx_theme::Token;
 
 use crate::actions;
-use crate::theme::ActiveTokens as _;
+use crate::theme::{ActiveTokens as _, HAIRLINE};
 use crate::workspace::Workspace;
-
-/// GPUI draws `border_1()` one pixel wide; the menu's height is worked out with it.
-const HAIRLINE: f32 = 1.0;
 
 /// What an entry does.
 enum Run {

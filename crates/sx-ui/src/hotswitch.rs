@@ -12,7 +12,7 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    Animation, AnimationExt as _, AnyElement, Context, Div, ElementId, FontWeight,
+    Animation, AnimationExt as _, AnyElement, ClickEvent, Context, Div, ElementId, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled as _, div,
 };
@@ -121,13 +121,46 @@ pub(crate) fn keys_text(keys: &str) -> String {
         .join(", ")
 }
 
-/// A sub-switch that cannot take effect because a switch it depends on is off.
-fn blocked(id: &str, features: &Features) -> bool {
-    sx_settings::meta(id).is_some_and(|meta| {
-        meta.depends_on
-            .iter()
-            .any(|dep| features.get(dep) == Some(FlagValue::Bool(false)))
-    })
+/// The switch holding `id` back: one it depends on that is off.
+fn holder(id: &str, features: &Features) -> Option<&'static str> {
+    sx_settings::meta(id)?
+        .depends_on
+        .iter()
+        .copied()
+        .find(|dep| features.get(dep) == Some(FlagValue::Bool(false)))
+}
+
+/// The switch holding every switch of `ids` back, if they all wait on one.
+fn group_holder(ids: &[&str], features: &Features) -> Option<&'static str> {
+    let held = ids
+        .iter()
+        .map(|id| holder(id, features))
+        .collect::<Option<Vec<_>>>()?;
+    held.first().copied()
+}
+
+/// The OSD's note for a switch turned on while `holder` is off.
+fn held_note(holder: &str) -> String {
+    t!("hotswitch.held", name = label(holder)).into_owned()
+}
+
+/// What the Hot Switch panel says about a switch on hold: which switch to turn on, and how.
+pub(crate) fn held_hint(holder: &str) -> String {
+    let name = label(holder);
+    let text = if let Some(keys) = binding_keys(holder) {
+        t!("hotswitch.held_hint", name = name, keys = keys)
+    } else {
+        t!("hotswitch.held_hint_nokeys", name = name)
+    };
+    text.into_owned()
+}
+
+/// The keys of the Hot Switch panel, as Windows writes them.
+fn panel_keys() -> Option<String> {
+    DEFAULT_BINDINGS
+        .iter()
+        .find(|b| matches!(b.action, HotSwitchAction::Panel))
+        .map(|b| keys_text(b.keys))
 }
 
 fn is_on(value: &FlagValue) -> bool {
@@ -198,10 +231,11 @@ fn describe(
                 other => t!("hotswitch.set", name = name, value = other.to_string()),
             };
             let on = is_on(&value);
-            let note = if blocked(id, features) {
-                Some(t!("hotswitch.blocked").into_owned())
-            } else {
-                impact(id, on, features)
+            // Turned on while a switch it needs is off: it waits. Turned off, there is
+            // nothing to add (and "still on" notes would be wrong with dragging off).
+            let note = match holder(id, features) {
+                Some(by) => on.then(|| held_note(by)),
+                None => impact(id, on, features),
             };
             (title.into_owned(), detail(&[note, Some(again)]), on)
         }
@@ -213,7 +247,11 @@ fn describe(
                 "hotswitch.group_off"
             };
             let title = t!(key, name = group_label(ids), count = ids.len());
-            let note = ids.first().and_then(|id| impact(id, on, features));
+            // As for one switch: on hold says so when turned on, and nothing when turned off.
+            let note = match group_holder(ids, features) {
+                Some(by) => on.then(|| held_note(by)),
+                None => ids.first().and_then(|id| impact(id, on, features)),
+            };
             (title.into_owned(), detail(&[note, Some(again)]), on)
         }
         HotSwitchAction::Preset(id) => {
@@ -269,17 +307,33 @@ fn binding_keys(id: &str) -> Option<String> {
 }
 
 impl Workspace {
-    /// The name of a Hot Switch binding and whether it is on now (for the command palette).
-    pub(crate) fn binding_summary(&self, index: usize) -> Option<(String, bool)> {
-        let binding = DEFAULT_BINDINGS.get(index)?;
+    /// Whether a binding's switch cannot take effect now: one it depends on is off.
+    /// The switch holding a binding back: one it depends on that is off.
+    pub(crate) fn binding_holder(&self, index: usize) -> Option<&'static str> {
+        match DEFAULT_BINDINGS.get(index).map(|b| b.action) {
+            Some(HotSwitchAction::Toggle(id)) => holder(id, &self.features),
+            Some(HotSwitchAction::Group(ids)) => group_holder(ids, &self.features),
+            _ => None,
+        }
+    }
+
+    /// The name of a Hot Switch binding, as a row of the palette or the panel says it.
+    pub(crate) fn binding_name(index: usize) -> Option<String> {
+        Some(match DEFAULT_BINDINGS.get(index)?.action {
+            HotSwitchAction::Toggle(id) => label(id),
+            HotSwitchAction::Group(ids) => group_label(ids),
+            HotSwitchAction::Preset(id) => t!(format!("preset_title.{id}")).into_owned(),
+            HotSwitchAction::Panel => return None,
+        })
+    }
+
+    /// Whether a Hot Switch binding is on now: cheap enough for every row of every frame.
+    pub(crate) fn binding_on(&self, index: usize) -> Option<bool> {
         let on = |id: &str| self.features.get(id).is_some_and(|value| is_on(&value));
-        Some(match binding.action {
-            HotSwitchAction::Toggle(id) => (label(id), on(id)),
-            HotSwitchAction::Group(ids) => (group_label(ids), ids.iter().any(|id| on(id))),
-            HotSwitchAction::Preset(id) => (
-                t!(format!("preset.{id}")).into_owned(),
-                self.settings.preset_active(id),
-            ),
+        Some(match DEFAULT_BINDINGS.get(index)?.action {
+            HotSwitchAction::Toggle(id) => on(id),
+            HotSwitchAction::Group(ids) => ids.iter().any(|id| on(id)),
+            HotSwitchAction::Preset(id) => self.settings.preset_active(id),
             HotSwitchAction::Panel => return None,
         })
     }
@@ -510,8 +564,11 @@ impl Workspace {
             .shadow(t.shadow(Token::ShadowPopover))
             .text_color(t.color(Token::OsdFg))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hover_osd(*hovered, cx)))
-            // The Hot Switch panel opens here once it exists; until then a click only stays here.
-            .on_click(|_, _, cx| cx.stop_propagation())
+            // A click opens the Hot Switch panel (DESIGN.md §9.1).
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                cx.stop_propagation();
+                this.open_palette(crate::palette::PaletteMode::Switches, window, cx);
+            }))
             .child(badge)
             .child(
                 div()
@@ -570,12 +627,28 @@ impl Workspace {
             }
         };
         let features = self.features.clone();
+        let (hover, pressed) = (t.color(Token::HoverBg), t.color(Token::PressedBg));
         Some(
             div()
                 .id("drag-chip")
+                .role(gpui_kit::Role::Button)
+                .aria_label(SharedString::from(t!(key)))
+                .when_some(panel_keys(), |el, keys| {
+                    el.aria_description(SharedString::from(t!("hotswitch.chip_hint", keys = keys)))
+                })
                 .flex()
                 .items_center()
                 .gap(t.px(Token::SpaceXs))
+                // 24 px tall on the 32 px bar: a target, not just its glyphs (DESIGN.md §14).
+                .px(t.px(Token::SpaceXs))
+                .py(t.px(Token::SpaceXs))
+                .rounded(t.px(Token::RadiusSm))
+                .hover(move |s| s.bg(hover))
+                .active(move |s| s.bg(pressed))
+                // The Hot Switch panel, as `Ctrl+K, K` (FEATURES.md F-KEY-04).
+                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.open_palette(crate::palette::PaletteMode::Switches, window, cx);
+                }))
                 .text_color(t.color(color))
                 .child(icon.size(t.px(Token::SizeIconSm)))
                 .child(SharedString::from(t!(key)))
@@ -654,8 +727,8 @@ mod tests {
         assert_eq!(drag_state(&features), DragState::Partial);
         features.dnd_enabled = false;
         assert_eq!(drag_state(&features), DragState::Off);
-        assert!(blocked("dnd.source.files", &features));
-        assert!(!blocked("view.show_hidden", &features));
+        assert_eq!(holder("dnd.source.files", &features), Some("dnd.enabled"));
+        assert_eq!(holder("view.show_hidden", &features), None);
     }
 
     #[test]

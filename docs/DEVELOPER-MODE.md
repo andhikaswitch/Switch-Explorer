@@ -209,9 +209,12 @@ badge, dan OSD; `settings.toml` ditulis di thread `sx-settings`, berurutan.
 ### 6.4 Aturan perilaku
 - Chord `Ctrl+K` hanya aktif saat fokus **tidak** di input teks (kotak cari, rename, address bar), agar
   tidak memakan karakter. Kombinasi tunggal seperti `Ctrl+Shift+D` tetap aktif di mana pun.
+  Pengecualian: di kotak cari command palette, `Ctrl+K`, `K` membuka panel Hot Switch (pindah mode,
+  DESIGN §8.9); chord lain tidak cocok di sana, sehingga ketikan diteruskan ke kotak cari.
 - Drag yang sedang berlangsung tidak diputus; switch baru berlaku untuk drag berikutnya.
-- Switch yang `depends_on` master: bila master mati, OSD sub-switch menyebut "(tidak berlaku: semua drag
-  sedang mati)".
+- Switch yang `depends_on` master: bila master mati, menyalakan sub-switch memunculkan OSD dengan catatan
+  Tertahan karena "Semua drag" mati. (nama induk diambil dari `depends_on`). Mematikannya tidak memberi
+  catatan. Panel Hot Switch menandai sub-switch yang menyala tapi tertahan dengan "Tertahan".
 - Hotkey yang mengubah switch eksperimental ditolak bila Developer Mode mati (OSD menjelaskan).
 
 ### 6.5 Scope global

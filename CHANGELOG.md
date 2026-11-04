@@ -78,8 +78,23 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - Rename, Hapus, dan Tempel dari menu itu tercatat di journal dan bisa di-undo.
 - Quick open (`Ctrl+P`): lompat ke tab terbuka, folder pinned, folder yang dibuka di sesi ini, atau drive,
   dengan pencocokan fuzzy pada nama dan path.
+- Panel Hot Switch (`Ctrl+K`, `K`, klik chip "Drag: …", atau klik OSD):
+  - Semua switch dikelompokkan (Drag & drop; Tampilan & keselamatan), masing-masing dengan hotkey,
+    status, dan toggle yang sejajar.
+  - `Enter`, klik, atau `Space` (selama kotak cari kosong) membalik switch; OSD muncul dan panel tetap
+    terbuka. Mengetik menyaring dengan pencocokan fuzzy.
+  - Switch yang menyala tapi tertahan oleh switch lain bertanda "Tertahan"; footer menyebut switch
+    induknya dan hotkey untuk menyalakannya.
+  - Screen reader mendengar status switch terpilih, termasuk setelah dibalik.
+- Shortcut mode palette (`Ctrl+Shift+P`, `Ctrl+P`, `Ctrl+K`, `K`) kini juga berlaku dari dalam palette
+  untuk pindah mode.
+- Token `size.toggle_width` dan `size.toggle_height`.
 
 ### Changed
+- OSD Hot Switch: catatan untuk sub-switch yang tertahan kini menyebut induknya (Tertahan karena "Semua
+  drag" mati.) dan hanya muncul saat menyalakannya, juga untuk grup `Ctrl+K`, `E`.
+- Cerulean dark: `toggle.off.border` memakai `{fg.muted}` agar toggle mati tetap 3:1 di baris terpilih.
+- Preset di palette dan panel bernama "Preset anti salah drag".
 - ARCHITECTURE §8.4: perubahan tema dipicu notifikasi registry, bukan `WM_SETTINGCHANGE`.
 - SYSTEM-INTEGRATION §3, §9, §15: koreksi berdasarkan temuan spike (Mica tanpa fallback di bawah build
   22621, latar Root opak, manifest GPUI dipaksa, pola modal host).

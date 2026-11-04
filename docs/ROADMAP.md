@@ -87,9 +87,9 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
       lewat Hot Switch. Belum: sambungan ke DnD.
 - [ ] **Hot Switch**: `Ctrl+Shift+D`, chord `Ctrl+K` (F, D, S, E, G, L, H, X, T, R, K); OSD ≤ 50 ms; chip status;
       badge title bar; hint saat diblokir; persisten/sesi; chord tidak aktif di input teks.
-      Progres: semua binding kecuali `K` (panel), OSD (ganti di tempat, hover menahan, fade), chip "Drag: …"
+      Progres: semua binding termasuk `K` (panel Hot Switch sebagai mode palette, juga dari klik chip), OSD (ganti di tempat, hover menahan, fade), chip "Drag: …"
       dengan tooltip, badge title bar, persisten/sesi lewat `hotswitch.persist` (ditulis di thread sendiri),
-      chord mati di input teks, `view.show_extensions` kini berlaku di daftar. Belum: panel Hot Switch, hint
+      chord mati di input teks, `view.show_extensions` kini berlaku di daftar. Belum: hint
       saat drag diblokir (menunggu DnD), pengukuran OSD ≤ 50 ms, OSD `system` untuk hotkey global.
 - [ ] Grid/gallery + thumbnail dua pass; preview pane (gambar/teks + spike preview handler); details pane;
       Quick Look (`Space`).

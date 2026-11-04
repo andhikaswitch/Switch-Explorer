@@ -28,6 +28,10 @@ use crate::workspace::Workspace;
 /// Rows shown before the list scrolls.
 const VISIBLE_ROWS: usize = 10;
 
+/// The Hot Switch panel: rows it shows when the window is short, and at most.
+const MIN_PANEL_ROWS: usize = 4;
+const MAX_PANEL_ROWS: usize = 20;
+
 /// Folders remembered for quick open, most recent first (this session only, in memory).
 pub(crate) const RECENT_FOLDERS: usize = 50;
 
@@ -38,6 +42,9 @@ pub(crate) enum PaletteMode {
     Commands,
     /// Folders to go to (`Ctrl+P`).
     Folders,
+    /// The Hot Switch panel (`Ctrl+K, K`, DESIGN.md §8.4): every switch with its state; running
+    /// one keeps the panel open.
+    Switches,
 }
 
 /// What an item does.
@@ -48,6 +55,8 @@ enum Run {
     Go(Location),
     /// An open tab, by id: it is brought forward.
     Tab(u64),
+    /// A section title of the Hot Switch panel: never chosen, hidden while searching.
+    Header,
 }
 
 struct Item {
@@ -65,6 +74,9 @@ struct Item {
 struct Shown {
     item: usize,
     positions: Vec<usize>,
+    /// Its place among the rows that can be chosen, from 1 (0 for a section title): what a
+    /// screen reader says ("2 of 11").
+    place: usize,
 }
 
 pub(crate) struct Palette {
@@ -73,6 +85,8 @@ pub(crate) struct Palette {
     items: Vec<Item>,
     shown: Vec<Shown>,
     selected: usize,
+    /// How many shown rows can be chosen.
+    choices: usize,
     scroll: UniformListScrollHandle,
     /// Where focus was before the palette opened.
     restore: Option<FocusHandle>,
@@ -98,10 +112,19 @@ impl Palette {
             .iter()
             .enumerate()
             .filter_map(|(ix, item)| {
+                if matches!(item.run, Run::Header) {
+                    let shown = Shown {
+                        item: ix,
+                        positions: Vec::new(),
+                        place: 0,
+                    };
+                    return query.trim().is_empty().then_some((true, 0, shown));
+                }
                 if let Some(found) = sx_search::fuzzy_match(query, &item.label) {
                     let shown = Shown {
                         item: ix,
                         positions: found.positions,
+                        place: 0,
                     };
                     return Some((true, found.score, shown));
                 }
@@ -112,6 +135,7 @@ impl Palette {
                 let shown = Shown {
                     item: ix,
                     positions: Vec::new(),
+                    place: 0,
                 };
                 Some((false, found.score, shown))
             })
@@ -121,8 +145,30 @@ impl Palette {
             scored.sort_by_key(|(label, score, _)| std::cmp::Reverse((*label, *score)));
         }
         self.shown = scored.into_iter().map(|(_, _, shown)| shown).collect();
-        self.selected = 0;
+        let items = &self.items;
+        let mut place = 0;
+        for shown in &mut self.shown {
+            if items
+                .get(shown.item)
+                .is_some_and(|item| !matches!(item.run, Run::Header))
+            {
+                place += 1;
+                shown.place = place;
+            }
+        }
+        self.choices = place;
+        self.selected = (0..self.shown.len())
+            .find(|&row| self.choosable(row))
+            .unwrap_or(0);
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
+    }
+
+    /// Whether a shown row can be chosen (section titles cannot).
+    fn choosable(&self, row: usize) -> bool {
+        self.shown
+            .get(row)
+            .and_then(|shown| self.items.get(shown.item))
+            .is_some_and(|item| !matches!(item.run, Run::Header))
     }
 
     /// One row up or down wraps around; a page stops at the ends.
@@ -131,14 +177,46 @@ impl Palette {
         if count == 0 {
             return;
         }
-        let next = self.selected as isize + delta;
-        let next = if wrap {
-            next.rem_euclid(count)
-        } else {
-            next.clamp(0, count - 1)
-        } as usize;
-        self.selected = next;
-        self.scroll.scroll_to_item(next, ScrollStrategy::Nearest);
+        let place = |row: isize| {
+            if wrap {
+                row.rem_euclid(count)
+            } else {
+                row.clamp(0, count - 1)
+            }
+        };
+        let mut next = place(self.selected as isize + delta);
+        // Past section titles, in the direction of the move.
+        let way = delta.signum();
+        for _ in 0..count {
+            if self.choosable(next as usize) || way == 0 {
+                break;
+            }
+            let further = place(next + way);
+            if further == next {
+                break;
+            }
+            next = further;
+        }
+        if !self.choosable(next as usize) {
+            // A page ran into a title at an end: the nearest row back from it.
+            let back = if way > 0 {
+                (0..next).rev().find(|&row| self.choosable(row as usize))
+            } else {
+                (next + 1..count).find(|&row| self.choosable(row as usize))
+            };
+            let Some(back) = back else {
+                return;
+            };
+            next = back;
+        }
+        self.selected = next as usize;
+        // Going up to the first row of a section shows its title too.
+        let above = self.selected.checked_sub(1);
+        let target = match above {
+            Some(title) if way < 0 && !self.choosable(title) => title,
+            _ => self.selected,
+        };
+        self.scroll.scroll_to_item(target, ScrollStrategy::Nearest);
     }
 
     pub(crate) fn focus_input(&self, window: &mut Window, cx: &mut gpui_kit::App) {
@@ -171,6 +249,7 @@ impl Workspace {
         let placeholder = match mode {
             PaletteMode::Commands => t!("palette.placeholder"),
             PaletteMode::Folders => t!("palette.placeholder_folders"),
+            PaletteMode::Switches => t!("palette.placeholder_switches"),
         };
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder.to_string()));
         let subscription = cx.subscribe_in(&input, window, Self::on_palette_event);
@@ -178,6 +257,7 @@ impl Workspace {
         let items = match mode {
             PaletteMode::Commands => self.palette_items(),
             PaletteMode::Folders => self.folder_items(),
+            PaletteMode::Switches => self.switch_items(),
         };
         let mut palette = Palette {
             mode,
@@ -185,6 +265,7 @@ impl Workspace {
             items,
             shown: Vec::new(),
             selected: 0,
+            choices: 0,
             scroll: UniformListScrollHandle::new(),
             restore,
             _subscription: subscription,
@@ -247,6 +328,44 @@ impl Workspace {
         items
     }
 
+    /// The Hot Switch panel: drag switches first, then the view and safety ones, under titles.
+    fn switch_items(&self) -> Vec<Item> {
+        let header = |label: SharedString| Item {
+            label,
+            detail: SharedString::default(),
+            keys: SharedString::default(),
+            run: Run::Header,
+            enabled: false,
+        };
+        let is_drag = |action: &HotSwitchAction| match action {
+            HotSwitchAction::Toggle(id) => id.starts_with("dnd."),
+            HotSwitchAction::Group(ids) => ids.iter().any(|id| id.starts_with("dnd.")),
+            HotSwitchAction::Preset(_) => true,
+            HotSwitchAction::Panel => false,
+        };
+        let mut drag = vec![header(t!("hotswitch.section_drag").into())];
+        let mut other = vec![header(t!("hotswitch.section_view").into())];
+        for (binding, spec) in DEFAULT_BINDINGS.iter().enumerate() {
+            let Some(name) = Self::binding_name(binding) else {
+                continue;
+            };
+            let item = Item {
+                label: name.into(),
+                detail: SharedString::default(),
+                keys: crate::hotswitch::keys_text(spec.keys).into(),
+                run: Run::Switch(binding),
+                enabled: true,
+            };
+            if is_drag(&spec.action) {
+                drag.push(item);
+            } else {
+                other.push(item);
+            }
+        }
+        drag.extend(other);
+        drag
+    }
+
     /// Whether a palette command can do something now.
     fn command_available(&self, id: &str) -> bool {
         let tab = self.tab();
@@ -295,7 +414,7 @@ impl Workspace {
             if matches!(spec.action, HotSwitchAction::Panel) {
                 continue;
             }
-            let Some((name, _)) = self.binding_summary(binding) else {
+            let Some(name) = Self::binding_name(binding) else {
                 continue;
             };
             items.push(Item {
@@ -378,13 +497,23 @@ impl Workspace {
         let Some(palette) = &mut self.palette else {
             return;
         };
-        let page = VISIBLE_ROWS as isize - 1;
+        let page = visible_rows(palette.mode, window, cx) as isize - 1;
         match event.keystroke.key.as_str() {
             "up" => palette.step(-1, true),
             "down" => palette.step(1, true),
             "pageup" => palette.step(-page, false),
             "pagedown" => palette.step(page, false),
             "escape" => self.close_palette(window, cx),
+            // In the panel, Space switches the chosen one while nothing is typed (FEATURES.md
+            // F-KEY-05); once a search is under way it is a space.
+            "space"
+                if palette.mode == PaletteMode::Switches
+                    && !event.keystroke.modifiers.modified()
+                    && palette.input.read(cx).value().is_empty() =>
+            {
+                let selected = palette.selected;
+                self.run_palette(selected, window, cx);
+            }
             // Focus stays in the palette while it is open.
             "tab" | "f6" => {}
             _ => return,
@@ -418,6 +547,14 @@ impl Workspace {
         else {
             return;
         };
+        if palette.mode == PaletteMode::Switches {
+            if let Some(Run::Switch(binding)) = palette.items.get(ix).map(|item| &item.run) {
+                let binding = *binding;
+                self.run_switch_binding(binding, cx);
+                cx.notify();
+            }
+            return;
+        }
         let Some(mut palette) = self.palette.take() else {
             return;
         };
@@ -440,6 +577,7 @@ impl Workspace {
                     self.activate_tab(ix, window, cx);
                 }
             }
+            Run::Header => {}
         }
         cx.notify();
     }
@@ -450,17 +588,22 @@ impl Workspace {
         let width = t
             .px(Token::SizePaletteWidth)
             .min(window.viewport_size().width - t.px(Token::SpaceXl) * 2.0);
+        let panel = palette.mode == PaletteMode::Switches;
         let selected_label = palette
             .shown
             .get(palette.selected)
             .and_then(|shown| palette.items.get(shown.item))
-            .map(|item| item.label.clone());
-        let list = self.render_palette_list(palette, cx);
-        let title: SharedString = match palette.mode {
-            PaletteMode::Commands => t!("palette.label").into(),
-            PaletteMode::Folders => t!("palette.label_folders").into(),
-        };
-        // The selected row is read out with the field, which keeps the focus.
+            .map(|item| {
+                if panel {
+                    self.row_detail(item, true).spoken
+                } else {
+                    item.label.clone()
+                }
+            });
+        let list = self.render_palette_list(palette, visible_rows(palette.mode, window, cx), cx);
+        let title = palette_title(palette.mode);
+        // The selected row is read out with the field, which keeps the focus; in the panel with
+        // its state, so a switch turned there is heard too.
         let field_label: SharedString = match selected_label {
             Some(label) => format!("{title}: {label}").into(),
             None => title.clone(),
@@ -488,6 +631,7 @@ impl Workspace {
                         .id("palette")
                         .role(gpui_kit::Role::Dialog)
                         .aria_label(title)
+                        .key_context(crate::actions::PALETTE_CONTEXT)
                         .occlude()
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .capture_key_down(cx.listener(Self::palette_key_down))
@@ -524,14 +668,36 @@ impl Workspace {
                                         .h_full(),
                                 ),
                         )
-                        .child(list),
+                        .child(list)
+                        .when(panel, |el| {
+                            el.child(
+                                div()
+                                    .px(t.px(Token::SpaceMd))
+                                    .py(t.px(Token::SpaceSm))
+                                    .border_t_1()
+                                    .border_color(t.color(Token::Divider))
+                                    .text_size(t.px(Token::FontSizeCaption))
+                                    .text_color(t.color(Token::FgMuted))
+                                    // One line, so the panel keeps its height while the hint
+                                    // changes; the field says it in full.
+                                    .whitespace_nowrap()
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .child(self.panel_hint(palette)),
+                            )
+                        }),
                 )
                 .into_any_element(),
         )
     }
 
     /// The rows, or what to say when nothing matches.
-    fn render_palette_list(&self, palette: &Palette, cx: &Context<Self>) -> AnyElement {
+    fn render_palette_list(
+        &self,
+        palette: &Palette,
+        visible: usize,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let t = cx.tokens();
         let row_height = t.px(Token::RowHeightDefault);
         let rows = palette.shown.len();
@@ -542,7 +708,7 @@ impl Workspace {
                 .text_color(t.color(Token::FgMuted))
                 .child(SharedString::from(t!(
                     match palette.mode {
-                        PaletteMode::Commands => "palette.empty",
+                        PaletteMode::Commands | PaletteMode::Switches => "palette.empty",
                         PaletteMode::Folders => "palette.empty_folders",
                     },
                     query = crate::search::quoted_query(&palette.input.read(cx).value())
@@ -552,12 +718,9 @@ impl Workspace {
             div()
                 .id("palette-list")
                 .role(gpui_kit::Role::ListBox)
-                .aria_label(match palette.mode {
-                    PaletteMode::Commands => SharedString::from(t!("palette.label")),
-                    PaletteMode::Folders => SharedString::from(t!("palette.label_folders")),
-                })
+                .aria_label(palette_title(palette.mode))
                 .relative()
-                .h(row_height * rows.min(VISIBLE_ROWS) as f32 + t.px(Token::SpaceXs) * 2.0)
+                .h(row_height * rows.min(visible) as f32 + t.px(Token::SpaceXs) * 2.0)
                 .child(
                     uniform_list(
                         "palette-rows",
@@ -592,13 +755,11 @@ impl Workspace {
         let t = cx.tokens();
         let shown = palette.shown.get(ix)?;
         let item = palette.items.get(shown.item)?;
+        if matches!(item.run, Run::Header) {
+            return Some(section_title(item.label.clone(), cx));
+        }
         let selected = ix == palette.selected;
-        let (selected_bg, selected_border, hover, pressed) = (
-            t.color(Token::RowSelectedBg),
-            t.color(Token::RowSelectedBorder),
-            t.color(Token::RowHoverBg),
-            t.color(Token::PressedBg),
-        );
+        let panel = palette.mode == PaletteMode::Switches;
         let tint = |token: Token| {
             if item.enabled {
                 t.color(token)
@@ -606,26 +767,17 @@ impl Workspace {
                 t.color(Token::FgDisabled)
             }
         };
-        let detail: SharedString = match item.run {
-            // Read now: a switch can change while the palette is open.
-            Run::Switch(binding) => match self.binding_summary(binding) {
-                Some((_, true)) => t!("palette.switch_on").into(),
-                Some((_, false)) => t!("palette.switch_off").into(),
-                None => SharedString::default(),
-            },
-            _ => item.detail.clone(),
-        };
+        let RowText {
+            on: switch_on,
+            detail,
+            spoken,
+        } = self.row_detail(item, panel);
+        // In the panel, a row says its section, as titles are not read on their own.
+        let group = panel.then(|| palette.group_of(shown.item)).flatten();
         let ranges = shown.positions.iter().map(|&at| {
             let len = item.label[at..].chars().next().map_or(1, char::len_utf8);
             at..at + len
         });
-        let spoken: SharedString = [item.label.as_ref(), detail.as_ref(), item.keys.as_ref()]
-            .iter()
-            .filter(|part| !part.is_empty())
-            .copied()
-            .collect::<Vec<_>>()
-            .join(", ")
-            .into();
         let caption = |text: SharedString, token: Token| {
             div()
                 .flex_none()
@@ -636,30 +788,39 @@ impl Workspace {
                 .text_color(tint(token))
                 .child(text)
         };
+        // The panel ends every row with its toggle, so they line up (as in Windows Settings),
+        // after the keys and a state column of one width; the palette ends with the keys.
+        let keys = (!item.keys.is_empty()).then(|| caption(item.keys.clone(), Token::FgSecondary));
+        let (keys_before, keys_after) = if panel { (keys, None) } else { (None, keys) };
+        let state = if panel && switch_on.is_some() {
+            Some(state_column(
+                &detail,
+                caption(detail.clone(), Token::FgMuted),
+                cx,
+            ))
+        } else if detail.is_empty() {
+            None
+        } else {
+            Some(caption(detail, Token::FgMuted).max_w(t.px(Token::SizePaletteWidth) * 0.4))
+        };
         Some(
-            div()
-                .id(ElementId::NamedInteger("palette-row".into(), ix as u64))
+            row_frame(ix, selected, item.enabled, cx)
                 .role(gpui_kit::Role::ListBoxOption)
                 .aria_label(spoken)
                 .aria_selected(selected)
-                .aria_position_in_set(ix + 1)
-                .aria_size_of_set(palette.shown.len())
-                .flex()
-                .items_center()
-                .gap(t.px(Token::SpaceMd))
-                .w_full()
-                .h(t.px(Token::RowHeightDefault))
-                .px(t.px(Token::SpaceMd))
-                .rounded(t.px(Token::RadiusSm))
-                .border_1()
-                .border_color(gpui_kit::transparent_black())
-                .when(selected, |el| {
-                    el.bg(selected_bg).border_color(selected_border)
+                .aria_position_in_set(shown.place)
+                .aria_size_of_set(palette.choices)
+                .when_some(switch_on.filter(|_| panel), |el, on| {
+                    el.aria_toggled(if on {
+                        gpui_kit::Toggled::True
+                    } else {
+                        gpui_kit::Toggled::False
+                    })
                 })
-                .when(!selected && item.enabled, |el| {
-                    el.hover(move |s| s.bg(hover))
-                })
-                .when(item.enabled, |el| el.active(move |s| s.bg(pressed)))
+                .when_some(
+                    group,
+                    gpui_kit::StatefulInteractiveElement::aria_description,
+                )
                 .text_color(tint(Token::FgPrimary))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.run_palette(ix, window, cx);
@@ -677,17 +838,245 @@ impl Workspace {
                             tint(Token::MatchFg),
                         )),
                 )
-                .when(!detail.is_empty(), |el| {
-                    el.child(
-                        caption(detail, Token::FgMuted).max_w(t.px(Token::SizePaletteWidth) * 0.4),
-                    )
-                })
-                .when(!item.keys.is_empty(), |el| {
-                    el.child(caption(item.keys.clone(), Token::FgSecondary))
+                .children(keys_before)
+                .children(state)
+                .children(keys_after)
+                .when_some(switch_on.filter(|_| panel), |el, on| {
+                    el.child(toggle(on, item.enabled, cx))
                 })
                 .into_any_element(),
         )
     }
+}
+
+impl Workspace {
+    /// The switch holding a binding back while it is on. A switch that is off is just off.
+    fn held_by(&self, binding: usize) -> Option<&'static str> {
+        if self.binding_on(binding) == Some(true) {
+            self.binding_holder(binding)
+        } else {
+            None
+        }
+    }
+
+    /// The panel's footer: why the chosen switch is on hold, or how the panel works.
+    fn panel_hint(&self, palette: &Palette) -> SharedString {
+        palette
+            .shown
+            .get(palette.selected)
+            .and_then(|shown| palette.items.get(shown.item))
+            .and_then(Item::run_switch)
+            .and_then(|binding| self.held_by(binding))
+            .map_or_else(
+                || t!("hotswitch.panel_hint").into(),
+                |holder| crate::hotswitch::held_hint(holder).into(),
+            )
+    }
+
+    /// A row's switch state, read now (it can change while the palette is open), the text
+    /// beside the label, and what a screen reader says for the row.
+    fn row_detail(&self, item: &Item, panel: bool) -> RowText {
+        let switch_on = item
+            .run_switch()
+            .and_then(|binding| self.binding_on(binding));
+        let holder = if panel {
+            item.run_switch().and_then(|binding| self.held_by(binding))
+        } else {
+            None
+        };
+        let detail = match (item.run_switch(), switch_on) {
+            (Some(_), Some(_)) if holder.is_some() => t!("hotswitch.panel_blocked").into(),
+            (Some(_), Some(true)) if panel => t!("hotswitch.state_on").into(),
+            (Some(_), Some(false)) if panel => t!("hotswitch.state_off").into(),
+            (Some(_), Some(true)) => t!("palette.switch_on").into(),
+            (Some(_), Some(false)) => t!("palette.switch_off").into(),
+            _ => item.detail.clone(),
+        };
+        let mut spoken = [item.label.as_ref(), detail.as_ref(), item.keys.as_ref()]
+            .iter()
+            .filter(|part| !part.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Said in full; the row has room for the short form only.
+        if let Some(holder) = holder {
+            spoken = format!("{spoken}. {}", crate::hotswitch::held_hint(holder));
+        }
+        RowText {
+            on: switch_on,
+            detail,
+            spoken: spoken.into(),
+        }
+    }
+}
+
+/// A palette row's box: selected, under the pointer, pressed (DESIGN.md §11).
+fn row_frame(
+    ix: usize,
+    selected: bool,
+    enabled: bool,
+    cx: &gpui_kit::App,
+) -> gpui_kit::Stateful<gpui_kit::Div> {
+    let t = cx.tokens();
+    let (selected_bg, selected_border, hover, pressed) = (
+        t.color(Token::RowSelectedBg),
+        t.color(Token::RowSelectedBorder),
+        t.color(Token::RowHoverBg),
+        t.color(Token::PressedBg),
+    );
+    div()
+        .id(ElementId::NamedInteger("palette-row".into(), ix as u64))
+        .flex()
+        .items_center()
+        .gap(t.px(Token::SpaceMd))
+        .w_full()
+        .h(t.px(Token::RowHeightDefault))
+        .px(t.px(Token::SpaceMd))
+        .rounded(t.px(Token::RadiusSm))
+        .border_1()
+        .border_color(gpui_kit::transparent_black())
+        .when(selected, |el| {
+            el.bg(selected_bg).border_color(selected_border)
+        })
+        .when(!selected && enabled, |el| el.hover(move |s| s.bg(hover)))
+        .when(enabled, |el| el.active(move |s| s.bg(pressed)))
+}
+
+/// What a row shows and says beside its label.
+struct RowText {
+    /// A switch's state; `None` for other rows.
+    on: Option<bool>,
+    detail: SharedString,
+    spoken: SharedString,
+}
+
+impl Palette {
+    /// The title of the section an item is in (the panel only).
+    fn group_of(&self, item: usize) -> Option<SharedString> {
+        self.items
+            .get(..item)?
+            .iter()
+            .rev()
+            .find(|item| matches!(item.run, Run::Header))
+            .map(|title| title.label.clone())
+    }
+}
+
+/// Rows the list shows before it scrolls. The panel shows all its switches when the window has
+/// room (DESIGN.md §8.4); the other modes show [`VISIBLE_ROWS`].
+fn visible_rows(mode: PaletteMode, window: &Window, cx: &gpui_kit::App) -> usize {
+    if mode != PaletteMode::Switches {
+        return VISIBLE_ROWS;
+    }
+    let t = cx.tokens();
+    // The title bar and the gap above, the field, the footer, and a gap below.
+    let around = t.px(Token::SizeTitlebar)
+        + t.px(Token::SpaceMd) * 2.0
+        + t.px(Token::SizeControl)
+        + t.px(Token::SpaceSm)
+        + t.px(Token::RowHeightDefault)
+        + t.px(Token::SpaceXs) * 2.0;
+    let room = (window.viewport_size().height - around) / t.px(Token::RowHeightDefault);
+    // Whole rows only; never fewer than a few, never more than the panel can hold.
+    (room.floor().max(0.0) as usize).clamp(MIN_PANEL_ROWS, MAX_PANEL_ROWS)
+}
+
+/// A switch's state word, as wide as the widest one so the keys before it line up. The other
+/// words are laid out with no height: they give the width and are never seen or read.
+fn state_column(shown: &SharedString, visible: gpui_kit::Div, cx: &gpui_kit::App) -> gpui_kit::Div {
+    let t = cx.tokens();
+    let words = [
+        t!("hotswitch.state_on"),
+        t!("hotswitch.state_off"),
+        t!("hotswitch.panel_blocked"),
+    ];
+    div()
+        .flex()
+        .flex_col()
+        .flex_none()
+        .items_end()
+        .child(visible)
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .h(gpui_kit::px(0.0))
+                .overflow_hidden()
+                .text_size(t.px(Token::FontSizeCaption))
+                .children(
+                    words
+                        .into_iter()
+                        .filter(|word| word.as_ref() != shown.as_ref())
+                        .map(|word| div().whitespace_nowrap().child(SharedString::from(word))),
+                ),
+        )
+}
+
+/// A section title in the Hot Switch panel: seen, never chosen. Screen readers hear it with
+/// each row of its section instead (a list box holds options only).
+fn section_title(label: SharedString, cx: &gpui_kit::App) -> AnyElement {
+    let t = cx.tokens();
+    div()
+        .flex()
+        .items_end()
+        .w_full()
+        .h(t.px(Token::RowHeightDefault))
+        .px(t.px(Token::SpaceMd))
+        .pb(t.px(Token::SpaceXs))
+        .text_size(t.px(Token::FontSizeCaption))
+        .text_color(t.color(Token::FgMuted))
+        .child(label)
+        .into_any_element()
+}
+
+impl Item {
+    fn run_switch(&self) -> Option<usize> {
+        match self.run {
+            Run::Switch(binding) => Some(binding),
+            _ => None,
+        }
+    }
+}
+
+fn palette_title(mode: PaletteMode) -> SharedString {
+    match mode {
+        PaletteMode::Commands => t!("palette.label").into(),
+        PaletteMode::Folders => t!("palette.label_folders").into(),
+        PaletteMode::Switches => t!("hotswitch.panel_title").into(),
+    }
+}
+
+/// A switch's toggle (DESIGN.md §11): a pill with its thumb at the end that says the state.
+/// Display only: the row is what is clicked.
+fn toggle(on: bool, enabled: bool, cx: &gpui_kit::App) -> impl IntoElement {
+    let t = cx.tokens();
+    let height = t.px(Token::SizeToggleHeight);
+    let thumb = height - t.px(Token::SpaceXs) * 2.0;
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        // Always a border, clear when on, so the thumb sits in the same place both ways.
+        .border_1()
+        .when(on, |el| {
+            el.justify_end()
+                .bg(t.paint(Token::ToggleOnBg))
+                .border_color(gpui_kit::transparent_black())
+        })
+        .when(!on, |el| {
+            el.justify_start()
+                .border_color(t.color(Token::ToggleOffBorder))
+        })
+        .when(!enabled, |el| el.opacity(t.number(Token::OpacityDisabled)))
+        .w(t.px(Token::SizeToggleWidth))
+        .h(height)
+        .px(t.px(Token::SpaceXs) - gpui_kit::px(crate::theme::HAIRLINE))
+        .rounded(height / 2.0)
+        .child(div().size(thumb).rounded(thumb / 2.0).bg(t.color(if on {
+            Token::ToggleOnThumb
+        } else {
+            Token::ToggleOffThumb
+        })))
 }
 
 #[cfg(test)]

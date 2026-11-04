@@ -273,6 +273,9 @@ define_tokens! {
     SizePaletteWidth = "size.palette_width": Number,
     // The themed context menu and its submenus (F-CTX-01).
     SizeMenuWidth = "size.menu_width": Number,
+    // A toggle switch (DESIGN.md §11): the Hot Switch panel, later Settings.
+    SizeToggleWidth = "size.toggle_width": Number,
+    SizeToggleHeight = "size.toggle_height": Number,
     FocusRingWidth = "focus.ring_width": Number,
     // Opacity of disabled controls (0..1).
     OpacityDisabled = "opacity.disabled": Number,

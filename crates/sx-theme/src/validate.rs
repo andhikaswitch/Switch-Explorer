@@ -20,7 +20,7 @@ use crate::schema::Token::{
     RowSelectedBorder, RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff,
     StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover, SurfaceChip,
     SurfaceInput, SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg,
-    ToastFg, ToggleOffBorder, ToggleOnBg, ToggleOnThumb, WarningText,
+    ToastFg, ToggleOffBorder, ToggleOffThumb, ToggleOnBg, ToggleOnThumb, WarningText,
 };
 
 /// A foreground/background requirement.
@@ -79,6 +79,19 @@ pub const PAIRS: &[ContrastPair] = &[
         &[BgContent],
         NON_TEXT,
     ),
+    // The Hot Switch panel's toggles, on the overlay and on its rows.
+    pair(
+        &[ToggleOffBorder, ToggleOffThumb, ToggleOnBg],
+        &[SurfaceOverlay],
+        &[BgContent],
+        NON_TEXT,
+    ),
+    pair(
+        &[ToggleOffBorder, ToggleOffThumb, ToggleOnBg],
+        &[RowHoverBg, RowSelectedBg, PressedBg],
+        &[BgContent, SurfaceOverlay],
+        NON_TEXT,
+    ),
     // The context menu: its rows under the pointer and pressed.
     pair(
         &[FgPrimary, FgSecondary],
@@ -116,6 +129,13 @@ pub const PAIRS: &[ContrastPair] = &[
     pair(
         &[StatuschipOn, StatuschipPartial, StatuschipOff],
         &[SurfaceChip],
+        &[BgStatusbar],
+        TEXT,
+    ),
+    // The chip is a button: under the pointer and pressed.
+    pair(
+        &[StatuschipOn, StatuschipPartial, StatuschipOff],
+        &[HoverBg, PressedBg],
         &[BgStatusbar],
         TEXT,
     ),

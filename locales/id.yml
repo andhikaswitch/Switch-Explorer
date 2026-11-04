@@ -190,7 +190,16 @@ flag:
     readonly_mode: Mode baca-saja
 preset:
   anti_drag: anti salah drag
+preset_title:
+  anti_drag: Preset anti salah drag
 hotswitch:
+  panel_title: Hot Switch
+  panel_hint: Enter atau Spasi menyalakan atau mematikan switch yang dipilih; panel tetap terbuka. Esc menutupnya.
+  panel_blocked: Tertahan
+  section_drag: Drag & drop
+  section_view: Tampilan & keselamatan
+  state_on: Aktif
+  state_off: Nonaktif
   impact:
     files_still_on: Drag file tetap aktif.
     folders_still_on: Drag folder tetap aktif.
@@ -215,13 +224,16 @@ hotswitch:
   preset_on: "Preset %{name} aktif (%{count} switch diubah)"
   preset_off: "Preset %{name} dimatikan"
   again: "Balik lagi: %{keys}"
-  blocked: "Tidak berlaku: semua drag sedang mati."
+  held: "Tertahan karena \"%{name}\" mati."
+  held_hint: "Tertahan karena \"%{name}\" mati. Nyalakan dengan %{keys}."
+  held_hint_nokeys: "Tertahan karena \"%{name}\" mati. Nyalakan dulu switch itu."
   needs_dev: "%{name} butuh Developer Mode"
   needs_dev_hint: Aktifkan Developer Mode di Pengaturan dulu.
   failed: "Switch ini tidak bisa diubah sekarang. Buka ulang Switch Explorer lalu coba lagi."
   chip_on: "Drag: aktif"
   chip_partial: "Drag: sebagian"
   chip_off: "Drag: mati"
+  chip_hint: "Membuka panel Hot Switch (%{keys})"
   tip_on: aktif
   tip_off: mati
   badge: Drag mati
@@ -263,6 +275,8 @@ command:
   app:
     transfer_panel: Tampilkan panel transfer
     quick_open: Buka folder
+  hotswitch:
+    panel: Buka panel Hot Switch
   sidebar:
     pin: Pin atau lepas pin folder ini
 menu:
@@ -278,6 +292,7 @@ palette:
   label_folders: Buka cepat
   placeholder: Ketik command, switch, atau tempat
   placeholder_folders: Ketik nama folder yang terbuka, di-pin, atau baru dibuka
+  placeholder_switches: Cari switch
   open_tab: Sudah terbuka
   empty: "Tidak ada yang cocok dengan \"%{query}\". Coba lebih sedikit huruf."
   empty_folders: "Tidak ada folder terbuka, di-pin, atau baru dibuka yang cocok dengan \"%{query}\". Untuk folder lain, ketik path-nya di address bar (Ctrl+L)."

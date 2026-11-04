@@ -192,27 +192,52 @@ yang sama ("3 file diunggah ke Laporan").
 
 ### 8.4 Panel Hot Switch & OSD
 
+Panel Hot Switch adalah mode ketiga command palette (§8.9): bentuk, posisi, kotak cari, dan navigasinya
+sama. Dibuka dengan `Ctrl+K`, `K` atau klik chip status (§9.2).
+
 ```text
-┌ Hot Switch ────────────────────────────────── [ Cari switch…    ] ┐
+┌───────────────────────────────────────────────────────────────────┐
+│ 🔍 Cari switch                                                     │
+├───────────────────────────────────────────────────────────────────┤
 │ Drag & drop                                                        │
-│   Semua drag & drop                ●━━  Aktif      Ctrl+Shift+D    │
-│   Drag file                        ●━━  Aktif      Ctrl+K, F       │
-│   Drag folder                      ━━○  Nonaktif   Ctrl+K, D       │
-│   Drag dari sidebar & pinned       ━━○  Nonaktif   Ctrl+K, S       │
-│   Drag ke/dari aplikasi lain       ●━━  Aktif      Ctrl+K, E       │
-│   Preset anti salah drag           ━━○  Mati       Ctrl+K, G       │
+│   Semua drag & drop                    Ctrl+Shift+D  Aktif     ━━● │
+│   Drag file                            Ctrl+K, F     Aktif     ━━● │
+│   Drag folder                          Ctrl+K, D     Nonaktif  ○━━ │
+│   Drag dari sidebar                    Ctrl+K, S     Tertahan  ━━● │
+│   Preset anti salah drag               Ctrl+K, G     Nonaktif  ○━━ │
 │ Tampilan & keselamatan                                             │
-│   File tersembunyi                 ━━○             Ctrl+K, H       │
-│   Ekstensi file                    ●━━             Ctrl+K, X       │
-│   Mode baca-saja                   ━━○             Ctrl+K, R       │
-│                                       [Atur hotkey…]   [Tutup]     │
-└────────────────────────────────────────────────────────────────────┘
+│   File tersembunyi                     Ctrl+K, H     Nonaktif  ○━━ │
+│   Ekstensi file                        Ctrl+K, X     Aktif     ━━● │
+├───────────────────────────────────────────────────────────────────┤
+│ Enter atau Spasi menyalakan atau mematikan switch yang dipilih; … │
+└───────────────────────────────────────────────────────────────────┘
 
            ╭────────────────────────────────────────────────╮
            │  ⊘  Drag folder dinonaktifkan                  │   ← OSD (tengah bawah)
            │     Drag file tetap aktif. Balik lagi: Ctrl+K, D│
            ╰────────────────────────────────────────────────╯
 ```
+
+- **Baris:** label, hotkey (`fg.secondary`), status (`fg.muted`), lalu toggle (§11, `size.toggle_*`)
+  di ujung kanan supaya semua toggle sejajar, seperti Settings Windows. Kolom status selebar kata
+  terlebar ("Aktif", "Nonaktif", "Tertahan"), jadi hotkey juga sejajar. Status selalu ditulis, jadi
+  keadaan tidak hanya dibedakan lewat warna.
+- **Tinggi:** semua baris tampil bila window cukup tinggi (maks 20 baris, min 4); lebih dari itu
+  daftar bergulir.
+- **Judul kelompok:** caption `fg.muted`, tidak bisa dipilih; disembunyikan saat mencari.
+  Panah dan PageUp/PageDown melompatinya (PageUp di atas berhenti di switch pertama); naik ke baris
+  pertama kelompok ikut menampilkan judulnya.
+- **Membalik:** `Enter`, klik, atau `Space` tanpa modifier selama kotak cari kosong (setelah ada teks,
+  `Space` adalah spasi). OSD muncul seperti hotkey biasa; panel tetap terbuka dan barisnya langsung
+  diperbarui.
+- **Tertahan:** sub-switch yang menyala tapi tidak berlaku karena switch induknya mati bertuliskan
+  "Tertahan". Saat baris itu dipilih, footer menyebut switch induk dan hotkey-nya (Tertahan karena
+  "Semua drag" mati. Nyalakan dengan Ctrl+Shift+D.). OSD memakai istilah yang sama.
+- **Footer:** satu baris caption `fg.muted` di atas garis `divider` (tidak membungkus, agar tinggi panel
+  tetap). Tombol "Atur hotkey…" menyusul bersama keymap editor.
+- **Aksesibilitas:** fokus tetap di kotak cari; labelnya memuat baris terpilih lengkap dengan status
+  (dan sebab tertahan), jadi membalik switch juga terdengar. Baris berperan option dengan status
+  toggled, posisi dihitung tanpa judul ("2 dari 11"), dan nama kelompok sebagai deskripsi.
 
 ### 8.5 Settings → Drag & drop
 
@@ -394,7 +419,9 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 ### 9.2 Chip status
 - Di status bar, kanan: ikon drag + teks pendek. Tiga keadaan: "Drag: aktif" (`statuschip.on`),
   "Drag: sebagian" (`statuschip.partial`, ikon setengah), "Drag: mati" (`statuschip.off`, ikon dicoret).
-- Tooltip: daftar sub-switch beserta status dan hotkey. Klik: panel Hot Switch sebagai popover.
+- Tooltip: daftar sub-switch beserta status dan hotkey. Klik: panel Hot Switch (§8.4); hover dan
+  pressed memakai `hover.bg` dan `pressed.bg`, target 24 px tinggi. Chip hanya untuk mouse (tidak masuk
+  urutan Tab); keyboard memakai `Ctrl+K`, `K`, dan deskripsi aksesibilitasnya menyebut itu.
 - Badge title bar (`hotswitch.titlebar_badge`): pill kecil "Drag mati" di dekat tombol window ketika
   master drag nonaktif, agar tetap terlihat walau status bar disembunyikan.
 
@@ -479,7 +506,7 @@ fade opasitas 80 ms untuk OSD/toast agar tidak terasa patah.
 - Ikon folder bertema (`view.themed_folder_icons`): folder dua tone (`icon.folder.back` /
   `icon.folder.front`), glyph folder khusus (Downloads, Pictures, …) tetap ditampilkan. Folder kategori di
   Home memakai warna kategori.
-- Ikon switch di OSD/panel: drag-hand (semua), file (drag file), folder (drag folder), sidebar (drag
+- Ikon switch di OSD (panel Hot Switch memakai toggle, tanpa ikon): drag-hand (semua), file (drag file), folder (drag folder), sidebar (drag
   sidebar), panah keluar-masuk (aplikasi lain), perisai (preset), gembok (pinned), mata (hidden),
   titik-ekstensi (extension), gambar (thumbnail), pensil-dicoret (read-only).
 
