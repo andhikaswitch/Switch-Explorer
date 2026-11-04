@@ -351,7 +351,13 @@ impl Workspace {
                 }
                 .build(window, cx)
             })
-            .when(!enabled, |el| el.opacity(t.number(Token::OpacityDisabled)))
+            .when(!enabled, |el| {
+                // Keeps GPUI tracking the hover state while disabled, so the button does not
+                // come back enabled with the hover's text colour (see the sidebar item).
+                el.opacity(t.number(Token::OpacityDisabled))
+                    .hover(std::convert::identity)
+                    .active(std::convert::identity)
+            })
             .when(enabled, |el| {
                 el.hover(move |s| s.bg(hover).text_color(hover_fg))
                     .active(move |s| s.bg(pressed).text_color(hover_fg))

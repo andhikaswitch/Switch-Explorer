@@ -87,6 +87,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Pesan error menyebut penyebab + solusi (drive belum siap, jaringan, tidak ada aplikasi, file dipakai).
 
 ### Fixed
+- Sidebar: item yang baru tidak aktif lagi (misalnya Downloads setelah Music diklik) tidak lagi
+  menampilkan teks gelap sampai mouse bergerak. Penyebabnya, GPUI berhenti melacak hover saat item
+  aktif. Tombol nav yang kembali aktif setelah nonaktif juga diperbaiki.
 - Single instance: peluncuran berikutnya hanya meneruskan path ke Switch Explorer milik user yang sama
   (SID, sesi, elevasi, dan exe yang sama). Pipe yang "diduduki" proses lain ditolak, dan nama pipe kini per
   sesi dan per elevasi.

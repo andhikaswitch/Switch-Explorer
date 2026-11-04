@@ -216,14 +216,12 @@ impl Workspace {
             .relative()
             .when(active, |el| {
                 el.text_color(active_fg)
+                    // No-op hover/active styles keep GPUI tracking the pointer here; else the
+                    // item comes back from active with stale hover text (dark on the sidebar).
+                    .hover(std::convert::identity)
+                    .active(std::convert::identity)
                     .shadow(glow)
-                    .child(slash::tide_slash(slash::Slash {
-                        fill: t.resolved().paint(Token::NavItemActiveBg).clone(),
-                        edge: t.resolved().color(Token::NavItemActiveEdge),
-                        angle_deg: t.number(Token::SlashAngleDeg),
-                        radius: t.number(Token::RadiusSm),
-                        edge_width: t.number(Token::SlashEdgeWidth),
-                    }))
+                    .child(active_slash(cx))
             })
             .when(!active, |el| {
                 el.text_color(if lit { hover_fg } else { fg })
@@ -302,6 +300,18 @@ impl Item {
             Self::RecycleBin => ElementId::Name("side-bin".into()),
         }
     }
+}
+
+/// The Tide Slash behind the active item (DESIGN.md §7).
+fn active_slash(cx: &gpui_kit::App) -> impl IntoElement {
+    let t = cx.tokens();
+    slash::tide_slash(slash::Slash {
+        fill: t.resolved().paint(Token::NavItemActiveBg).clone(),
+        edge: t.resolved().color(Token::NavItemActiveEdge),
+        angle_deg: t.number(Token::SlashAngleDeg),
+        radius: t.number(Token::RadiusSm),
+        edge_width: t.number(Token::SlashEdgeWidth),
+    })
 }
 
 /// The glow under the active item's Tide Slash (`shadow.glow` in `nav.item.active.glow`).
