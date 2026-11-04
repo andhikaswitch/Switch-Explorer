@@ -1,5 +1,5 @@
-//! Recursive search under a folder (FEATURES.md F-SRCH-02): results stream out in batches while
-//! the walk goes on, and it stops as soon as it is cancelled (the query changed).
+//! Recursive search under a folder (FEATURES.md F-SRCH-02): matches stream out folder by folder
+//! while the walk goes on, and it stops as soon as it is cancelled (the query changed).
 //!
 //! Links (junctions, symlinks) are listed but not followed, so a walk cannot loop or wander to
 //! another drive. A folder that cannot be read is counted and skipped; the rest is searched.
@@ -12,18 +12,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sx_core::EntryKind;
+use sx_win::RawEntry;
 
 use crate::query::{Candidate, Query};
-
-/// One match.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Hit {
-    pub path: PathBuf,
-    pub kind: EntryKind,
-    pub size: u64,
-    /// FILETIME ticks of the last write.
-    pub modified: i64,
-}
 
 /// How a walk went.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -46,20 +37,21 @@ pub struct WalkOptions {
 const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
 const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
 
-/// Searches `root` and every folder below it, depth first, handing matches to `sink` in
-/// batches. `now` is the current FILETIME (for `modified:`). `sink` returning `Break`, or
-/// `cancel` being set, stops the walk.
+/// Searches `root` and every folder below it, depth first, handing the matching entries of
+/// each folder to `sink` together with that folder (an entry's path is the folder joined with
+/// its exact name). `now` is the current FILETIME (for `modified:`). `sink` returning `Break`,
+/// or `cancel` being set, stops the walk.
 pub fn search(
     root: &Path,
     query: &Query,
     options: WalkOptions,
     now: i64,
     cancel: &AtomicBool,
-    mut sink: impl FnMut(&[Hit]) -> ControlFlow<()>,
+    mut sink: impl FnMut(&Path, &[RawEntry]) -> ControlFlow<()>,
 ) -> Stats {
     let mut stats = Stats::default();
     let mut pending = vec![root.to_path_buf()];
-    let mut batch: Vec<Hit> = Vec::new();
+    let mut batch: Vec<RawEntry> = Vec::new();
     let mut stop = false;
     while let Some(dir) = pending.pop() {
         if cancel.load(Ordering::Relaxed) || stop {
@@ -75,13 +67,12 @@ pub fn search(
                 if hidden && !options.hidden {
                     continue;
                 }
-                // Lossy names are matched as shown, but their path keeps the exact name.
-                let path = match &entry.exact {
-                    Some(exact) => dir.join(OsString::from_wide(exact)),
-                    None => dir.join(&entry.name),
-                };
                 if entry.kind == EntryKind::Dir {
-                    children.push(path.clone());
+                    // Lossy names are matched as shown, but the walk goes on by the exact name.
+                    children.push(match &entry.exact {
+                        Some(exact) => dir.join(OsString::from_wide(exact)),
+                        None => dir.join(&entry.name),
+                    });
                 }
                 let candidate = Candidate {
                     name: &entry.name,
@@ -91,17 +82,12 @@ pub fn search(
                 };
                 if query.matches(&candidate, now) {
                     stats.hits += 1;
-                    batch.push(Hit {
-                        path,
-                        kind: entry.kind,
-                        size: entry.size,
-                        modified: entry.modified,
-                    });
+                    batch.push(entry.clone());
                 }
             }
             // Hand out what this chunk found, so results show while the walk goes on.
             if !batch.is_empty() {
-                if sink(&batch).is_break() {
+                if sink(&dir, &batch).is_break() {
                     stop = true;
                 }
                 batch.clear();
@@ -119,11 +105,16 @@ pub fn search(
         // reversed to walk them in name order.
         pending.extend(children.into_iter().rev());
     }
-    if !batch.is_empty() && !stop {
-        let _ = sink(&batch);
-    }
     stats.cancelled |= cancel.load(Ordering::Relaxed) || stop;
     stats
+}
+
+/// The path of an entry handed to the sink.
+pub fn entry_path(dir: &Path, entry: &RawEntry) -> PathBuf {
+    match &entry.exact {
+        Some(exact) => dir.join(OsString::from_wide(exact)),
+        None => dir.join(&entry.name),
+    }
 }
 
 #[cfg(test)]
@@ -153,9 +144,9 @@ mod tests {
             WalkOptions::default(),
             i64::MAX,
             &AtomicBool::new(false),
-            |hits| {
-                out.extend(hits.iter().map(|h| {
-                    h.path
+            |dir, entries| {
+                out.extend(entries.iter().map(|entry| {
+                    entry_path(dir, entry)
                         .strip_prefix(root)
                         .unwrap()
                         .to_string_lossy()
@@ -174,11 +165,42 @@ mod tests {
         let (found, stats) = names(dir.path(), "ext:pdf");
         assert_eq!(found, ["docs/2026/report.pdf", "docs/plan.pdf"]);
         assert_eq!(stats.folders, 4);
+        assert_eq!(stats.hits, 2);
         assert!(!stats.cancelled);
         let (found, _) = names(dir.path(), "kind:folder");
         assert_eq!(found, ["docs", "docs/2026", "music"]);
         let (found, _) = names(dir.path(), "size:>1kb");
         assert_eq!(found, ["docs/plan.pdf"]);
+    }
+
+    #[test]
+    fn each_batch_comes_with_its_folder() {
+        let dir = tree();
+        let query = Query::parse("ext:pdf").unwrap();
+        let mut batches = Vec::new();
+        search(
+            dir.path(),
+            &query,
+            WalkOptions::default(),
+            i64::MAX,
+            &AtomicBool::new(false),
+            |folder, entries| {
+                let names: Vec<String> = entries.iter().map(|e| e.name.clone()).collect();
+                batches.push((folder.to_path_buf(), names));
+                ControlFlow::Continue(())
+            },
+        );
+        batches.sort();
+        assert_eq!(
+            batches,
+            [
+                (dir.path().join("docs"), vec!["plan.pdf".to_string()]),
+                (
+                    dir.path().join("docs").join("2026"),
+                    vec!["report.pdf".to_string()]
+                ),
+            ]
+        );
     }
 
     #[test]
@@ -192,7 +214,7 @@ mod tests {
             WalkOptions::default(),
             i64::MAX,
             &cancel,
-            |_| ControlFlow::Continue(()),
+            |_, _| ControlFlow::Continue(()),
         );
         assert!(stats.cancelled && stats.folders == 0);
         let mut batches = 0;
@@ -202,7 +224,7 @@ mod tests {
             WalkOptions::default(),
             i64::MAX,
             &AtomicBool::new(false),
-            |_| {
+            |_, _| {
                 batches += 1;
                 ControlFlow::Break(())
             },

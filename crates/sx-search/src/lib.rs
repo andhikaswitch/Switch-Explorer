@@ -5,4 +5,4 @@ pub mod query;
 pub mod walk;
 
 pub use query::{Candidate, KindFilter, Query, QueryError, SizeFilter};
-pub use walk::{Hit, Stats, WalkOptions, search};
+pub use walk::{Stats, WalkOptions, entry_path, search};

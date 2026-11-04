@@ -190,6 +190,14 @@ impl Query {
         Ok(query)
     }
 
+    /// The plain words of the query (lowercase), e.g. to highlight them in results.
+    pub fn words(&self) -> impl Iterator<Item = &str> {
+        self.terms.iter().filter_map(|term| match term {
+            Term::Contains(word) => Some(word.as_str()),
+            Term::Wildcard(_) => None,
+        })
+    }
+
     /// A query with nothing in it matches everything; searching with it is not useful.
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
@@ -277,6 +285,8 @@ mod tests {
         assert!(hits("annual?report*", &report));
         assert!(hits("*", &report));
         assert!(Query::parse("  ").unwrap().is_empty());
+        let query = Query::parse("Annual *.pdf ext:pdf \"Q1 Report\"").unwrap();
+        assert_eq!(query.words().collect::<Vec<_>>(), ["annual", "q1 report"]);
     }
 
     #[test]
