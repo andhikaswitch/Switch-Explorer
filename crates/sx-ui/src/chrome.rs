@@ -21,7 +21,7 @@ use sx_core::Location;
 use sx_theme::Token;
 
 use crate::actions::WORKSPACE_CONTEXT;
-use crate::focus::{self, Ring, TabStop as _};
+use crate::focus::{self, TabStop as _};
 use crate::format;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -96,6 +96,11 @@ impl Workspace {
                     )
                     .child(self.render_new_tab_button(cx)),
             )
+            // "Drag off" next to the window buttons while all dragging is off.
+            .children(
+                self.render_drag_badge(cx)
+                    .map(|badge| badge.mr(t.px(Token::SpaceMd))),
+            )
             .child(caption(
                 "caption-min",
                 WindowControlArea::Min,
@@ -124,7 +129,7 @@ impl Workspace {
         let focus = self.focus_stop(&element, cx);
         div()
             .id(element)
-            .tab_stop_ring(&focus, Ring::plain(), cx)
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusMd)), cx)
             .occlude()
             .relative()
             .flex()
@@ -202,7 +207,7 @@ impl Workspace {
         let focus = self.focus_stop(&ElementId::Name("tab-new".into()), cx);
         div()
             .id("tab-new")
-            .tab_stop_ring(&focus, Ring::plain(), cx)
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
             .occlude()
             .flex()
             .flex_none()
@@ -227,7 +232,7 @@ impl Workspace {
 
     pub(crate) fn render_command_bar(
         &self,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let t = cx.tokens();
@@ -266,7 +271,8 @@ impl Workspace {
             .child(self.nav_button("nav-up", IconName::ArrowUp, can_up, cx, Workspace::go_up))
             .child(
                 self.nav_button("nav-refresh", IconName::RefreshCw, true, cx, |this, cx| {
-                    this.load(cx);
+                    let id = this.tab().id;
+                    this.load_tab(id, true, cx);
                     this.refresh_drives(cx);
                 }),
             )
@@ -284,6 +290,7 @@ impl Workspace {
                     cx,
                     Workspace::toggle_pin,
                 ))
+                .child(self.render_search_box(window, cx))
             })
     }
 
@@ -326,7 +333,9 @@ impl Workspace {
         let focus = self.focus_stop(&ElementId::Name(id.into()), cx);
         div()
             .id(id)
-            .when(enabled, |el| el.tab_stop_ring(&focus, Ring::plain(), cx))
+            .when(enabled, |el| {
+                el.tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
+            })
             .flex()
             .flex_none()
             .items_center()
@@ -353,9 +362,11 @@ impl Workspace {
 
     fn render_address(&self, cx: &Context<Self>) -> impl IntoElement {
         let t = cx.tokens();
-        let strong = t.color(Token::BorderInputFocus);
+        let hover = t.color(Token::BorderInputHover);
+        let radius = t.px(Token::RadiusSm);
         let field = div()
             .id("address")
+            .relative()
             .flex()
             .flex_1()
             .min_w_0()
@@ -363,18 +374,19 @@ impl Workspace {
             .h(t.px(Token::SizeControl))
             .ml(t.px(Token::SpaceSm))
             .px(t.px(Token::SpaceXs))
-            .rounded(t.px(Token::RadiusSm))
+            .rounded(radius)
             .bg(t.paint(Token::SurfaceInput))
             .border_1();
         if self.editing_address {
             return field
                 .border_color(t.color(Token::BorderInputFocus))
+                .child(crate::focus::ring(radius, cx))
                 .child(Input::new(&self.address).appearance(false).h_full())
                 .into_any_element();
         }
         field
             .border_color(t.color(Token::BorderInput))
-            .hover(move |s| s.border_color(strong))
+            .hover(move |s| s.border_color(hover))
             .overflow_hidden()
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                 this.edit_address(window, cx);
@@ -418,7 +430,7 @@ impl Workspace {
                 out.push(
                     div()
                         .id("crumb-more")
-                        .tab_stop_ring(&focus, Ring::plain(), cx)
+                        .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusXs)), cx)
                         .flex_none()
                         .px(t.px(Token::SpaceSm))
                         .rounded(t.px(Token::RadiusXs))
@@ -441,7 +453,7 @@ impl Workspace {
             out.push(
                 div()
                     .id(ElementId::NamedInteger("crumb".into(), ix as u64))
-                    .tab_stop_ring(&focus, Ring::plain(), cx)
+                    .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusXs)), cx)
                     .flex_none()
                     .px(t.px(Token::SpaceSm))
                     .rounded(t.px(Token::RadiusXs))

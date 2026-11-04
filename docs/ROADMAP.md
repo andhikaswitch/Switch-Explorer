@@ -67,13 +67,32 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
 
 - [ ] Context menu bertema + "Tampilkan opsi lain" (menu native, forwarding pesan), menu background & sidebar.
 - [ ] `CommandRegistry`; command palette (`Ctrl+Shift+P`); quick open (`Ctrl+P`).
+      Progres: command palette selesai (DESIGN §8.9; fuzzy dengan matcher sendiri, ADR-023). Isinya
+      command, switch beserta statusnya, dan tempat; label command ada dalam en dan id. Quick open (`Ctrl+P`)
+      selesai: tab terbuka, folder pinned, folder dari sesi ini, dan drive.
 - [ ] OLE drag & drop dua arah (termasuk virtual files) + drag internal ke folder/sidebar/breadcrumb/tab.
 - [ ] **Drag Guard** lengkap (DEVELOPER-MODE.md §5) + preset "Anti salah drag" + test state machine.
+      Progres: aturan §5.3 dan state machine §5.4 di `sx_core::drag` dengan tabel test; preset bisa di-toggle
+      lewat Hot Switch. Belum: sambungan ke DnD.
 - [ ] **Hot Switch**: `Ctrl+Shift+D`, chord `Ctrl+K` (F, D, S, E, G, L, H, X, T, R, K); OSD ≤ 50 ms; chip status;
       badge title bar; hint saat diblokir; persisten/sesi; chord tidak aktif di input teks.
+      Progres: semua binding kecuali `K` (panel), OSD (ganti di tempat, hover menahan, fade), chip "Drag: …"
+      dengan tooltip, badge title bar, persisten/sesi lewat `hotswitch.persist` (ditulis di thread sendiri),
+      chord mati di input teks, `view.show_extensions` kini berlaku di daftar. Belum: panel Hot Switch, hint
+      saat drag diblokir (menunggu DnD), pengukuran OSD ≤ 50 ms, OSD `system` untuk hotkey global.
 - [ ] Grid/gallery + thumbnail dua pass; preview pane (gambar/teks + spike preview handler); details pane;
       Quick Look (`Space`).
 - [ ] Filter instan + pencarian rekursif + integrasi Everything.
+      Progres: mesin pencarian rekursif di `sx-search` (operator `ext:`, `size:`, `modified:`, `kind:`,
+      wildcard, frasa berkutip; hasil streaming, batal, link tidak diikuti, folder tak terbaca dilewati).
+      Filter instan (F-SRCH-01) selesai: kotak cari di command bar, highlight `match.fg`, "x dari y item",
+      `Ctrl+F`/`Esc`/`↓`; terukur di release 0,1 ms per ketikan untuk 10k item dan ~1 ms untuk 100k.
+      Pencarian rekursif di UI (F-SRCH-02) selesai:
+      - `Enter`/`Ctrl+E`/`F3` menjalankannya, dan hasil streaming dari thread sendiri dengan kolom Folder.
+      - Pencarian dibatalkan saat query berubah, lalu dijalankan lagi setelah jeda ketik 300 ms.
+      - Hasil diurutkan saat selesai; batas 100.000 hasil.
+      - Hasil bisa dibuka, di-rename, dihapus, dan disalin.
+      Belum: Everything.
 - [ ] Split view, session restore, mode tampilan per folder, checkbox seleksi, floating action bar.
 - [ ] Home dashboard (gauge, kategori pintar, pinned, terbaru, aktivitas); halaman Aktivitas; Recycle Bin view.
 - [ ] Properties (`Alt+Enter`), copy path, buka terminal/VS Code, mode baca-saja, elevasi via `IFileOperation`.

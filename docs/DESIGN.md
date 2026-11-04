@@ -56,7 +56,7 @@ dark `#7A8FA8` di `#0A1628` ≈ 5.5:1.
 | `accent.highlight` | Lagoon → Cerulean (120°) | sama | Tide Slash, tombol primer, toggle on |
 | `accent.solid` | Tide → Deep Tide (135°) | sama | Checkbox, bidang solid bertulisan putih |
 | `selection.bg` | Cerulean 16% | Cerulean 22% | Baris terpilih |
-| `focus.ring` | Tide | Lagoon | `focus.ring_width` (2 px) sebagai border elemen: transparan (atau warna border elemen itu sendiri) saat tidak fokus, jadi tidak ada yang bergeser; dilukis di atas isi elemen (termasuk Tide Slash) dan tidak terpotong container yang meng-clip. Di atas kontrol yang di-highlight (item aktif, gradien hover) memakai `focus.ring_on_highlight` (Ink) |
+| `focus.ring` | Tide | Lagoon | `focus.ring_width` (2 px) tepat di luar tepi elemen (lapisan anak yang digambar saat fokus): kontras dengan permukaan di sekitarnya, bukan dengan isi kontrol, jadi tetap terlihat di tombol berisi warna, gradien hover, dan Tide Slash; hover tidak menghapusnya; tidak memakan ruang layout |
 
 Warna kategori (ikon folder kategori, chip, bar komposisi Organizer): Dokumen `#3B82F6`, Audio `#F43F5E`,
 Gambar `#F59E0B`, Video `#8B5CF6`, Arsip `#10B981`, Kode `#06B6D4`, Aplikasi `#64748B`, Lainnya `#94A3B8`.
@@ -274,12 +274,58 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 
 ### 8.8 Responsif
 
-- Lebar < 720 px: sidebar otomatis jadi rail 56 px.
-- Lebar < 560 px: preview pane disembunyikan; kotak cari menjadi ikon.
+- Lebar < 720 px: sidebar otomatis jadi rail 56 px; kotak cari menjadi ikon (dibuka dengan klik atau
+  `Ctrl+F`, terlipat lagi saat kosong dan kehilangan fokus).
+- Lebar minimum window 560 px: preview pane disembunyikan.
 - Kolom details menyusut berurutan: Tipe → Diubah; Nama dan Ukuran selalu terlihat.
 - Lebar kolom Diubah, Tipe, dan Ukuran bisa diseret di tepi kirinya pada header (kursor resize kolom, garis
   `divider` saat disorot), 56–480 px; Nama mengambil sisanya. Lebar berlaku per tab selama sesi; mode
   tampilan per folder (Fase 2) akan menyimpannya.
+- Hasil pencarian menambah kolom Folder. Kolom ini mengambil ruang Tipe lalu Diubah lebih dulu, dan
+  menyusut agar Nama tetap punya 200 px; bila ruangnya tidak cukup untuk lebar minimum, kolom Folder tidak
+  ditampilkan.
+
+### 8.9 Command palette
+
+```text
+          ┌──────────────────────────────────────────────────────┐
+          │ 🔍 nf                                                 │  kolom ketik, surface.input
+          ├──────────────────────────────────────────────────────┤
+          │ ▌New folder                            Ctrl+Shift+N │  baris terpilih: row.selected.bg
+          │  Dragging from the sidebar   Switch, on   Ctrl+K, S │
+          │  Pinned folder lock          Switch, off  Ctrl+K, L │
+          └──────────────────────────────────────────────────────┘
+```
+
+- Dibuka dengan `Ctrl+Shift+P` / `F1`. Posisinya di tengah atas, `space.md` di bawah title bar, dan menutupi
+  command bar. Title bar tetap bisa dipakai: drag, tombol window, dan snap layout.
+- Lebar `size.palette_width` (560 px), dengan batas `space.xl` dari tepi window. Panel memakai
+  `surface.overlay`, `border.subtle`, `radius.lg`, dan `shadow.popover`, tanpa scrim.
+- Maksimal 10 baris terlihat, lalu daftar bisa di-scroll dan scrollbar muncul.
+- Baris terpilih memakai `row.selected.bg` dan `row.selected.border`, dan baris lain `row.hover.bg` saat
+  disorot. Command yang tidak bisa jalan saat itu (Maju tanpa riwayat, Rename tanpa seleksi) ditulis
+  `fg.disabled` dan tidak bereaksi saat dipilih.
+- Isi barisnya:
+  - Label dengan huruf yang cocok ditulis tebal `match.fg`.
+  - Keterangan `fg.muted` (status switch, path tempat).
+  - Shortcut `fg.secondary` rata kanan.
+- `↑`/`↓` memilih baris dan berputar di ujung daftar. `PgUp`/`PgDn` berhenti di ujung. `Enter` atau klik
+  menjalankan baris terpilih. `Esc` atau klik di luar panel menutupnya.
+- Fokus tertahan di palette selama terbuka (`Tab` dan `F6` tidak keluar). Setelah palette tertutup, fokus
+  kembali ke tempat semula, kecuali untuk command daftar (rename, hapus, pilih semua), yang selalu
+  dijalankan di daftar.
+- Switch dari palette berjalan seperti hotkey-nya, dengan OSD, walau `hotswitch.enabled` (hotkey Hot
+  Switch) mati.
+- Dialog yang muncul (konflik paste) atau rename yang dimulai menutup palette.
+- Pembaca layar: daftar memakai role listbox dan setiap baris role option (label, keterangan, shortcut,
+  posisi). Kolom ketik menyebut baris yang sedang terpilih.
+- Tempat bisa dicari lewat path-nya, tetapi selalu di bawah kecocokan label.
+- `Ctrl+P` membuka panel yang sama untuk folder saja (quick open). Isinya, tiap folder sekali:
+  - Folder tab yang terbuka, dengan label kanan "Tab terbuka". Memilihnya pindah ke tab itu.
+  - Folder pinned.
+  - Folder yang dibuka selama sesi ini, terbaru dulu (maks 50, hanya di memori).
+  - Drive.
+  Menekan shortcut mode yang lain selagi panel terbuka langsung pindah mode.
 
 ## 9. Umpan balik status: OSD, chip, hint
 
@@ -348,7 +394,7 @@ dengan bahasa Windows pengguna.
 | Tombol bahaya | `button.danger.bg` | `…bg_hover` | gelap 5% | ring | opasitas 40% |
 | Toggle | off: border `toggle.off.border` | +`hover.bg` | on: `toggle.on.bg`, thumb `toggle.on.thumb` | ring | opasitas 40% |
 | Checkbox | border `checkbox.border` | +`hover.bg` | `checkbox.checked.bg` + `checkbox.check` | ring | opasitas 40% |
-| Input | `surface.input` + `border.input` | border lebih kuat | — | `border.input_focus` | `fg.disabled` |
+| Input | `surface.input` + `border.input` | `border.input_hover` | — | `border.input_focus` + cincin fokus | `fg.disabled` |
 | Menu konteks | `surface.overlay`, `shadow.popover` | `hover.bg` | `pressed.bg` | ring | `fg.disabled` |
 | Dialog/sheet | `surface.overlay`, `scrim`, `shadow.dialog` | — | — | fokus terperangkap | — |
 | Toast | `toast.bg`, `toast.fg` | tahan timer | — | dapat difokus via F6 | — |

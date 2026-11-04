@@ -136,6 +136,11 @@ Dragging (internal atau OLE):
 
 `scroll_terakhir` dicatat dari semua event scroll (wheel, touchpad pan, scrollbar) di window mana pun.
 
+Implementasi: `sx_core::drag` (logika murni, waktu dan posisi diberikan pemanggil). `DragPolicy` diisi dari
+snapshot switch; `DragPolicy::may_start`/`may_drop`/`effect` = aturan §5.3; `DragGuard` = state machine di
+atas. Policy saat tombol ditekan berlaku sampai drag selesai, jadi Hot Switch tidak memutus drag yang
+sedang berjalan. Sambungan ke OLE dan daftar menyusul bersama DnD.
+
 ### 5.5 Preset "Anti salah drag"
 
 | Flag | Nilai preset |
@@ -196,6 +201,10 @@ Jenis aksi:
 | `hotswitch.status_chip` | bool | true | Chip "Drag: …" di status bar |
 | `hotswitch.titlebar_badge` | bool | true | Badge "Drag mati" di title bar saat master mati |
 | `hotswitch.chord_timeout_ms` | u16 | 1500 | Batas waktu tombol kedua setelah `Ctrl+K` |
+
+Implementasi: `sx_ui::hotswitch`. Binding dibaca dari `sx_settings::DEFAULT_BINDINGS` (keymap.toml menyusul);
+setiap perubahan lewat `SettingsStore::run_hotswitch` menghasilkan `Change` yang memperbarui snapshot, chip,
+badge, dan OSD; `settings.toml` ditulis di thread `sx-settings`, berurutan.
 
 ### 6.4 Aturan perilaku
 - Chord `Ctrl+K` hanya aktif saat fokus **tidak** di input teks (kotak cari, rename, address bar), agar

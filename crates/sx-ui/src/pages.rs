@@ -13,7 +13,7 @@ use rust_i18n::t;
 use sx_core::Location;
 use sx_theme::Token;
 
-use crate::focus::{Ring, TabStop as _};
+use crate::focus::TabStop as _;
 use crate::format;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -84,7 +84,7 @@ impl Workspace {
                     let focus = self.focus_stop(&id, cx);
                     div()
                         .id(id.clone())
-                        .tab_stop_ring(&focus, Ring::plain().highlighted(lit), cx)
+                        .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusLg)), cx)
                         .flex()
                         .gap(t.px(Token::SpaceLg))
                         .w(tile_w)

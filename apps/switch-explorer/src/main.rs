@@ -10,7 +10,6 @@ mod logging;
 mod single;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context as _;
@@ -20,7 +19,7 @@ use gpui_kit::{
     App, AppContext as _, Global, WindowBackgroundAppearance, WindowBounds, WindowOptions, px, size,
 };
 use sx_core::{CommandRegistry, Location};
-use sx_settings::{Features, SettingsError, SettingsStore};
+use sx_settings::{SettingsError, SettingsStore};
 use sx_theme::Mode;
 use sx_ui::{OpenRequest, ThemeController, Workspace, WorkspaceOptions};
 
@@ -43,7 +42,8 @@ fn data_dir(var: &str) -> Option<PathBuf> {
 fn main() -> anyhow::Result<()> {
     let started = Instant::now();
     let args = Args::parse()?;
-    let (features, warnings) = load_settings(&args);
+    let (settings, warnings) = load_settings(&args);
+    let features = settings.snapshot();
     let level = if args.safe_mode {
         "debug"
     } else {
@@ -93,13 +93,13 @@ fn main() -> anyhow::Result<()> {
             if let Some(handle) = ipc {
                 cx.set_global(IpcServer(handle));
             }
-            open_main_window(&args, features, os_build, started, requests, cx);
+            open_main_window(&args, settings, os_build, started, requests, cx);
         });
     Ok(())
 }
 
 /// `settings.toml` (defaults in safe mode) plus the session overrides from the command line.
-fn load_settings(args: &Args) -> (Arc<Features>, Vec<SettingsError>) {
+fn load_settings(args: &Args) -> (SettingsStore, Vec<SettingsError>) {
     let (mut settings, mut warnings) = if args.safe_mode {
         (SettingsStore::in_memory(), Vec::new())
     } else {
@@ -115,12 +115,12 @@ fn load_settings(args: &Args) -> (Arc<Features>, Vec<SettingsError>) {
             warnings.push(err);
         }
     }
-    (settings.snapshot(), warnings)
+    (settings, warnings)
 }
 
 fn open_main_window(
     args: &Args,
-    features: Arc<Features>,
+    settings: SettingsStore,
     os_build: u32,
     started: Instant,
     requests: mpsc::UnboundedReceiver<OpenRequest>,
@@ -143,7 +143,7 @@ fn open_main_window(
     }
     let options = WorkspaceOptions {
         locations: start_locations(args),
-        features,
+        settings,
         backdrop_supported,
         appearance,
         forced_light: args.light,

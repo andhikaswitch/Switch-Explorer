@@ -266,6 +266,26 @@ di release).
 Diff inkremental lewat `ReadDirectoryChangesW` baru dikerjakan kalau pengukuran pada folder besar yang
 sering berubah menunjukkan perlu.
 
+## ADR-023 — Fuzzy matcher sendiri, bukan nucleo
+
+**Status:** Diterima (Fase 2).
+
+**Konteks.** Command palette (F-CMD-01) dan quick open (F-SRCH-04) membutuhkan pencocokan fuzzy.
+Rencana awal memakai nucleo. Kandidatnya pendek dan sedikit: label command, switch, dan tempat, jumlahnya
+ratusan.
+
+**Opsi.**
+- `nucleo-matcher`. Matcher yang sudah teruji, tetapi berlisensi MPL-2.0. Lisensi ini membawa kewajiban
+  sumber per file yang berbeda dari lisensi proyek (ADR-019), dan berarti satu dependency lagi.
+- Matcher sendiri di `sx-search::fuzzy`, bergaya fzf v1: maju, mundur ke jendela terpendek, lalu skor
+  dengan bonus awal kata, run, dan prefix.
+
+**Keputusan.** Matcher sendiri. Kodenya sekitar 150 baris dengan test peringkat, tanpa dependency, dan
+biayanya mikrodetik per ketikan untuk ratusan kandidat.
+
+**Konsekuensi.** Bila quick open kelak mencocokkan ribuan path dan hasilnya kurang baik atau terlalu
+lambat, `nucleo-matcher` dievaluasi ulang. API `fuzzy_match(query, candidate)` bisa dipertahankan.
+
 ---
 
 ## Template ADR

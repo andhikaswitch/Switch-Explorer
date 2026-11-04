@@ -14,7 +14,7 @@ use rust_i18n::t;
 use sx_ops::Resolution;
 use sx_theme::Token;
 
-use crate::focus::{self, Ring, TabStop as _};
+use crate::focus::{self, TabStop as _};
 use crate::ops::{Dialog, Job};
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -172,7 +172,11 @@ impl Workspace {
                     .child(
                         div()
                             .id("dialog-confirm")
-                            .tab_stop_ring(&confirm_focus, Ring::plain(), cx)
+                            .tab_stop_ring(
+                                &confirm_focus,
+                                self.ring_for(&confirm_focus, t.px(Token::RadiusSm)),
+                                cx,
+                            )
                             .flex()
                             .items_center()
                             .h(t.px(Token::SizeControl))
@@ -279,7 +283,7 @@ impl Workspace {
         let focus = self.focus_stop(&ElementId::Name("conflict-all".into()), cx);
         div()
             .id("conflict-all")
-            .tab_stop_ring(&focus, Ring::plain(), cx)
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusXs)), cx)
             .flex()
             .items_center()
             .gap(t.px(Token::SpaceSm))
@@ -315,6 +319,7 @@ impl Workspace {
 
     fn job_card(&self, job: &Job, cx: &Context<Self>) -> AnyElement {
         let cancel_id = ElementId::NamedInteger("job-cancel".into(), job.id);
+        let cancel_focus = self.focus_stop(&cancel_id, cx);
         let t = cx.tokens();
         let fraction = if job.progress.total == 0 {
             0.0
@@ -340,7 +345,11 @@ impl Workspace {
                     .child(
                         div()
                             .id(cancel_id.clone())
-                            .tab_stop_ring(&self.focus_stop(&cancel_id, cx), Ring::plain(), cx)
+                            .tab_stop_ring(
+                                &cancel_focus,
+                                self.ring_for(&cancel_focus, t.px(Token::RadiusSm)),
+                                cx,
+                            )
                             .flex()
                             .items_center()
                             .justify_center()
@@ -416,23 +425,29 @@ impl Workspace {
             .gap(t.px(Token::SpaceMd))
             .children(running.into_iter().map(|job| card().child(job)))
             .children(self.ops.toast.as_ref().map(|toast| {
-                focus::area(card().id("toast"), &self.toast_area).child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(t.px(Token::SpaceMd))
-                        .child(div().flex_1().min_w_0().child(toast.text.clone()))
-                        .when(toast.undo, |el| {
-                            el.child(self.text_button(
-                                "toast-undo",
-                                t!("ops.undo").into(),
-                                cx,
-                                |this, cx| {
-                                    this.undo(cx);
-                                },
-                            ))
-                        }),
-                )
+                focus::area(card().id("toast"), &self.toast_area)
+                    .on_hover(cx.listener(|this, hovered: &bool, _, _| {
+                        if let Some(toast) = this.ops.toast.as_mut() {
+                            toast.hovered = *hovered;
+                        }
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(t.px(Token::SpaceMd))
+                            .child(div().flex_1().min_w_0().child(toast.text.clone()))
+                            .when(toast.undo, |el| {
+                                el.child(self.text_button(
+                                    "toast-undo",
+                                    t!("ops.undo").into(),
+                                    cx,
+                                    |this, cx| {
+                                        this.undo(cx);
+                                    },
+                                ))
+                            }),
+                    )
             }))
             .into_any_element()
     }

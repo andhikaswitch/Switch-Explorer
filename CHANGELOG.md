@@ -32,6 +32,14 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Ikon sistem di daftar (cache terbatas `perf.icon_cache_entries`).
 - Pin/unpin folder di sidebar; nama `shell:` dan `~` di address bar.
 - ADR-021 (engine operasi file Fase 1), ADR-022 (watcher muat ulang debounce).
+- Hot Switch: `Ctrl+Shift+D` dan chord `Ctrl+K` (F, D, S, E, G, L, H, X, T, R) membalik switch seketika
+  dengan OSD di atas status bar, chip "Drag: aktif/sebagian/mati" (tooltip berisi semua switch drag dan
+  hotkey-nya), dan badge "Drag mati" di title bar. Preset "anti salah drag" bisa dinyalakan/dimatikan dan
+  mengembalikan nilai sebelumnya. Perubahan disimpan sesuai `hotswitch.persist`.
+- Ekstensi nama file bisa disembunyikan (`view.show_extensions`, `Ctrl+K`, `X`).
+- OSD Hot Switch menyebut dampaknya ("Drag file tetap aktif. Balik lagi: Ctrl+K, D"), naik + fade saat
+  muncul dan fade saat hilang (tanpa animasi bila `perf.animations` mati), tidak meneruskan klik ke daftar di
+  belakangnya, dan tampil di atas dialog. Toast tetap tampil selama di-hover atau difokus.
 - Progress operasi di tombol taskbar (`ops.taskbar_progress`).
 - Lebar kolom Diubah, Tipe, dan Ukuran bisa diseret di header (per tab, per sesi).
 - Navigasi keyboard di luar daftar: `Tab`/`Shift+Tab` ke tab, tombol nav, breadcrumb, dan item sidebar;
@@ -39,6 +47,28 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   Klik mouse tidak memindahkan fokus dari daftar.
 - Gerbang kontras mencakup lapisan di bawah latar dan 27 kelompok pasangan, termasuk indikator non-teks
   3:1 (THEMING §11).
+- Filter instan di kotak cari (`Ctrl+F`):
+  - Folder aktif difilter per ketikan, dan bagian nama yang cocok ditulis tebal.
+  - Status bar menulis "x dari y item".
+  - Bila tidak ada yang cocok, muncul pesan beserta tombol "Kosongkan pencarian".
+  - `Esc` mengosongkan filter; filter disimpan per tab.
+  - Di window sempit, kotak cari menjadi ikon.
+  - Token baru `match.fg`, `size.search_width`, dan `border.input_hover`.
+  - Kotak alamat dan kotak cari memakai cincin fokus standar saat fokus.
+- Pencarian rekursif (`Enter` di kotak cari, `Ctrl+E`, `F3`):
+  - Mencari di folder dan semua subfoldernya dengan operator `ext:`, `size:`, `modified:`, `kind:`,
+    wildcard, dan frasa berkutip.
+  - Hasil tampil sambil berjalan, dengan kolom Folder, lalu diurutkan saat selesai.
+  - Mengetik lagi membatalkan pencarian yang berjalan, lalu menjalankannya ulang setelah jeda ketik.
+  - Hasil bisa dibuka, di-rename, dihapus, dan disalin.
+  - `Esc` mengembalikan daftar folder.
+- Command palette (`Ctrl+Shift+P`, `F1`):
+  - Mencari command, switch Hot Switch (beserta statusnya), dan tempat dengan pencocokan fuzzy.
+  - Huruf yang cocok ditulis tebal, dan shortcut tampil di sisi kanan.
+  - Setelah palette tertutup, fokus kembali ke tempat semula.
+- ADR-023: matcher fuzzy sendiri di `sx-search`, bukan nucleo.
+- Quick open (`Ctrl+P`): lompat ke tab terbuka, folder pinned, folder yang dibuka di sesi ini, atau drive,
+  dengan pencocokan fuzzy pada nama dan path.
 
 ### Changed
 - ARCHITECTURE §8.4: perubahan tema dipicu notifikasi registry, bukan `WM_SETTINGCHANGE`.

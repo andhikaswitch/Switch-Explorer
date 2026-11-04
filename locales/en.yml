@@ -28,6 +28,7 @@ nav:
   shell_unsupported: "shell: names open in a later version. Type a full path instead."
   invalid_address: Can't open "%{input}". Type a full path, like C:\Users.
 details:
+  folder: Folder
   name: Name
   modified: Date modified
   type: Type
@@ -74,6 +75,27 @@ status:
   selected_one: 1 selected
   selected: "%{count} selected"
   free: "%{drive} %{free} free"
+  filtered: "%{shown} of %{total} items"
+  filtered_one: "%{shown} of 1 item"
+search:
+  label: Search this folder
+  placeholder: "Search %{folder}"
+  no_match: "Nothing in this folder matches \"%{query}\". Check the spelling, or clear the search."
+  clear: Clear search
+  clear_tip: Clear search (Esc)
+  placeholder_recursive: "Search %{folder} and subfolders"
+  searching: Searching…
+  status_running: "Searching… %{found}"
+  found_one: 1 result
+  found: "%{count} results"
+  no_results: "Nothing in %{folder} or its subfolders matches \"%{query}\". Check the spelling, or clear the search."
+  skipped_one: "1 folder could not be read"
+  skipped: "%{count} folders could not be read"
+  capped: "Stopped at %{count} results. Add words to narrow the search."
+  bad_size: "\"%{value}\" is not a size. Use a number with a unit, like size:>10mb or size:<500kb."
+  bad_age: "\"%{value}\" is not an age. Use a number with h, d, w, m or y, like modified:7d."
+  bad_kind: "\"%{value}\" is not a kind. Use kind:folder or kind:file."
+  failed: Search could not start. Close some windows and try again.
 size:
   bytes: "%{n} bytes"
 ops:
@@ -148,3 +170,103 @@ conflict:
   keep_both: Keep both
   replace_newer: Replace if newer
   apply_all: "Do this for all %{count} items"
+flag:
+  dnd:
+    enabled: All dragging
+    external: Dragging with other apps
+    external_out: Dragging out to other apps
+    external_in: Dragging in from other apps
+    source:
+      files: File dragging
+      folders: Folder dragging
+      sidebar: Dragging from the sidebar
+  sidebar:
+    pins_locked: Pinned folder lock
+  view:
+    show_hidden: Hidden items
+    show_extensions: File name extensions
+    thumbnails: Thumbnails
+  safety:
+    readonly_mode: Read-only mode
+preset:
+  anti_drag: Anti accidental drag
+hotswitch:
+  impact:
+    files_still_on: File dragging is still on.
+    folders_still_on: Folder dragging is still on.
+    sidebar_off: Sidebar items stay put.
+    dnd_off: Nothing can be dragged or dropped.
+    dnd_on: Dragging follows its switches again.
+    hidden_on: Hidden items are listed.
+    hidden_off: Hidden items are not listed.
+    extensions_on: Names show their extensions.
+    extensions_off: Names hide their extensions.
+    readonly_on: Files can't be changed here.
+    readonly_off: Files can be changed again.
+    pins_locked_on: Pinned folders can't be changed.
+    pins_locked_off: Pinned folders can be changed again.
+    external_off: Dragging inside Switch Explorer still works.
+  restored: Previous values are back.
+  "on": "%{name} turned on"
+  "off": "%{name} turned off"
+  set: "%{name}: %{value}"
+  group_on: "%{name} turned on (%{count} switches)"
+  group_off: "%{name} turned off (%{count} switches)"
+  preset_on: "%{name} preset on (%{count} switches changed)"
+  preset_off: "%{name} preset off"
+  again: "Toggle: %{keys}"
+  blocked: "Not in effect: all dragging is off."
+  needs_dev: "%{name} needs Developer Mode"
+  needs_dev_hint: Turn on Developer Mode in Settings first.
+  failed: "This switch can't change right now. Restart Switch Explorer and try again."
+  chip_on: "Drag: on"
+  chip_partial: "Drag: partly on"
+  chip_off: "Drag: off"
+  tip_on: "on"
+  tip_off: "off"
+  badge: Drag off
+command:
+  tab:
+    new: New tab
+    close: Close tab
+    next: Next tab
+    previous: Previous tab
+  nav:
+    back: Back
+    forward: Forward
+    up: Up one level
+    refresh: Refresh
+    focus_address: Edit the address
+  search:
+    filter: Filter this folder
+    find: Search this folder and subfolders
+  file:
+    rename: Rename
+    new_folder: New folder
+    delete: Delete to the Recycle Bin
+    delete_permanent: Delete permanently
+    copy: Copy
+    cut: Cut
+    paste: Paste
+    copy_path: Copy path
+  edit:
+    undo: Undo
+    redo: Redo
+    select_all: Select all
+  view:
+    toggle_sidebar: Show or hide the sidebar
+  app:
+    transfer_panel: Show the transfer panel
+    quick_open: Go to a folder
+  sidebar:
+    pin: Pin or unpin this folder
+palette:
+  label: Command palette
+  label_folders: Quick open
+  placeholder: Type a command, a switch or a place
+  placeholder_folders: Type a folder name or path
+  open_tab: Open tab
+  empty: "Nothing matches \"%{query}\". Try fewer letters."
+  switch_on: Switch, on
+  switch_off: Switch, off
+  place: Place

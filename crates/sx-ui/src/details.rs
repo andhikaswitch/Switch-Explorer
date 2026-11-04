@@ -5,6 +5,7 @@ use std::ops::Range;
 
 use gpui_kit::component::input::Input;
 use gpui_kit::component::scroll::ScrollableElement as _;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -19,7 +20,7 @@ use sx_fs::Column;
 use sx_theme::Token;
 
 use crate::actions::{self, LIST_CONTEXT};
-use crate::focus::{Ring, TabStop as _};
+use crate::focus::TabStop as _;
 use crate::tab::Content;
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
@@ -29,6 +30,7 @@ use crate::workspace::Workspace;
 const COL_MODIFIED: f32 = 160.0;
 const COL_TYPE: f32 = 140.0;
 const COL_SIZE: f32 = 96.0;
+const COL_FOLDER: f32 = 240.0;
 /// How narrow or wide a column can be dragged.
 const COL_MIN: f32 = 56.0;
 const COL_MAX: f32 = 480.0;
@@ -36,6 +38,8 @@ const COL_MAX: f32 = 480.0;
 /// for a readable file name next to the other columns.
 const HIDE_TYPE_BELOW: f32 = 640.0;
 const HIDE_MODIFIED_BELOW: f32 = 480.0;
+/// Room Name keeps for a readable file name next to the Folder column of search results.
+const NAME_MIN: f32 = 200.0;
 
 /// The widths of a tab's fixed columns, as the user dragged them (per tab, for the session).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,6 +47,7 @@ pub(crate) struct ColumnWidths {
     modified: f32,
     kind: f32,
     size: f32,
+    folder: f32,
 }
 
 impl Default for ColumnWidths {
@@ -51,6 +56,7 @@ impl Default for ColumnWidths {
             modified: COL_MODIFIED,
             kind: COL_TYPE,
             size: COL_SIZE,
+            folder: COL_FOLDER,
         }
     }
 }
@@ -61,6 +67,7 @@ impl ColumnWidths {
             Column::Modified => Some(self.modified),
             Column::Type => Some(self.kind),
             Column::Size => Some(self.size),
+            Column::Folder => Some(self.folder),
             Column::Name => None,
         }
     }
@@ -71,6 +78,7 @@ impl ColumnWidths {
             Column::Modified => self.modified = width,
             Column::Type => self.kind = width,
             Column::Size => self.size = width,
+            Column::Folder => self.folder = width,
             Column::Name => {}
         }
     }
@@ -95,17 +103,26 @@ impl Render for ColumnDrag {
 
 #[derive(Clone, Copy)]
 struct Columns {
+    /// Search results only.
+    folder: Option<Pixels>,
     modified: Option<Pixels>,
     kind: Option<Pixels>,
     size: Pixels,
 }
 
 impl Columns {
-    fn for_width(width: Pixels, widths: &ColumnWidths) -> Self {
+    fn for_width(width: Pixels, widths: &ColumnWidths, results: bool) -> Self {
         let width = f32::from(width);
+        // Results give the room of Type, then Modified, to Folder. Folder itself shrinks to
+        // leave Name its room, and goes when not even its minimum fits.
+        let folder = results
+            .then(|| widths.folder.min(width - widths.size - NAME_MIN))
+            .filter(|w| *w >= COL_MIN);
+        let extra = folder.unwrap_or(0.0);
         Self {
-            modified: (width >= HIDE_MODIFIED_BELOW).then(|| gpui_kit::px(widths.modified)),
-            kind: (width >= HIDE_TYPE_BELOW).then(|| gpui_kit::px(widths.kind)),
+            folder: folder.map(gpui_kit::px),
+            modified: (width >= HIDE_MODIFIED_BELOW + extra).then(|| gpui_kit::px(widths.modified)),
+            kind: (width >= HIDE_TYPE_BELOW + extra).then(|| gpui_kit::px(widths.kind)),
             size: gpui_kit::px(widths.size),
         }
     }
@@ -129,7 +146,14 @@ impl Workspace {
             }
             (Content::Failed(message), _) => self.render_failure(message.clone(), cx),
             (Content::Folder(snapshot), _) if snapshot.visible_len() == 0 => {
-                self.centered(Some(t!("details.empty").into()), cx)
+                let tab = self.tab();
+                if tab.search.as_ref().is_some_and(|s| s.running) {
+                    self.centered(Some(t!("search.searching").into()), cx)
+                } else if tab.search.is_none() && tab.filter.is_empty() {
+                    self.centered(Some(t!("details.empty").into()), cx)
+                } else {
+                    self.render_no_match(cx)
+                }
             }
             (Content::Folder(_), _) => self.render_details(window, cx).into_any_element(),
         };
@@ -184,6 +208,43 @@ impl Workspace {
             .into_any_element()
     }
 
+    /// Nothing in the folder matches the filter: say so, and offer to clear it.
+    fn render_no_match(&self, cx: &Context<Self>) -> AnyElement {
+        let t = cx.tokens();
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .items_center()
+            .justify_center()
+            .gap(t.px(Token::SpaceLg))
+            .p(t.px(Token::Space2xl))
+            .child(
+                div()
+                    .max_w(t.px(Token::SizeSidebar) * 2.0)
+                    .text_center()
+                    .text_color(t.color(Token::FgSecondary))
+                    .child(SharedString::from(if self.tab().search.is_some() {
+                        t!(
+                            "search.no_results",
+                            query = crate::search::quoted_query(&self.tab().filter),
+                            folder = self.tab().title()
+                        )
+                    } else {
+                        t!(
+                            "search.no_match",
+                            query = crate::search::quoted_query(&self.tab().filter)
+                        )
+                    })),
+            )
+            .child(
+                self.text_button("search-clear", t!("search.clear").into(), cx, |this, cx| {
+                    this.set_filter("", cx);
+                }),
+            )
+            .into_any_element()
+    }
+
     fn render_failure(&self, message: SharedString, cx: &Context<Self>) -> AnyElement {
         let t = cx.tokens();
         let can_up = self.tab().location().parent().is_some();
@@ -229,17 +290,15 @@ impl Workspace {
         let focus = self.focus_stop(&ElementId::Name(id.into()), cx);
         div()
             .id(id)
-            .tab_stop_ring(
-                &focus,
-                Ring::over(t.color(Token::ButtonSecondaryBorder)),
-                cx,
-            )
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
             .flex()
             .items_center()
             .h(t.px(Token::SizeControl))
             .px(t.px(Token::SpaceLg))
             .rounded(t.px(Token::RadiusSm))
             .bg(t.paint(Token::ButtonSecondaryBg))
+            .border_1()
+            .border_color(t.color(Token::ButtonSecondaryBorder))
             .text_color(t.color(Token::ButtonSecondaryFg))
             .hover(move |s| s.bg(hover).text_color(hover_fg).border_color(clear))
             .active(move |s| s.bg(pressed).text_color(hover_fg).border_color(clear))
@@ -254,8 +313,12 @@ impl Workspace {
         } else {
             gpui_kit::px(0.0)
         };
-        let columns =
-            Columns::for_width(window.viewport_size().width - sidebar, &self.tab().columns);
+        let results = self.tab().snapshot().is_some_and(|s| s.is_results());
+        let columns = Columns::for_width(
+            window.viewport_size().width - sidebar,
+            &self.tab().columns,
+            results,
+        );
         let count = self.tab().row_count();
         let focused = self.list_focus.is_focused(window);
         let list = div()
@@ -423,6 +486,14 @@ impl Workspace {
                 t!("details.name").into(),
                 None,
             ))
+            .when_some(columns.folder, |el, w| {
+                el.child(cell(
+                    "col-folder",
+                    Column::Folder,
+                    t!("details.folder").into(),
+                    Some(w),
+                ))
+            })
             .when_some(columns.modified, |el, w| {
                 el.child(cell(
                     "col-modified",
@@ -524,7 +595,7 @@ impl Workspace {
                     focused,
                     is_focus: focused && focus_row == Some(row),
                 };
-                let text = tab.row_text(row)?;
+                let text = tab.row_text(row, self.features.view_show_extensions)?;
                 let kind = self.row_kind(row)?;
                 Some((row, kind, text, state))
             })
@@ -642,10 +713,24 @@ impl Workspace {
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .child(text.name)
+                            .child(crate::search::highlighted(
+                                text.name,
+                                text.matched,
+                                s.match_fg,
+                            ))
                             .into_any_element(),
                     }),
             )
+            .when_some(columns.folder, |el, w| {
+                // The cell cuts long paths at the end; the tooltip has all of it.
+                let full = text.folder_full.clone();
+                el.child(
+                    cell(w)
+                        .id(ElementId::NamedInteger("found-in".into(), row as u64))
+                        .tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
+                        .child(text.folder),
+                )
+            })
             .when_some(columns.modified, |el, w| {
                 el.child(cell(w).child(text.modified))
             })
@@ -713,6 +798,8 @@ struct RowStyle {
     icon: Pixels,
     space_sm: Pixels,
     radius: Pixels,
+    /// The colour of the filter's match in names.
+    match_fg: Hsla,
 }
 
 impl RowStyle {
@@ -731,6 +818,7 @@ impl RowStyle {
             icon: t.px(Token::SizeIconSm),
             space_sm: t.px(Token::SpaceSm),
             radius: t.px(Token::RadiusSm),
+            match_fg: t.color(Token::MatchFg),
         }
     }
 }
@@ -749,5 +837,28 @@ mod tests {
         assert_eq!(widths.get(Column::Size), Some(COL_MAX));
         assert_eq!(widths.get(Column::Type), Some(COL_TYPE));
         assert_eq!(widths.get(Column::Name), None);
+    }
+
+    #[test]
+    fn results_keep_room_for_names() {
+        let widths = ColumnWidths::default();
+        let wide = Columns::for_width(gpui_kit::px(1200.0), &widths, true);
+        assert_eq!(wide.folder, Some(gpui_kit::px(COL_FOLDER)));
+        assert!(wide.modified.is_some() && wide.kind.is_some());
+        // A narrow window: Folder shrinks so Name keeps its room; Type and Modified go.
+        let narrow = Columns::for_width(gpui_kit::px(408.0), &widths, true);
+        let folder = f32::from(narrow.folder.unwrap());
+        assert!(folder >= COL_MIN && 408.0 - folder - COL_SIZE >= NAME_MIN);
+        assert!(narrow.modified.is_none() && narrow.kind.is_none());
+        // Too narrow for even a short Folder column: Name wins.
+        assert_eq!(
+            Columns::for_width(gpui_kit::px(320.0), &widths, true).folder,
+            None
+        );
+        // A folder listing has no Folder column.
+        assert_eq!(
+            Columns::for_width(gpui_kit::px(1200.0), &widths, false).folder,
+            None
+        );
     }
 }

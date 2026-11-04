@@ -17,6 +17,7 @@ serde_json.workspace = true
 sx-core.workspace = true
 sx-fs.workspace = true
 sx-ops.workspace = true
+sx-search.workspace = true
 sx-settings.workspace = true
 sx-shell.workspace = true
 sx-theme.workspace = true

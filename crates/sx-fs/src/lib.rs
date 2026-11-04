@@ -7,4 +7,4 @@ pub mod snapshot;
 
 pub use address::Address;
 pub use load::{LoadError, load};
-pub use snapshot::{Column, DirSnapshot, EntryView, SortSpec, ViewOptions};
+pub use snapshot::{Column, DirSnapshot, EntryView, SortSpec, ViewOptions, fold_case};

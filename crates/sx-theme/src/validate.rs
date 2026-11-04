@@ -7,16 +7,16 @@ use crate::color::{Rgba, contrast};
 use crate::resolve::{Mode, ResolvedTheme};
 use crate::schema::Token::{
     self, AccentSolid, AccentSolidHover, AccentSolidPressed, AccentText, BgContent, BgSidebar,
-    BgStatusbar, BgTitlebar, BgWindow, BorderInput, BorderInputFocus, BreadcrumbCurrentFg,
-    BreadcrumbFg, ButtonDangerBg, ButtonDangerBgHover, ButtonDangerFg, ButtonGhostBgHover,
-    ButtonGhostBgPressed, ButtonGhostFgHover, ButtonPrimaryBg, ButtonPrimaryBgHover,
-    ButtonPrimaryBgPressed, ButtonPrimaryFg, ButtonSecondaryBg, ButtonSecondaryBgHover,
-    ButtonSecondaryBgPressed, ButtonSecondaryFg, ButtonSecondaryFgHover, CardHoverFg,
-    CheckboxBorder, CheckboxCheck, CheckboxCheckedBg, DangerText, DropBlockedBorder,
-    DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing,
-    FocusRingOnHighlight, HeaderFg, InfoText, InputPlaceholder, NavItemActiveBg, NavItemActiveFg,
-    NavItemFg, NavItemHoverBg, NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg,
-    OsdIconOff, OsdIconOn, OsdStateOff, OsdStateOn, ProgressFill, RowSelectedBg,
+    BgStatusbar, BgTitlebar, BgWindow, BorderInput, BorderInputFocus, BorderInputHover,
+    BreadcrumbCurrentFg, BreadcrumbFg, ButtonDangerBg, ButtonDangerBgHover, ButtonDangerFg,
+    ButtonGhostBgHover, ButtonGhostBgPressed, ButtonGhostFgHover, ButtonPrimaryBg,
+    ButtonPrimaryBgHover, ButtonPrimaryBgPressed, ButtonPrimaryFg, ButtonSecondaryBg,
+    ButtonSecondaryBgHover, ButtonSecondaryBgPressed, ButtonSecondaryFg, ButtonSecondaryFgHover,
+    CardHoverFg, CheckboxBorder, CheckboxCheck, CheckboxCheckedBg, DangerText, DropBlockedBorder,
+    DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing, HeaderFg,
+    InfoText, InputPlaceholder, MatchFg, NavItemActiveBg, NavItemActiveFg, NavItemFg,
+    NavItemHoverBg, NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg, OsdIconOff,
+    OsdIconOn, OsdStateOff, OsdStateOn, ProgressFill, RowHoverBg, RowSelectedBg, RowSelectedBorder,
     RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff, StatuschipOn,
     StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover, SurfaceChip, SurfaceInput,
     SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg, ToastFg,
@@ -60,6 +60,33 @@ pub const PAIRS: &[ContrastPair] = &[
         TEXT,
     ),
     pair(&[HeaderFg], &[BgContent], &[], TEXT),
+    // The command palette: text and matches on the overlay and on its rows.
+    pair(
+        &[FgPrimary, FgSecondary, FgMuted, MatchFg],
+        &[SurfaceOverlay],
+        &[BgContent],
+        TEXT,
+    ),
+    pair(
+        &[FgPrimary, FgSecondary, FgMuted, MatchFg],
+        &[RowHoverBg, RowSelectedBg],
+        &[BgContent, SurfaceOverlay],
+        TEXT,
+    ),
+    pair(
+        &[RowSelectedBorder],
+        &[SurfaceOverlay],
+        &[BgContent],
+        NON_TEXT,
+    ),
+    // The matching part of a name, on every row state.
+    pair(&[MatchFg], &[BgContent], &[], TEXT),
+    pair(
+        &[MatchFg],
+        &[RowHoverBg, RowSelectedBg, RowSelectedInactiveBg],
+        &[BgContent],
+        TEXT,
+    ),
     // Chrome text: command bar buttons (bg.window), status bar, sidebar captions.
     pair(
         &[FgPrimary, FgSecondary],
@@ -152,32 +179,34 @@ pub const PAIRS: &[ContrastPair] = &[
     ),
     // Boundaries and state indicators (WCAG 1.4.11).
     pair(
-        &[FocusRing, BorderInput, BorderInputFocus],
+        &[FocusRing, BorderInput, BorderInputFocus, BorderInputHover],
         &[BgContent, SurfaceInput],
         &[],
         NON_TEXT,
     ),
     // The address field sits on the command bar; focus rings also land on chrome surfaces.
-    pair(&[BorderInput, BorderInputFocus], &[BgWindow], &[], NON_TEXT),
+    pair(
+        &[BorderInput, BorderInputFocus, BorderInputHover],
+        &[BgWindow],
+        &[],
+        NON_TEXT,
+    ),
     pair(
         &[FocusRing],
         &[BgSidebar, BgTitlebar, BgWindow],
         &[],
         NON_TEXT,
     ),
-    // A focused control can be highlighted at the same time (the active item, a stale hover).
+    // The ring goes around controls on dialogs, toasts and cards too.
     pair(
-        &[FocusRingOnHighlight],
-        &[NavItemActiveBg, NavItemHoverBg, NavItemPressedBg],
-        &[BgSidebar],
+        &[FocusRing],
+        &[SurfaceOverlay, ToastBg, SurfaceCard],
+        &[BgContent],
         NON_TEXT,
     ),
-    pair(
-        &[FocusRingOnHighlight],
-        &[ButtonGhostBgHover, ButtonGhostBgPressed],
-        &[BgWindow],
-        NON_TEXT,
-    ),
+    // Hot Switch: the OSD caption, and the "Drag off" badge in the title bar.
+    pair(&[FgSecondary], &[OsdBg], &[BgContent], TEXT),
+    pair(&[StatuschipOff], &[BgTitlebar], &[], TEXT),
     pair(
         &[CheckboxBorder, ToggleOffBorder, SelectionBorder],
         &[BgContent],

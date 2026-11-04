@@ -6,6 +6,14 @@ use std::rc::Rc;
 
 use gpui_kit::{Action, App, KeyBinding, KeyBindingContextPredicate, actions};
 use sx_core::{CommandContext, CommandRegistry};
+use sx_settings::{DEFAULT_BINDINGS, HotSwitchAction};
+
+/// Runs a Hot Switch binding: its index in `sx_settings::DEFAULT_BINDINGS`.
+#[derive(Clone, Debug, PartialEq, Action)]
+#[action(namespace = sx, no_json)]
+pub struct HotSwitch {
+    pub binding: usize,
+}
 
 actions!(
     sx,
@@ -15,6 +23,10 @@ actions!(
         NavUp,
         NavRefresh,
         FocusAddress,
+        SearchFilter,
+        SearchFind,
+        CommandPalette,
+        QuickOpen,
         TabNew,
         TabClose,
         TabNext,
@@ -67,6 +79,10 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "nav.up" => Box::new(NavUp),
         "nav.refresh" => Box::new(NavRefresh),
         "nav.focus_address" => Box::new(FocusAddress),
+        "search.filter" => Box::new(SearchFilter),
+        "search.find" => Box::new(SearchFind),
+        "app.command_palette" => Box::new(CommandPalette),
+        "app.quick_open" => Box::new(QuickOpen),
         "tab.new" => Box::new(TabNew),
         "tab.close" => Box::new(TabClose),
         "tab.next" => Box::new(TabNext),
@@ -91,6 +107,15 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "view.previous_area" => Box::new(FocusPreviousArea),
         _ => return None,
     })
+}
+
+/// The commands the palette offers (shown there and implemented here).
+pub(crate) fn palette_commands() -> Vec<(&'static sx_core::CommandSpec, Box<dyn Action>)> {
+    sx_core::command::BUILTIN
+        .iter()
+        .filter(|spec| spec.in_palette)
+        .filter_map(|spec| action_for(spec.id).map(|action| (spec, action)))
+        .collect()
 }
 
 /// Commands that also work while typing: moving between areas leaves a text input.
@@ -151,5 +176,33 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
         KeyBinding::new("tab", FocusNextStop, Some(WORKSPACE_CONTEXT)),
         KeyBinding::new("shift-tab", FocusPreviousStop, Some(WORKSPACE_CONTEXT)),
     ]);
+    bind_hot_switches(&mut bindings, cx);
     cx.bind_keys(bindings);
+}
+
+/// The Hot Switch bindings (DEVELOPER-MODE.md §6.2). Chords (`Ctrl+K`, then a letter) are off
+/// in text inputs, where they would eat what is typed; single combinations work anywhere.
+fn bind_hot_switches(bindings: &mut Vec<KeyBinding>, cx: &App) {
+    for (binding, spec) in DEFAULT_BINDINGS.iter().enumerate() {
+        // The Hot Switch panel comes later; its keys stay free.
+        if matches!(spec.action, HotSwitchAction::Panel) {
+            continue;
+        }
+        let context = if spec.keys.contains(' ') {
+            "Workspace && !Input"
+        } else {
+            WORKSPACE_CONTEXT
+        };
+        match KeyBinding::load(
+            spec.keys,
+            Box::new(HotSwitch { binding }),
+            KeyBindingContextPredicate::parse(context).ok().map(Rc::new),
+            false,
+            None,
+            cx,
+        ) {
+            Ok(key) => bindings.push(key),
+            Err(err) => tracing::warn!(keys = spec.keys, error = ?err, "bad hot switch binding"),
+        }
+    }
 }
