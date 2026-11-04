@@ -148,8 +148,8 @@ impl Workspace {
     /// `F6` / `Shift+F6`: the command bar, the sidebar (when shown), the list and the toast
     /// (when it has an action), in a cycle.
     fn focus_area(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
-        // A dialog keeps the focus until it closes (DESIGN.md §11).
-        if self.ops.dialog.is_some() {
+        // A dialog or the palette keeps the focus until it closes (DESIGN.md §11).
+        if self.ops.dialog.is_some() || self.palette.is_some() {
             return;
         }
         let areas = self.focus_areas();
@@ -195,6 +195,9 @@ impl Workspace {
     /// `Tab` / `Shift+Tab`: the next or previous stop in screen order; inside an open dialog,
     /// around its buttons only.
     fn focus_stop_step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.palette.is_some() {
+            return;
+        }
         if self.ops.dialog.is_some() {
             let stops = self.dialog_stops();
             if stops.is_empty() {
@@ -220,6 +223,10 @@ impl Workspace {
     pub(crate) fn restore_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.ops.dialog.is_some() {
             window.focus(&self.dialog_focus, cx);
+            return;
+        }
+        if let Some(palette) = &self.palette {
+            palette.focus_input(window, cx);
             return;
         }
         let target = window.focus_lost_restore_target(cx);

@@ -269,6 +269,8 @@ define_tokens! {
     SizeOsdOffset = "size.osd_offset": Number,
     // The search box in the command bar (DESIGN.md §8.1).
     SizeSearchWidth = "size.search_width": Number,
+    // The command palette (F-CMD-01).
+    SizePaletteWidth = "size.palette_width": Number,
     FocusRingWidth = "focus.ring_width": Number,
     // Opacity of disabled controls (0..1).
     OpacityDisabled = "opacity.disabled": Number,

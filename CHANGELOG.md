@@ -62,6 +62,11 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - Mengetik lagi membatalkan pencarian yang berjalan, lalu menjalankannya ulang setelah jeda ketik.
   - Hasil bisa dibuka, di-rename, dihapus, dan disalin.
   - `Esc` mengembalikan daftar folder.
+- Command palette (`Ctrl+Shift+P`, `F1`):
+  - Mencari command, switch Hot Switch (beserta statusnya), dan tempat dengan pencocokan fuzzy.
+  - Huruf yang cocok ditulis tebal, dan shortcut tampil di sisi kanan.
+  - Setelah palette tertutup, fokus kembali ke tempat semula.
+- ADR-023: matcher fuzzy sendiri di `sx-search`, bukan nucleo.
 
 ### Changed
 - ARCHITECTURE §8.4: perubahan tema dipicu notifikasi registry, bukan `WM_SETTINGCHANGE`.

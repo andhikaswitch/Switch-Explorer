@@ -16,7 +16,7 @@ use crate::schema::Token::{
     DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing, HeaderFg,
     InfoText, InputPlaceholder, MatchFg, NavItemActiveBg, NavItemActiveFg, NavItemFg,
     NavItemHoverBg, NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg, OsdIconOff,
-    OsdIconOn, OsdStateOff, OsdStateOn, ProgressFill, RowHoverBg, RowSelectedBg,
+    OsdIconOn, OsdStateOff, OsdStateOn, ProgressFill, RowHoverBg, RowSelectedBg, RowSelectedBorder,
     RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff, StatuschipOn,
     StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover, SurfaceChip, SurfaceInput,
     SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg, ToastFg,
@@ -60,6 +60,25 @@ pub const PAIRS: &[ContrastPair] = &[
         TEXT,
     ),
     pair(&[HeaderFg], &[BgContent], &[], TEXT),
+    // The command palette: text and matches on the overlay and on its rows.
+    pair(
+        &[FgPrimary, FgSecondary, FgMuted, MatchFg],
+        &[SurfaceOverlay],
+        &[BgContent],
+        TEXT,
+    ),
+    pair(
+        &[FgPrimary, FgSecondary, FgMuted, MatchFg],
+        &[RowHoverBg, RowSelectedBg],
+        &[BgContent, SurfaceOverlay],
+        TEXT,
+    ),
+    pair(
+        &[RowSelectedBorder],
+        &[SurfaceOverlay],
+        &[BgContent],
+        NON_TEXT,
+    ),
     // The matching part of a name, on every row state.
     pair(&[MatchFg], &[BgContent], &[], TEXT),
     pair(

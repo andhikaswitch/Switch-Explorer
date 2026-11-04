@@ -67,6 +67,8 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
 
 - [ ] Context menu bertema + "Tampilkan opsi lain" (menu native, forwarding pesan), menu background & sidebar.
 - [ ] `CommandRegistry`; command palette (`Ctrl+Shift+P`); quick open (`Ctrl+P`).
+      Progres: command palette selesai (DESIGN §8.9; fuzzy dengan matcher sendiri, ADR-023). Isinya
+      command, switch beserta statusnya, dan tempat; label command ada dalam en dan id. Belum: quick open.
 - [ ] OLE drag & drop dua arah (termasuk virtual files) + drag internal ke folder/sidebar/breadcrumb/tab.
 - [ ] **Drag Guard** lengkap (DEVELOPER-MODE.md §5) + preset "Anti salah drag" + test state machine.
       Progres: aturan §5.3 dan state machine §5.4 di `sx_core::drag` dengan tabel test; preset bisa di-toggle

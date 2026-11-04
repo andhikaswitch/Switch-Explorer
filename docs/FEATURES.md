@@ -122,7 +122,7 @@ Setiap fitur punya ID `F-AREA-nn`, prioritas (P0/P1/P2), dan fase (F0–F8). Fla
 | F-SRCH-01 | Filter instan di folder aktif (`Ctrl+F` atau mengetik di kotak cari), highlight kecocokan, ≤ 16 ms per ketikan untuk 10k item | P0 | F2 |
 | F-SRCH-02 | Pencarian rekursif (Enter di kotak cari, `Ctrl+E`, `F3`): hasil streaming + kolom Path; operator `ext:pdf`, `size:>10mb`, `modified:7d`, `kind:folder`, wildcard `*`/`?`; dibatalkan saat query berubah | P1 | F2 |
 | F-SRCH-03 | Integrasi Everything (`search.everything`): bila Everything berjalan, pakai IPC-nya untuk hasil instan seluruh disk | P1 | F2 |
-| F-SRCH-04 | Fuzzy (palette & quick open) via nucleo (`search.fuzzy`) | P1 | F2 |
+| F-SRCH-04 | Fuzzy (palette & quick open) dengan matcher sendiri (ADR-023, `search.fuzzy`) | P1 | F2 |
 | F-SRCH-05 | Cari isi file teks/kode (`search.content`, beta) | P2 | F7 |
 
 Kotak cari (F-SRCH-01) ada di ujung kanan command bar untuk folder ("Cari di Received"), tidak untuk
@@ -228,7 +228,7 @@ Home, This PC, dan Recycle Bin.
 
 | ID | Fitur | P | Fase |
 |---|---|---|---|
-| F-CMD-01 | Command palette (`Ctrl+Shift+P`, `F1`): semua command, switch, dan navigasi; fuzzy; menampilkan shortcut | P1 | F2 |
+| F-CMD-01 | Command palette (`Ctrl+Shift+P`, `F1`): semua command, switch, dan navigasi; fuzzy; menampilkan shortcut (DESIGN §8.9). Isinya command yang sudah diimplementasi, switch Hot Switch dengan statusnya (dijalankan lewat Hot Switch, jadi OSD tetap muncul), serta Home, This PC, drive, folder pinned, dan Recycle Bin. Tempat juga bisa dicari lewat path-nya. | P1 | F2 |
 | F-SET-01 | Settings: Umum, Tampilan, Keyboard, Drag & drop, File & operasi, Integrasi (onboarding + status + perbaiki), Akun, Tools, Performa, Developer (saat dev mode), Tentang | P0 | F1–F3 |
 | F-NOTIF-01 | Toast in-app (kanan bawah, maks 3, hilang 4 s kecuali error), OSD Hot Switch (tengah bawah), panel Transfer, notifikasi Windows opsional saat operasi panjang selesai di background | P0 | F1–F2 |
 | F-I18N-01 | Bahasa mengikuti bahasa tampilan Windows (id → Indonesia, lainnya → Inggris), bisa diganti; format tanggal/angka mengikuti locale Windows | P0 | F1 |

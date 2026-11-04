@@ -225,3 +225,44 @@ hotswitch:
   tip_on: "on"
   tip_off: "off"
   badge: Drag off
+command:
+  tab:
+    new: New tab
+    close: Close tab
+    next: Next tab
+    previous: Previous tab
+  nav:
+    back: Back
+    forward: Forward
+    up: Up one level
+    refresh: Refresh
+    focus_address: Edit the address
+  search:
+    filter: Filter this folder
+    find: Search this folder and subfolders
+  file:
+    rename: Rename
+    new_folder: New folder
+    delete: Delete to the Recycle Bin
+    delete_permanent: Delete permanently
+    copy: Copy
+    cut: Cut
+    paste: Paste
+    copy_path: Copy path
+  edit:
+    undo: Undo
+    redo: Redo
+    select_all: Select all
+  view:
+    toggle_sidebar: Show or hide the sidebar
+  app:
+    transfer_panel: Show the transfer panel
+  sidebar:
+    pin: Pin or unpin this folder
+palette:
+  label: Command palette
+  placeholder: Type a command, a switch or a place
+  empty: "Nothing matches \"%{query}\". Try fewer letters."
+  switch_on: Switch, on
+  switch_off: Switch, off
+  place: Place

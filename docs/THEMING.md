@@ -56,7 +56,7 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Bayangan | `shadow.card`, `shadow.popover`, `shadow.dialog`, `shadow.glow` | Shadow |
 | Angka | `radius.*`, `space.*`, `row.height.*`, `row.cut.opacity`, `slash.angle_deg`, `slash.edge_width`, `motion.*` | Number |
 | Tipografi | `font.size.{caption,body,subtitle,title,display}`, `font.line.{…}` (px, DESIGN §4) | Number |
-| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `size.osd_{height,min_width,max_width,offset}` (OSD Hot Switch, DESIGN §9.1), `size.search_width` (kotak cari, DESIGN §8.1), `focus.ring_width`, `opacity.disabled` | Number |
+| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `size.osd_{height,min_width,max_width,offset}` (OSD Hot Switch, DESIGN §9.1), `size.search_width` (kotak cari, DESIGN §8.1), `size.palette_width` (command palette), `focus.ring_width`, `opacity.disabled` | Number |
 | Font | `font.ui`, `font.display`, `font.mono` (daftar fallback), `font.scale` | Font/Number |
 
 Setiap token dideklarasikan sekali di `sx-theme` lewat `define_tokens!` (id, tipe, grup, deskripsi i18n,
@@ -173,6 +173,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "size.osd_max_width" = 420
 "size.osd_offset" = 72
 "size.search_width" = 240
+"size.palette_width" = 560
 "focus.ring_width" = 2
 "opacity.disabled" = 0.4
 
@@ -496,6 +497,8 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 | `fg.primary`, `fg.secondary`, `fg.muted` | `row.selected.bg`, `row.selected_inactive.bg` (di atas `bg.content`) | 4.5:1 |
 | `header.fg` | `bg.content` | 4.5:1 |
 | `match.fg` | `bg.content`; `row.hover.bg`, `row.selected.bg`, `row.selected_inactive.bg` (di atas `bg.content`) | 4.5:1 |
+| `fg.primary`, `fg.secondary`, `fg.muted`, `match.fg` | `surface.overlay`; `row.hover.bg`, `row.selected.bg` di atas `surface.overlay` (command palette) | 4.5:1 |
+| `row.selected.border` | `surface.overlay` (baris terpilih di palette) | 3:1 |
 | `fg.primary`, `fg.secondary` | `bg.window` (command bar), `bg.statusbar` | 4.5:1 |
 | `fg.primary`, `fg.secondary`, `fg.muted` | `bg.sidebar` | 4.5:1 |
 | `nav.item.fg`, `nav.section.fg` | `bg.sidebar` | 4.5:1 |

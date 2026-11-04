@@ -269,14 +269,35 @@ fn binding_keys(id: &str) -> Option<String> {
 }
 
 impl Workspace {
-    /// Runs the Hot Switch binding at `index` of `DEFAULT_BINDINGS`.
+    /// The name of a Hot Switch binding and whether it is on now (for the command palette).
+    pub(crate) fn binding_summary(&self, index: usize) -> Option<(String, bool)> {
+        let binding = DEFAULT_BINDINGS.get(index)?;
+        let on = |id: &str| self.features.get(id).is_some_and(|value| is_on(&value));
+        Some(match binding.action {
+            HotSwitchAction::Toggle(id) => (label(id), on(id)),
+            HotSwitchAction::Group(ids) => (group_label(ids), ids.iter().any(|id| on(id))),
+            HotSwitchAction::Preset(id) => (
+                t!(format!("preset.{id}")).into_owned(),
+                self.settings.preset_active(id),
+            ),
+            HotSwitchAction::Panel => return None,
+        })
+    }
+
+    /// Runs the Hot Switch binding at `index` of `DEFAULT_BINDINGS` from its key, unless the
+    /// Hot Switch keys are off (`hotswitch.enabled`).
     pub(crate) fn run_hot_switch(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.features.hotswitch_enabled {
+            self.run_switch_binding(index, cx);
+        }
+    }
+
+    /// Runs a Hot Switch binding and shows its OSD (also from the command palette, which the
+    /// Hot Switch keys being off does not stop).
+    pub(crate) fn run_switch_binding(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(binding) = DEFAULT_BINDINGS.get(index) else {
             return;
         };
-        if !self.features.hotswitch_enabled {
-            return;
-        }
         match self.settings.run_hotswitch(binding.action) {
             Ok(changes) => {
                 self.apply_switch_changes(&changes, cx);

@@ -112,6 +112,8 @@ pub struct Workspace {
     pub(crate) settings_writer: crate::hotswitch::SettingsWriter,
     /// The Hot Switch OSD, while it shows.
     pub(crate) osd: Option<crate::hotswitch::Osd>,
+    /// The command palette, while it is open.
+    pub(crate) palette: Option<crate::palette::Palette>,
     pub(crate) next_osd: u64,
     /// One-line message about the last failed action (cause + fix, DESIGN.md §10).
     pub(crate) notice: Option<SharedString>,
@@ -209,6 +211,7 @@ impl Workspace {
             settings: options.settings,
             settings_writer: crate::hotswitch::SettingsWriter::start(),
             osd: None,
+            palette: None,
             next_osd: 0,
             notice: None,
             hwnd: hwnd(window),
@@ -1077,6 +1080,11 @@ fn hwnd(window: &Window) -> Option<isize> {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.focus_stops.begin_frame();
+        // A dialog (a paste conflict) or an inline rename that starts takes over from the
+        // palette; the focus goes to it.
+        if self.palette.is_some() && (self.ops.dialog.is_some() || self.ops.renaming.is_some()) {
+            self.palette = None;
+        }
         self.sync_search(window, cx);
         self.focused_now = window.focused(cx);
         // The toast holds its timer while it has focus (keyboard users reaching for Undo).
@@ -1146,6 +1154,7 @@ impl Render for Workspace {
             )
             .child(self.render_status_bar(cx))
             .children(overlays)
+            .children(self.render_palette(window, cx))
             // Above dialogs too: a Hot Switch is never dimmed by a scrim.
             .children(self.render_osd(cx));
         let root = self.nav_actions(root, cx);
@@ -1195,6 +1204,11 @@ impl Workspace {
         .on_action(cx.listener(|this, _: &actions::SearchFind, window, cx| {
             this.find(window, cx);
         }))
+        .on_action(
+            cx.listener(|this, _: &actions::CommandPalette, window, cx| {
+                this.open_palette(window, cx);
+            }),
+        )
     }
 }
 

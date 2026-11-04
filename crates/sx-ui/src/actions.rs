@@ -25,6 +25,7 @@ actions!(
         FocusAddress,
         SearchFilter,
         SearchFind,
+        CommandPalette,
         TabNew,
         TabClose,
         TabNext,
@@ -79,6 +80,7 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "nav.focus_address" => Box::new(FocusAddress),
         "search.filter" => Box::new(SearchFilter),
         "search.find" => Box::new(SearchFind),
+        "app.command_palette" => Box::new(CommandPalette),
         "tab.new" => Box::new(TabNew),
         "tab.close" => Box::new(TabClose),
         "tab.next" => Box::new(TabNext),
@@ -103,6 +105,15 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "view.previous_area" => Box::new(FocusPreviousArea),
         _ => return None,
     })
+}
+
+/// The commands the palette offers (shown there and implemented here).
+pub(crate) fn palette_commands() -> Vec<(&'static sx_core::CommandSpec, Box<dyn Action>)> {
+    sx_core::command::BUILTIN
+        .iter()
+        .filter(|spec| spec.in_palette)
+        .filter_map(|spec| action_for(spec.id).map(|action| (spec, action)))
+        .collect()
 }
 
 /// Commands that also work while typing: moving between areas leaves a text input.

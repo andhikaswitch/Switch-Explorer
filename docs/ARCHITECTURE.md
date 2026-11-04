@@ -55,7 +55,7 @@ Alasan di balik pilihan teknologi ada di `DECISIONS.md`.
 | `sx-ipc` | Tipe pesan, framing, named pipe server/client, verifikasi identitas | `sx-core` (tipe saja) |
 | `sx-picker-shim` | cdylib COM proxy `FileOpenDialog`/`FileSaveDialog` | `sx-ipc` (tanpa GPUI/tokio) |
 | `sx-cloud` | `CloudProvider`, Google Drive, OAuth, antrean transfer, kredensial | `sx-core`, `sx-settings`, `sx-ops` |
-| `sx-search` | Pencarian rekursif, operator query, fuzzy (nucleo), adapter Everything | `sx-core`, `sx-win` |
+| `sx-search` | Pencarian rekursif, operator query, fuzzy (matcher sendiri, ADR-023), adapter Everything | `sx-core`, `sx-win` |
 | `sx-tools` | Organizer, Duplicate Finder, Bulk Rename, Space Analyzer (masing-masing di balik flag) | `sx-core`, `sx-fs`, `sx-ops` |
 | `sx-ui` | Workspace, view, komponen, bridge tema, OSD, Theme Studio, Token Inspector | semua di atas kecuali shim |
 | `xtask` | Fixtures, build shim, cleanup registry, packaging | — |

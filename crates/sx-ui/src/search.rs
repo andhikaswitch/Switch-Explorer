@@ -825,17 +825,30 @@ pub(crate) fn highlighted(
     matched: Option<Range<usize>>,
     color: Hsla,
 ) -> StyledText {
-    let text = StyledText::new(name);
-    match matched {
-        Some(range) => text.with_highlights([(
-            range,
-            HighlightStyle {
-                color: Some(color),
-                font_weight: Some(FontWeight::BOLD),
-                ..HighlightStyle::default()
-            },
-        )]),
-        None => text,
+    highlighted_ranges(name, matched, color)
+}
+
+/// A text with the given byte ranges in bold `match.fg` (a fuzzy match has several).
+pub(crate) fn highlighted_ranges(
+    text: SharedString,
+    ranges: impl IntoIterator<Item = Range<usize>>,
+    color: Hsla,
+) -> StyledText {
+    let style = HighlightStyle {
+        color: Some(color),
+        font_weight: Some(FontWeight::BOLD),
+        ..HighlightStyle::default()
+    };
+    let ranges: Vec<(Range<usize>, HighlightStyle)> = ranges
+        .into_iter()
+        .filter(|r| r.end <= text.len() && text.is_char_boundary(r.start))
+        .map(|r| (r, style))
+        .collect();
+    let styled = StyledText::new(text);
+    if ranges.is_empty() {
+        styled
+    } else {
+        styled.with_highlights(ranges)
     }
 }
 

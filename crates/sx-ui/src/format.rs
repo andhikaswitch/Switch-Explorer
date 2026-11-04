@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn numbers_get_digit_groups() {
-        rust_i18n::set_locale("en");
+        // The default locale is English.
         assert_eq!(number(7), "7");
         assert_eq!(number(1234), "1,234");
         assert_eq!(number(100_000), "100,000");
