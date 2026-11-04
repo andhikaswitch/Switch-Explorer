@@ -67,6 +67,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - Huruf yang cocok ditulis tebal, dan shortcut tampil di sisi kanan.
   - Setelah palette tertutup, fokus kembali ke tempat semula.
 - ADR-023: matcher fuzzy sendiri di `sx-search`, bukan nucleo.
+- Quick open (`Ctrl+P`): lompat ke tab terbuka, folder pinned, folder yang dibuka di sesi ini, atau drive,
+  dengan pencocokan fuzzy pada nama dan path.
 
 ### Changed
 - ARCHITECTURE §8.4: perubahan tema dipicu notifikasi registry, bukan `WM_SETTINGCHANGE`.

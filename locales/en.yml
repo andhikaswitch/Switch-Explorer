@@ -257,11 +257,15 @@ command:
     toggle_sidebar: Show or hide the sidebar
   app:
     transfer_panel: Show the transfer panel
+    quick_open: Go to a folder
   sidebar:
     pin: Pin or unpin this folder
 palette:
   label: Command palette
+  label_folders: Quick open
   placeholder: Type a command, a switch or a place
+  placeholder_folders: Type a folder name or path
+  open_tab: Open tab
   empty: "Nothing matches \"%{query}\". Try fewer letters."
   switch_on: Switch, on
   switch_off: Switch, off

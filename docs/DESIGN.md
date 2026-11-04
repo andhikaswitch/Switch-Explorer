@@ -320,6 +320,12 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 - Pembaca layar: daftar memakai role listbox dan setiap baris role option (label, keterangan, shortcut,
   posisi). Kolom ketik menyebut baris yang sedang terpilih.
 - Tempat bisa dicari lewat path-nya, tetapi selalu di bawah kecocokan label.
+- `Ctrl+P` membuka panel yang sama untuk folder saja (quick open). Isinya, tiap folder sekali:
+  - Folder tab yang terbuka, dengan label kanan "Tab terbuka". Memilihnya pindah ke tab itu.
+  - Folder pinned.
+  - Folder yang dibuka selama sesi ini, terbaru dulu (maks 50, hanya di memori).
+  - Drive.
+  Menekan shortcut mode yang lain selagi panel terbuka langsung pindah mode.
 
 ## 9. Umpan balik status: OSD, chip, hint
 

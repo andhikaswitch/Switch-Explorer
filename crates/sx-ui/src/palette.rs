@@ -1,6 +1,7 @@
 //! The command palette (FEATURES.md F-CMD-01, DESIGN.md §8.9). `Ctrl+Shift+P` / `F1` opens a box
 //! near the top of the window that finds commands, Hot Switch switches and places by fuzzy
-//! matching (ADR-023). `Up`/`Down` choose, `Enter` or a click runs, `Esc` or a click outside
+//! matching (ADR-023); `Ctrl+P` opens it for folders only (quick open, F-NAV-07): open tabs,
+//! pinned folders, folders opened this session, drives. `Up`/`Down` choose, `Enter` or a click runs, `Esc` or a click outside
 //! closes. Running an item closes the palette; list commands run on the list, others where focus
 //! was. A switch runs like its Hot Switch key, OSD included, even with the Hot Switch keys off.
 //! Commands that cannot run now (Forward without history, Rename without a selection) are shown
@@ -27,12 +28,26 @@ use crate::workspace::Workspace;
 /// Rows shown before the list scrolls.
 const VISIBLE_ROWS: usize = 10;
 
+/// Folders remembered for quick open, most recent first (this session only, in memory).
+pub(crate) const RECENT_FOLDERS: usize = 50;
+
+/// What the palette offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PaletteMode {
+    /// Commands, switches and places (`Ctrl+Shift+P`).
+    Commands,
+    /// Folders to go to (`Ctrl+P`).
+    Folders,
+}
+
 /// What an item does.
 enum Run {
     Command(Box<dyn Action>, CommandContext),
     /// A Hot Switch binding, by index in `DEFAULT_BINDINGS`.
     Switch(usize),
     Go(Location),
+    /// An open tab, by id: it is brought forward.
+    Tab(u64),
 }
 
 struct Item {
@@ -53,6 +68,7 @@ struct Shown {
 }
 
 pub(crate) struct Palette {
+    mode: PaletteMode,
     input: Entity<InputState>,
     items: Vec<Item>,
     shown: Vec<Shown>,
@@ -89,7 +105,7 @@ impl Palette {
                     };
                     return Some((true, found.score, shown));
                 }
-                if !matches!(item.run, Run::Go(_)) {
+                if !matches!(item.run, Run::Go(_) | Run::Tab(_)) {
                     return None;
                 }
                 let found = sx_search::fuzzy_match(query, &item.detail)?;
@@ -132,20 +148,40 @@ impl Palette {
 }
 
 impl Workspace {
-    /// `Ctrl+Shift+P` / `F1`.
-    pub(crate) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.palette.is_some() || self.ops.dialog.is_some() {
+    /// `Ctrl+Shift+P` / `F1` (commands) or `Ctrl+P` (folders). Asking for the other mode while
+    /// the palette is open switches to it.
+    pub(crate) fn open_palette(
+        &mut self,
+        mode: PaletteMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.ops.dialog.is_some() {
             return;
         }
-        let restore = window.focused(cx);
-        let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(t!("palette.placeholder").to_string())
-        });
+        let restore = match self.palette.take() {
+            Some(open) if open.mode == mode => {
+                self.palette = Some(open);
+                return;
+            }
+            Some(open) => open.restore,
+            None => window.focused(cx),
+        };
+        let placeholder = match mode {
+            PaletteMode::Commands => t!("palette.placeholder"),
+            PaletteMode::Folders => t!("palette.placeholder_folders"),
+        };
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder.to_string()));
         let subscription = cx.subscribe_in(&input, window, Self::on_palette_event);
         input.update(cx, |input, cx| input.focus(window, cx));
+        let items = match mode {
+            PaletteMode::Commands => self.palette_items(),
+            PaletteMode::Folders => self.folder_items(),
+        };
         let mut palette = Palette {
+            mode,
             input,
-            items: self.palette_items(),
+            items,
             shown: Vec::new(),
             selected: 0,
             scroll: UniformListScrollHandle::new(),
@@ -155,6 +191,57 @@ impl Workspace {
         palette.filter("");
         self.palette = Some(palette);
         cx.notify();
+    }
+
+    /// Quick open: the open tabs' folders, pinned folders, folders opened this session, then the
+    /// drives; each folder once, where it first appears.
+    fn folder_items(&self) -> Vec<Item> {
+        let mut seen = std::collections::HashSet::new();
+        let mut items = Vec::new();
+        let name = |path: &std::path::Path| -> SharedString {
+            path.file_name()
+                .map_or_else(
+                    || path.display().to_string(),
+                    |n| n.to_string_lossy().into_owned(),
+                )
+                .into()
+        };
+        for tab in &self.tabs {
+            if let Some(path) = tab.location().as_path()
+                && seen.insert(path.to_path_buf())
+            {
+                items.push(Item {
+                    label: name(path),
+                    detail: path.display().to_string().into(),
+                    keys: t!("palette.open_tab").into(),
+                    run: Run::Tab(tab.id),
+                    enabled: true,
+                });
+            }
+        }
+        let folder = |label: SharedString, path: &std::path::Path| Item {
+            label,
+            detail: path.display().to_string().into(),
+            keys: SharedString::default(),
+            run: Run::Go(Location::Path(path.to_path_buf())),
+            enabled: true,
+        };
+        for pin in &self.pins {
+            if seen.insert(pin.path.clone()) {
+                items.push(folder(pin.name.clone(), &pin.path));
+            }
+        }
+        for path in &self.recent_folders {
+            if seen.insert(path.clone()) {
+                items.push(folder(name(path), path));
+            }
+        }
+        for drive in &self.drives {
+            if seen.insert(drive.root.clone()) {
+                items.push(folder(crate::format::drive_label(drive), &drive.root));
+            }
+        }
+        items
     }
 
     /// Whether a palette command can do something now.
@@ -345,6 +432,11 @@ impl Workspace {
             }),
             Run::Switch(binding) => self.run_switch_binding(binding, cx),
             Run::Go(location) => self.navigate(location, cx),
+            Run::Tab(id) => {
+                if let Some(ix) = self.tabs.iter().position(|tab| tab.id == id) {
+                    self.activate_tab(ix, window, cx);
+                }
+            }
         }
         cx.notify();
     }
@@ -361,10 +453,14 @@ impl Workspace {
             .and_then(|shown| palette.items.get(shown.item))
             .map(|item| item.label.clone());
         let list = self.render_palette_list(palette, cx);
+        let title: SharedString = match palette.mode {
+            PaletteMode::Commands => t!("palette.label").into(),
+            PaletteMode::Folders => t!("palette.label_folders").into(),
+        };
         // The selected row is read out with the field, which keeps the focus.
         let field_label: SharedString = match selected_label {
-            Some(label) => format!("{}: {label}", t!("palette.label")).into(),
-            None => t!("palette.label").into(),
+            Some(label) => format!("{title}: {label}").into(),
+            None => title.clone(),
         };
         Some(
             div()
@@ -388,7 +484,7 @@ impl Workspace {
                     div()
                         .id("palette")
                         .role(gpui_kit::Role::Dialog)
-                        .aria_label(SharedString::from(t!("palette.label")))
+                        .aria_label(title)
                         .occlude()
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .capture_key_down(cx.listener(Self::palette_key_down))

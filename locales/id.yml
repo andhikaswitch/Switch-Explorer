@@ -257,11 +257,15 @@ command:
     toggle_sidebar: Tampilkan atau sembunyikan sidebar
   app:
     transfer_panel: Tampilkan panel transfer
+    quick_open: Buka folder
   sidebar:
     pin: Pin atau lepas pin folder ini
 palette:
   label: Command palette
+  label_folders: Buka cepat
   placeholder: Ketik command, switch, atau tempat
+  placeholder_folders: Ketik nama atau path folder
+  open_tab: Tab terbuka
   empty: "Tidak ada yang cocok dengan \"%{query}\". Coba lebih sedikit huruf."
   switch_on: Switch, aktif
   switch_off: Switch, nonaktif

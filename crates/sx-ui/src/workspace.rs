@@ -114,6 +114,8 @@ pub struct Workspace {
     pub(crate) osd: Option<crate::hotswitch::Osd>,
     /// The command palette, while it is open.
     pub(crate) palette: Option<crate::palette::Palette>,
+    /// Folders opened this session, most recent first (quick open; never written to disk).
+    pub(crate) recent_folders: Vec<PathBuf>,
     pub(crate) next_osd: u64,
     /// One-line message about the last failed action (cause + fix, DESIGN.md §10).
     pub(crate) notice: Option<SharedString>,
@@ -212,6 +214,7 @@ impl Workspace {
             settings_writer: crate::hotswitch::SettingsWriter::start(),
             osd: None,
             palette: None,
+            recent_folders: Vec::new(),
             next_osd: 0,
             notice: None,
             hwnd: hwnd(window),
@@ -576,23 +579,17 @@ impl Workspace {
                     let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
                         return;
                     };
-                    if watch
-                        && !tab
-                            .watcher
-                            .as_ref()
-                            .is_some_and(sx_win::DirWatcher::is_running)
-                    {
-                        tab.watcher =
-                            sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
-                                .map_err(
-                                    |err| tracing::debug!(error = %err, "folder watch unavailable"),
-                                )
-                                .ok();
+                    if watch {
+                        keep_watching(tab, path, changes);
                     }
                     cx.notify();
                     return;
                 }
                 let reveal = tab.reveal.take();
+                self.remember_folder(path);
+                let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
+                    return;
+                };
                 let row = reveal.and_then(|name| {
                     (0..snapshot.visible_len())
                         .find(|&r| snapshot.row(r).is_some_and(|e| e.name == name))
@@ -605,18 +602,8 @@ impl Workspace {
                 } else {
                     tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
                 }
-                if watch
-                    && !tab
-                        .watcher
-                        .as_ref()
-                        .is_some_and(sx_win::DirWatcher::is_running)
-                {
-                    tab.watcher =
-                        sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
-                            .map_err(
-                                |err| tracing::debug!(error = %err, "folder watch unavailable"),
-                            )
-                            .ok();
+                if watch {
+                    keep_watching(tab, path, changes);
                 }
                 if let Some(process) = self.bench_started.take() {
                     self.finish_bench(process, started, entries, cx);
@@ -637,6 +624,13 @@ impl Workspace {
             }
         }
         cx.notify();
+    }
+
+    /// Quick open remembers folders opened this session, most recent first.
+    fn remember_folder(&mut self, path: &std::path::Path) {
+        self.recent_folders.retain(|p| p != path);
+        self.recent_folders.insert(0, path.to_path_buf());
+        self.recent_folders.truncate(crate::palette::RECENT_FOLDERS);
     }
 
     /// `--bench-open`: the report is printed once the frame showing the listing is drawn
@@ -972,6 +966,21 @@ impl Workspace {
     }
 }
 
+/// Watches a tab's folder unless a watcher is already running there (`perf.watcher`).
+fn keep_watching(tab: &mut Tab, path: &std::path::Path, changes: mpsc::UnboundedSender<u64>) {
+    if tab
+        .watcher
+        .as_ref()
+        .is_some_and(sx_win::DirWatcher::is_running)
+    {
+        return;
+    }
+    let tab_id = tab.id;
+    tab.watcher = sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
+        .map_err(|err| tracing::debug!(error = %err, "folder watch unavailable"))
+        .ok();
+}
+
 /// After a refresh: selects an item that was just renamed or created. Returns `true` when the
 /// new item should go into rename mode.
 fn reveal_pending(tab: &mut Tab) -> bool {
@@ -1206,9 +1215,12 @@ impl Workspace {
         }))
         .on_action(
             cx.listener(|this, _: &actions::CommandPalette, window, cx| {
-                this.open_palette(window, cx);
+                this.open_palette(crate::palette::PaletteMode::Commands, window, cx);
             }),
         )
+        .on_action(cx.listener(|this, _: &actions::QuickOpen, window, cx| {
+            this.open_palette(crate::palette::PaletteMode::Folders, window, cx);
+        }))
     }
 }
 
