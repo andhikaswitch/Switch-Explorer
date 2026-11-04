@@ -14,11 +14,39 @@ impl Workspace {
         let tab = self.tab();
         let mut left: Vec<SharedString> = Vec::new();
         if let Some(snapshot) = tab.snapshot() {
-            left.push(if tab.filter.is_empty() {
-                format::item_count(snapshot.visible_len())
-            } else {
-                format::filtered_count(snapshot.visible_len(), snapshot.unfiltered_len())
-            });
+            match &tab.search {
+                Some(search) => {
+                    let found = format::found_count(snapshot.visible_len());
+                    left.push(if search.running {
+                        t!("search.status_running", found = found).into()
+                    } else {
+                        found
+                    });
+                    if let Some(stats) = search.stats.filter(|s| s.skipped > 0) {
+                        left.push(if stats.skipped == 1 {
+                            t!("search.skipped_one").into()
+                        } else {
+                            t!("search.skipped", count = format::number(stats.skipped)).into()
+                        });
+                    }
+                    if search.capped {
+                        left.push(
+                            t!(
+                                "search.capped",
+                                count = format::number(crate::search::RESULT_LIMIT)
+                            )
+                            .into(),
+                        );
+                    }
+                }
+                None if tab.filter.is_empty() => {
+                    left.push(format::item_count(snapshot.visible_len()));
+                }
+                None => left.push(format::filtered_count(
+                    snapshot.visible_len(),
+                    snapshot.unfiltered_len(),
+                )),
+            }
             let (count, bytes) = tab.selection_summary();
             if count > 0 {
                 let mut text = format::selected_count(count).to_string();

@@ -55,6 +55,13 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - Di window sempit, kotak cari menjadi ikon.
   - Token baru `match.fg`, `size.search_width`, dan `border.input_hover`.
   - Kotak alamat dan kotak cari memakai cincin fokus standar saat fokus.
+- Pencarian rekursif (`Enter` di kotak cari, `Ctrl+E`, `F3`):
+  - Mencari di folder dan semua subfoldernya dengan operator `ext:`, `size:`, `modified:`, `kind:`,
+    wildcard, dan frasa berkutip.
+  - Hasil tampil sambil berjalan, dengan kolom Folder, lalu diurutkan saat selesai.
+  - Mengetik lagi membatalkan pencarian yang berjalan, lalu menjalankannya ulang setelah jeda ketik.
+  - Hasil bisa dibuka, di-rename, dihapus, dan disalin.
+  - `Esc` mengembalikan daftar folder.
 
 ### Changed
 - ARCHITECTURE §8.4: perubahan tema dipicu notifikasi registry, bukan `WM_SETTINGCHANGE`.

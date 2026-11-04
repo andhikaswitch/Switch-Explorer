@@ -5,6 +5,7 @@ use std::ops::Range;
 
 use gpui_kit::component::input::Input;
 use gpui_kit::component::scroll::ScrollableElement as _;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -29,6 +30,7 @@ use crate::workspace::Workspace;
 const COL_MODIFIED: f32 = 160.0;
 const COL_TYPE: f32 = 140.0;
 const COL_SIZE: f32 = 96.0;
+const COL_FOLDER: f32 = 240.0;
 /// How narrow or wide a column can be dragged.
 const COL_MIN: f32 = 56.0;
 const COL_MAX: f32 = 480.0;
@@ -43,6 +45,7 @@ pub(crate) struct ColumnWidths {
     modified: f32,
     kind: f32,
     size: f32,
+    folder: f32,
 }
 
 impl Default for ColumnWidths {
@@ -51,6 +54,7 @@ impl Default for ColumnWidths {
             modified: COL_MODIFIED,
             kind: COL_TYPE,
             size: COL_SIZE,
+            folder: COL_FOLDER,
         }
     }
 }
@@ -61,6 +65,7 @@ impl ColumnWidths {
             Column::Modified => Some(self.modified),
             Column::Type => Some(self.kind),
             Column::Size => Some(self.size),
+            Column::Folder => Some(self.folder),
             Column::Name => None,
         }
     }
@@ -71,6 +76,7 @@ impl ColumnWidths {
             Column::Modified => self.modified = width,
             Column::Type => self.kind = width,
             Column::Size => self.size = width,
+            Column::Folder => self.folder = width,
             Column::Name => {}
         }
     }
@@ -95,17 +101,22 @@ impl Render for ColumnDrag {
 
 #[derive(Clone, Copy)]
 struct Columns {
+    /// Search results only.
+    folder: Option<Pixels>,
     modified: Option<Pixels>,
     kind: Option<Pixels>,
     size: Pixels,
 }
 
 impl Columns {
-    fn for_width(width: Pixels, widths: &ColumnWidths) -> Self {
+    fn for_width(width: Pixels, widths: &ColumnWidths, results: bool) -> Self {
         let width = f32::from(width);
+        // Results give the room of Type to Folder first.
+        let extra = if results { widths.folder } else { 0.0 };
         Self {
-            modified: (width >= HIDE_MODIFIED_BELOW).then(|| gpui_kit::px(widths.modified)),
-            kind: (width >= HIDE_TYPE_BELOW).then(|| gpui_kit::px(widths.kind)),
+            folder: results.then(|| gpui_kit::px(widths.folder)),
+            modified: (width >= HIDE_MODIFIED_BELOW + extra).then(|| gpui_kit::px(widths.modified)),
+            kind: (width >= HIDE_TYPE_BELOW + extra).then(|| gpui_kit::px(widths.kind)),
             size: gpui_kit::px(widths.size),
         }
     }
@@ -129,7 +140,10 @@ impl Workspace {
             }
             (Content::Failed(message), _) => self.render_failure(message.clone(), cx),
             (Content::Folder(snapshot), _) if snapshot.visible_len() == 0 => {
-                if self.tab().filter.is_empty() {
+                let tab = self.tab();
+                if tab.search.as_ref().is_some_and(|s| s.running) {
+                    self.centered(Some(t!("search.searching").into()), cx)
+                } else if tab.search.is_none() && tab.filter.is_empty() {
                     self.centered(Some(t!("details.empty").into()), cx)
                 } else {
                     self.render_no_match(cx)
@@ -204,10 +218,18 @@ impl Workspace {
                     .max_w(t.px(Token::SizeSidebar) * 2.0)
                     .text_center()
                     .text_color(t.color(Token::FgSecondary))
-                    .child(SharedString::from(t!(
-                        "search.no_match",
-                        query = crate::search::quoted_query(&self.tab().filter)
-                    ))),
+                    .child(SharedString::from(if self.tab().search.is_some() {
+                        t!(
+                            "search.no_results",
+                            query = crate::search::quoted_query(&self.tab().filter),
+                            folder = self.tab().title()
+                        )
+                    } else {
+                        t!(
+                            "search.no_match",
+                            query = crate::search::quoted_query(&self.tab().filter)
+                        )
+                    })),
             )
             .child(
                 self.text_button("search-clear", t!("search.clear").into(), cx, |this, cx| {
@@ -285,8 +307,12 @@ impl Workspace {
         } else {
             gpui_kit::px(0.0)
         };
-        let columns =
-            Columns::for_width(window.viewport_size().width - sidebar, &self.tab().columns);
+        let results = self.tab().snapshot().is_some_and(|s| s.is_results());
+        let columns = Columns::for_width(
+            window.viewport_size().width - sidebar,
+            &self.tab().columns,
+            results,
+        );
         let count = self.tab().row_count();
         let focused = self.list_focus.is_focused(window);
         let list = div()
@@ -454,6 +480,14 @@ impl Workspace {
                 t!("details.name").into(),
                 None,
             ))
+            .when_some(columns.folder, |el, w| {
+                el.child(cell(
+                    "col-folder",
+                    Column::Folder,
+                    t!("details.folder").into(),
+                    Some(w),
+                ))
+            })
             .when_some(columns.modified, |el, w| {
                 el.child(cell(
                     "col-modified",
@@ -681,6 +715,16 @@ impl Workspace {
                             .into_any_element(),
                     }),
             )
+            .when_some(columns.folder, |el, w| {
+                // The cell cuts long paths at the end; the tooltip has all of it.
+                let full = text.folder_full.clone();
+                el.child(
+                    cell(w)
+                        .id(ElementId::NamedInteger("found-in".into(), row as u64))
+                        .tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
+                        .child(text.folder),
+                )
+            })
             .when_some(columns.modified, |el, w| {
                 el.child(cell(w).child(text.modified))
             })

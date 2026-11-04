@@ -92,7 +92,11 @@ pub struct Workspace {
     /// What the search box was last given (tab id, text) and the place its placeholder names;
     /// see `sync_search`.
     pub(crate) search_shown: Option<(u64, String)>,
-    pub(crate) search_place: Option<(u64, Location)>,
+    pub(crate) search_place: Option<(u64, Location, bool)>,
+    /// Generation of the last recursive search started.
+    pub(crate) next_search: u64,
+    /// `notice` is about a bad search query (cleared with the search box).
+    pub(crate) query_notice: bool,
     /// The search box is open although the window is narrow (it folds into an icon there).
     pub(crate) search_open: bool,
     pub(crate) drives: Vec<Drive>,
@@ -190,6 +194,8 @@ impl Workspace {
             search,
             search_shown: None,
             search_place: None,
+            next_search: 0,
+            query_notice: false,
             search_open: false,
             drives: Vec::new(),
             pins: crate::pins::load(options.pins_file.as_deref())
@@ -277,6 +283,10 @@ impl Workspace {
 
     pub(crate) fn tab_mut(&mut self) -> &mut Tab {
         &mut self.tabs[self.active]
+    }
+
+    pub(crate) fn tab_by_id_mut(&mut self, id: u64) -> Option<&mut Tab> {
+        self.tabs.iter_mut().find(|t| t.id == id)
     }
 
     // ---- Appearance ---------------------------------------------------------------------
@@ -444,11 +454,28 @@ impl Workspace {
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
             return;
         };
+        // Refreshing search results (F5, a finished operation, a view switch) searches again,
+        // with the view switches in effect; the listing behind them is reloaded afterwards.
+        if refresh && tab.search.is_some() {
+            tab.sort = SortSpec {
+                folders_first: features.view_folders_first,
+                natural: features.view_natural_sort,
+                ..tab.sort
+            };
+            if let Some(search) = &mut tab.search {
+                search.listing_stale = true;
+            }
+            let text = tab.filter.clone();
+            self.start_search(tab_id, &text, true, cx);
+            return;
+        }
         let refresh = refresh && matches!(tab.content, Content::Folder(_));
         if !refresh {
             tab.watcher = None;
-            // Another folder: the filter was for the old one.
+            // Another folder: the filter and the search were for the old one.
             tab.filter.clear();
+            tab.recursive = false;
+            tab.take_search();
         }
         let cancel = tab.begin_load();
         let Location::Path(path) = tab.location().clone() else {
@@ -471,7 +498,9 @@ impl Workspace {
         let view = ViewOptions {
             show_hidden: features.view_show_hidden,
             show_system: features.view_show_system,
-            filter: tab.filter.clone(),
+            filter: tab
+                .listing_filter(features.search_recursive_default)
+                .to_string(),
         };
         cx.notify();
         let started = Instant::now();
@@ -512,11 +541,20 @@ impl Workspace {
         if tab.location().as_path() != Some(path) {
             return;
         }
+        // A listing that arrives while results are shown waits behind them. (It may be older
+        // than a change the watcher saw, so the listing stays stale if it was.)
+        if let Some(search) = &mut tab.search {
+            if let Ok(snapshot) = result {
+                search.listing = Some(Arc::new(snapshot));
+            }
+            return;
+        }
         match result {
             Ok(mut snapshot) => {
-                if snapshot.view().filter != sx_fs::fold_case(&tab.filter) {
+                let filter = tab.listing_filter(self.features.search_recursive_default);
+                if snapshot.view().filter != sx_fs::fold_case(filter) {
                     let view = ViewOptions {
-                        filter: tab.filter.clone(),
+                        filter: filter.to_string(),
                         ..snapshot.view().clone()
                     };
                     snapshot.set_view(view);
@@ -655,7 +693,13 @@ impl Workspace {
                     timer.await;
                     let _ = this.update(cx, |this, cx| {
                         this.pending_refresh.remove(&tab_id);
-                        this.load_tab(tab_id, true, cx);
+                        let tab = this.tabs.iter_mut().find(|t| t.id == tab_id);
+                        if let Some(search) = tab.and_then(|t| t.search.as_mut()) {
+                            // A change in the folder must not replace the results on screen.
+                            search.listing_stale = true;
+                        } else {
+                            this.load_tab(tab_id, true, cx);
+                        }
                     });
                 })
                 .detach();
@@ -847,17 +891,32 @@ impl Workspace {
     /// folder runs on a background executor (`DirSnapshot::sorted_order`); the selection is kept.
     pub(crate) fn sort_by(&mut self, column: Column, cx: &mut Context<Self>) {
         let tab = self.tab_mut();
-        let spec = SortSpec {
+        tab.sort = SortSpec {
             column,
             descending: tab.sort.column == column && !tab.sort.descending,
             ..tab.sort
         };
-        tab.sort = spec;
+        // Results still coming in are sorted once the walk ends, in this order.
+        if tab.search.as_ref().is_some_and(|s| s.running) {
+            cx.notify();
+            return;
+        }
+        let tab_id = tab.id;
+        self.resort(tab_id, cx);
+    }
+
+    /// Sorts a tab's listing by its sort spec on a background executor; the selection is kept.
+    pub(crate) fn resort(&mut self, tab_id: u64, cx: &mut Context<Self>) {
+        let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) else {
+            return;
+        };
+        let spec = tab.sort;
         let Some(snapshot) = tab.snapshot().cloned() else {
             cx.notify();
             return;
         };
-        let tab_id = tab.id;
+        // The order is for this very listing; one that replaced it meanwhile is left alone.
+        let sorted_listing = Arc::as_ptr(&snapshot) as usize;
         let task = cx
             .background_executor()
             .spawn(async move { snapshot.sorted_order(spec) });
@@ -867,6 +926,9 @@ impl Workspace {
                 let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id) else {
                     return;
                 };
+                if tab.snapshot().map(|s| Arc::as_ptr(s) as usize) != Some(sorted_listing) {
+                    return;
+                }
                 let focus_row = tab.change_listing(|snapshot| snapshot.apply_order(spec, order));
                 tab.clear_row_cache();
                 if let Some(row) = focus_row {
@@ -1052,30 +1114,6 @@ impl Render for Workspace {
             .text_color(fg)
             .text_size(size)
             .line_height(line)
-            .on_action(cx.listener(|this, _: &actions::NavBack, _, cx| {
-                if this.tab_mut().history.back().is_some() {
-                    this.notice = None;
-                    this.load(cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &actions::NavForward, _, cx| {
-                if this.tab_mut().history.forward().is_some() {
-                    this.notice = None;
-                    this.load(cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &actions::NavUp, _, cx| this.go_up(cx)))
-            .on_action(cx.listener(|this, _: &actions::NavRefresh, _, cx| {
-                let id = this.tab().id;
-                this.load_tab(id, true, cx);
-                this.refresh_drives(cx);
-            }))
-            .on_action(cx.listener(|this, _: &actions::FocusAddress, window, cx| {
-                this.edit_address(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &actions::SearchFilter, window, cx| {
-                this.focus_search(window, cx);
-            }))
             .on_action(cx.listener(|this, _: &actions::TabNew, window, cx| {
                 this.open_tab(Location::Home, cx);
                 this.leave_address(window, cx);
@@ -1110,9 +1148,53 @@ impl Render for Workspace {
             .children(overlays)
             // Above dialogs too: a Hot Switch is never dimmed by a scrim.
             .children(self.render_osd(cx));
+        let root = self.nav_actions(root, cx);
         let root = self.file_actions(root, cx);
         let root = self.hotswitch_actions(root, cx);
         self.focus_actions(root, cx)
+    }
+}
+
+impl Workspace {
+    /// Navigation and search commands, bound from the `CommandRegistry`.
+    fn nav_actions(
+        &self,
+        root: gpui_kit::Stateful<gpui_kit::Div>,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
+        root.on_action(cx.listener(|this, _: &actions::NavBack, _, cx| {
+            // Results have no place in the history: Back goes back to the folder listing.
+            if this.tab().search.is_some() {
+                let tab_id = this.tab().id;
+                this.end_search(tab_id, false, cx);
+                return;
+            }
+            if this.tab_mut().history.back().is_some() {
+                this.notice = None;
+                this.load(cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &actions::NavForward, _, cx| {
+            if this.tab_mut().history.forward().is_some() {
+                this.notice = None;
+                this.load(cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &actions::NavUp, _, cx| this.go_up(cx)))
+        .on_action(cx.listener(|this, _: &actions::NavRefresh, _, cx| {
+            let id = this.tab().id;
+            this.load_tab(id, true, cx);
+            this.refresh_drives(cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::FocusAddress, window, cx| {
+            this.edit_address(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::SearchFilter, window, cx| {
+            this.focus_search(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::SearchFind, window, cx| {
+            this.find(window, cx);
+        }))
     }
 }
 

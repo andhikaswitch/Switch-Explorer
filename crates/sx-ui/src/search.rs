@@ -1,10 +1,20 @@
-//! The search box (FEATURES.md F-SRCH-01): typing filters the current folder as you type, and
-//! the matching part of each name shows in bold `match.fg`. `Ctrl+F` focuses the box, `Escape`
-//! clears it and goes back to the list, `Down` and `Enter` go to the list. The filter belongs to
-//! the tab: the box shows the active tab's filter, and going to another folder clears it. In a
-//! narrow window (DESIGN.md §8.8) the box is an icon until it is used.
+//! The search box. Typing filters the current folder as you type (F-SRCH-01), and the matching
+//! part of each name shows in bold `match.fg`. `Enter` searches the folder and its subfolders
+//! (F-SRCH-02): results stream in with a Folder column, and while results are shown, typing
+//! searches again after a short pause (the running search stops at once). `Ctrl+F` focuses the
+//! box; `Ctrl+E` / `F3` focus it for searching subfolders straight away. `Escape` clears it and
+//! goes back to the list; `Down` goes to the list. The box belongs to the tab: going to another
+//! folder clears it. In a narrow window (DESIGN.md §8.8) the box is an icon until it is used.
 
-use std::ops::Range;
+use std::collections::HashSet;
+use std::ops::{ControlFlow, Range};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use futures::StreamExt as _;
+use futures::channel::mpsc;
 
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::tooltip::Tooltip;
@@ -16,13 +26,28 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, StyledText, Window, div,
 };
 use rust_i18n::t;
-use sx_fs::ViewOptions;
+use sx_fs::{Column, DirSnapshot, ViewOptions};
+use sx_search::{Query, Stats, WalkOptions};
 use sx_theme::Token;
+use sx_win::RawEntry;
 
 use crate::actions::WORKSPACE_CONTEXT;
 use crate::focus::TabStop as _;
+use crate::tab::{Content, SearchState};
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
+
+/// A recursive search stops at this many results; the status bar says so.
+pub(crate) const RESULT_LIMIT: usize = 100_000;
+
+/// In recursive mode a new search starts once typing pauses this long.
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(300);
+
+/// What the search thread sends: the matches of one folder, or the end of the walk.
+enum Found {
+    Folder(PathBuf, Vec<RawEntry>),
+    Done { stats: Stats, capped: bool },
+}
 
 /// Below this window width the box folds into an icon (DESIGN.md §8.8): with the window at its
 /// 560 px minimum the address bar would otherwise be squeezed to nothing.
@@ -138,7 +163,7 @@ impl Workspace {
             })
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 cx.stop_propagation();
-                this.set_filter("", cx);
+                this.clear_search(cx);
             }))
             .child(Icon::new(IconName::Close).size(icon * 0.75))
     }
@@ -147,7 +172,7 @@ impl Workspace {
         &mut self,
         input: &Entity<InputState>,
         event: &InputEvent,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
@@ -156,7 +181,11 @@ impl Workspace {
                 self.search_shown = Some((self.tab().id, text.clone()));
                 self.set_filter(&text, cx);
             }
-            InputEvent::PressEnter { .. } => self.search_to_list(window, cx),
+            InputEvent::PressEnter { .. } => {
+                let text = input.read(cx).value().to_string();
+                let tab_id = self.tab().id;
+                self.start_search(tab_id, &text, false, cx);
+            }
             InputEvent::Blur => {
                 self.search_open = false;
                 cx.notify();
@@ -178,7 +207,7 @@ impl Workspace {
         match event.keystroke.key.as_str() {
             "escape" => {
                 cx.stop_propagation();
-                self.set_filter("", cx);
+                self.clear_search(cx);
                 window.focus(&self.list_focus, cx);
             }
             "down" => {
@@ -211,12 +240,57 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Filters the active tab's folder. The selection stays on the entries still shown.
-    pub(crate) fn set_filter(&mut self, text: &str, cx: &mut Context<Self>) {
-        let tab = self.tab_mut();
-        if tab.filter == text {
+    /// `Ctrl+E` / `F3`: into the search box for searching subfolders too; what it holds is
+    /// searched at once.
+    pub(crate) fn find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tab().location().as_path().is_none() {
             return;
         }
+        self.tab_mut().recursive = true;
+        self.focus_search(window, cx);
+        let (tab_id, text) = (self.tab().id, self.tab().filter.clone());
+        if !text.trim().is_empty() && self.tab().search.is_none() {
+            self.start_search(tab_id, &text, false, cx);
+        }
+    }
+
+    /// Whether typing in the box searches subfolders (results shown, `Ctrl+E`, or
+    /// `search.recursive_default`) rather than filtering the folder.
+    pub(crate) fn typing_searches(&self) -> bool {
+        self.tab().searches(self.features.search_recursive_default)
+    }
+
+    /// `Esc` or the × button: the box empties; a recursive search ends, and its mode with it.
+    pub(crate) fn clear_search(&mut self, cx: &mut Context<Self>) {
+        if self.tab().search.is_some() || self.tab().recursive {
+            let tab_id = self.tab().id;
+            self.end_search(tab_id, false, cx);
+        } else {
+            self.set_filter("", cx);
+        }
+        self.clear_query_notice();
+        cx.notify();
+    }
+
+    /// What the box holds changed: filters the folder, or (recursive mode) searches again once
+    /// typing pauses. A box emptied by typing ends the search but stays in recursive mode. The
+    /// selection stays on the entries still shown.
+    pub(crate) fn set_filter(&mut self, text: &str, cx: &mut Context<Self>) {
+        if self.tab().filter == text {
+            return;
+        }
+        if self.typing_searches() {
+            let tab_id = self.tab().id;
+            self.tab_mut().filter = text.to_string();
+            if text.trim().is_empty() {
+                self.end_search(tab_id, true, cx);
+            } else {
+                self.search_later(tab_id, cx);
+            }
+            cx.notify();
+            return;
+        }
+        let tab = self.tab_mut();
         tab.filter = text.to_string();
         let started = std::time::Instant::now();
         let focus_row = tab.change_listing(|snapshot| {
@@ -242,31 +316,39 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Keeps the box in step with the active tab: its filter and "Search <folder>" (another
-    /// tab, a folder change, a filter cleared from elsewhere). Called at the start of a frame;
-    /// it compares what the box was last given, so a frame with nothing new costs no allocation.
+    /// Keeps the box in step with the active tab: its text and "Search <folder>" (another tab,
+    /// a folder change, a search ended from elsewhere). Called at the start of a frame; it
+    /// compares what the box was last given, so a frame with nothing new costs no allocation.
     pub(crate) fn sync_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tab = self.tab();
         let value_differs = self
             .search_shown
             .as_ref()
             .is_none_or(|(id, text)| *id != tab.id || *text != tab.filter);
+        let recursive = self.typing_searches();
         let place_differs = self
             .search_place
             .as_ref()
-            .is_none_or(|(id, location)| *id != tab.id || location != tab.location());
+            .is_none_or(|(id, location, deep)| {
+                *id != tab.id || location != tab.location() || *deep != recursive
+            });
         if !value_differs && !place_differs {
             return;
         }
         let value = value_differs.then(|| tab.filter.clone());
-        let placeholder: Option<SharedString> =
-            place_differs.then(|| t!("search.placeholder", folder = tab.title()).into());
+        let placeholder: Option<SharedString> = place_differs.then(|| {
+            if recursive {
+                t!("search.placeholder_recursive", folder = tab.title()).into()
+            } else {
+                t!("search.placeholder", folder = tab.title()).into()
+            }
+        });
         let (id, location) = (tab.id, tab.location().clone());
         if let Some(value) = &value {
             self.search_shown = Some((id, value.clone()));
         }
         if place_differs {
-            self.search_place = Some((id, location));
+            self.search_place = Some((id, location, recursive));
         }
         self.search.update(cx, |input, cx| {
             if let Some(value) = value {
@@ -277,6 +359,455 @@ impl Workspace {
             }
         });
     }
+
+    fn clear_query_notice(&mut self) {
+        if std::mem::take(&mut self.query_notice) {
+            self.notice = None;
+        }
+    }
+}
+
+impl Workspace {
+    /// Searches a tab's folder and its subfolders for `text` (F-SRCH-02).
+    ///
+    /// A new query shows its results as they are found. A `refresh` (F5, a finished operation,
+    /// a view switch) keeps the results on screen until the new walk ends, then swaps them in
+    /// with the selection kept by path. A query with a bad operator value says what is wrong
+    /// instead of searching.
+    pub(crate) fn start_search(
+        &mut self,
+        tab_id: u64,
+        text: &str,
+        refresh: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tab_by_id_mut(tab_id) else {
+            return;
+        };
+        // A search pending after typing is overtaken by this one.
+        tab.search_ticket += 1;
+        let Some(root) = tab.location().as_path().map(Path::to_path_buf) else {
+            return;
+        };
+        let query = match Query::parse(text) {
+            Ok(query) if query.is_empty() => {
+                if !refresh {
+                    self.end_search(tab_id, true, cx);
+                }
+                return;
+            }
+            Ok(query) => query,
+            Err(err) => {
+                if !refresh {
+                    self.notice = Some(crate::format::query_error(&err));
+                    self.query_notice = true;
+                    cx.notify();
+                }
+                return;
+            }
+        };
+        if !refresh {
+            self.clear_query_notice();
+        }
+        self.next_search += 1;
+        let generation = self.next_search;
+        let options = WalkOptions {
+            show_hidden: self.features.view_show_hidden,
+            show_system: self.features.view_show_system,
+        };
+        let view = ViewOptions {
+            show_hidden: options.show_hidden,
+            show_system: options.show_system,
+            filter: String::new(),
+        };
+        let highlight = query
+            .words()
+            .next()
+            .map(sx_fs::fold_case)
+            .unwrap_or_default();
+        // The thread first: if it cannot start, nothing on screen has changed.
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::unbounded();
+        let walk = std::thread::Builder::new().name("sx-search".into()).spawn({
+            let cancel = cancel.clone();
+            move || run_search(&root, &query, options, &cancel, &tx)
+        });
+        if let Err(err) = walk {
+            tracing::warn!(error = %err, "search thread not started");
+            if !refresh {
+                self.notice = Some(t!("search.failed").into());
+            }
+            cx.notify();
+            return;
+        }
+        // An inline rename follows an entry index, which the new results reuse.
+        if self
+            .ops
+            .renaming
+            .as_ref()
+            .is_some_and(|r| r.tab_id == tab_id)
+        {
+            self.ops.renaming = None;
+        }
+        let search = SearchState {
+            generation,
+            cancel,
+            running: true,
+            highlight,
+            stats: None,
+            capped: false,
+            listing: None,
+            listing_stale: false,
+            building: None,
+        };
+        self.install_search(tab_id, text, refresh, search, view);
+        self.receive_found(rx, tab_id, generation, cx);
+        cx.notify();
+    }
+
+    /// Puts a starting search in its tab: new results replace what is shown (a refresh keeps
+    /// it until the new results are in), and the folder listing waits to come back.
+    fn install_search(
+        &mut self,
+        tab_id: u64,
+        text: &str,
+        refresh: bool,
+        mut search: SearchState,
+        view: ViewOptions,
+    ) {
+        let Some(tab) = self.tab_by_id_mut(tab_id) else {
+            return;
+        };
+        tab.filter = text.to_string();
+        let replacing = tab.take_search();
+        let keep_on_screen = refresh && replacing.is_some();
+        // The listing to go back to: kept from a search being replaced, else the one shown.
+        let (listing, listing_stale) = match replacing {
+            Some(old) => (old.listing, old.listing_stale),
+            None => match &tab.content {
+                Content::Folder(snapshot) if !snapshot.is_results() => {
+                    (Some(snapshot.clone()), false)
+                }
+                _ => (None, false),
+            },
+        };
+        let fresh = DirSnapshot::new(tab.sort, view);
+        if keep_on_screen {
+            search.building = Some(fresh);
+        } else {
+            tab.set_snapshot(Arc::new(fresh));
+            tab.selection.clear();
+            tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
+        }
+        search.listing = listing;
+        search.listing_stale = listing_stale;
+        tab.search = Some(search);
+    }
+
+    /// Feeds what the search thread sends into the tab, in one update per burst.
+    fn receive_found(
+        &self,
+        mut rx: mpsc::UnboundedReceiver<Found>,
+        tab_id: u64,
+        generation: u64,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |this, cx| {
+            while let Some(first) = rx.next().await {
+                // Everything that arrived meanwhile goes in with one update.
+                let mut found = vec![first];
+                while let Ok(more) = rx.try_recv() {
+                    found.push(more);
+                }
+                let alive =
+                    this.update(cx, |this, cx| this.on_found(tab_id, generation, found, cx));
+                if alive.is_err() {
+                    return;
+                }
+            }
+            // The thread is gone: finished, or stopped without saying so.
+            let _ = this.update(cx, |this, cx| this.walk_ended(tab_id, generation, cx));
+        })
+        .detach();
+    }
+
+    /// Recursive mode: stops the running search now and searches again once typing pauses.
+    /// The results stay on screen meanwhile, marked as being searched.
+    fn search_later(&mut self, tab_id: u64, cx: &mut Context<Self>) {
+        self.next_search += 1;
+        let pending = self.next_search;
+        let Some(tab) = self.tab_by_id_mut(tab_id) else {
+            return;
+        };
+        if let Some(search) = &mut tab.search {
+            search.cancel.store(true, Ordering::Relaxed);
+            // What the stopped walk still sends belongs to no search.
+            search.generation = pending;
+            search.running = true;
+            search.building = None;
+        }
+        tab.search_ticket += 1;
+        let ticket = tab.search_ticket;
+        let timer = cx.background_executor().timer(SEARCH_DEBOUNCE);
+        cx.spawn(async move |this, cx| {
+            timer.await;
+            let _ = this.update(cx, |this, cx| {
+                let Some(tab) = this.tab_by_id_mut(tab_id) else {
+                    return;
+                };
+                if tab.search_ticket == ticket {
+                    let text = tab.filter.clone();
+                    this.start_search(tab_id, &text, false, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn on_found(
+        &mut self,
+        tab_id: u64,
+        generation: u64,
+        found: Vec<Found>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tab_by_id_mut(tab_id) else {
+            return;
+        };
+        let Some(search) = tab.search.as_mut().filter(|s| s.generation == generation) else {
+            return;
+        };
+        let mut done = false;
+        for message in found {
+            match message {
+                Found::Folder(folder, entries) => match &mut search.building {
+                    Some(next) => next.push_found(&folder, &entries),
+                    None => {
+                        if let Content::Folder(results) = &mut tab.content {
+                            Arc::make_mut(results).push_found(&folder, &entries);
+                        }
+                    }
+                },
+                Found::Done { stats, capped } => {
+                    search.stats = Some(stats);
+                    search.capped = capped;
+                    done = true;
+                }
+            }
+        }
+        if done {
+            self.finish_search(tab_id, generation, cx);
+        }
+        cx.notify();
+    }
+
+    /// The walk ended: the results are sorted by the tab's order (off the UI thread); a
+    /// refresh's new results replace the ones shown.
+    fn finish_search(&mut self, tab_id: u64, generation: u64, cx: &mut Context<Self>) {
+        let Some(tab) = self.tab_by_id_mut(tab_id) else {
+            return;
+        };
+        let spec = tab.sort;
+        let Some(search) = tab.search.as_mut().filter(|s| s.generation == generation) else {
+            return;
+        };
+        let Some(mut next) = search.building.take() else {
+            search.running = false;
+            self.resort(tab_id, cx);
+            return;
+        };
+        let sorted = cx.background_executor().spawn(async move {
+            next.sort(spec);
+            next
+        });
+        cx.spawn(async move |this, cx| {
+            let next = sorted.await;
+            let _ = this.update(cx, |this, cx| {
+                this.swap_results(tab_id, generation, next, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// Installs a refresh's results, keeping the selected and focused items by path.
+    fn swap_results(
+        &mut self,
+        tab_id: u64,
+        generation: u64,
+        next: DirSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tab_by_id_mut(tab_id) else {
+            return;
+        };
+        let Some(search) = tab.search.as_mut().filter(|s| s.generation == generation) else {
+            return;
+        };
+        search.running = false;
+        let (rows, focus) = match tab.snapshot() {
+            Some(old) => keep_by_path(old, &tab.selection, &next),
+            None => (Vec::new(), None),
+        };
+        tab.set_snapshot(Arc::new(next));
+        tab.selection.restore(rows, focus);
+        cx.notify();
+    }
+
+    /// The search thread is gone. If it never said it was done (it panicked), the search is
+    /// over all the same, so "Searching…" does not stay forever.
+    fn walk_ended(&mut self, tab_id: u64, generation: u64, cx: &mut Context<Self>) {
+        let Some(tab) = self.tab_by_id_mut(tab_id) else {
+            return;
+        };
+        if let Some(search) = tab.search.as_mut().filter(|s| s.generation == generation)
+            && search.stats.is_none()
+        {
+            tracing::warn!("search ended without a result");
+            search.running = false;
+            search.building = None;
+            cx.notify();
+        }
+    }
+
+    /// Ends a tab's recursive search: the folder listing comes back unfiltered, in the tab's
+    /// order (reloaded if the folder changed meanwhile). `keep_mode` (the box emptied by
+    /// typing) leaves the box and recursive mode as they are.
+    pub(crate) fn end_search(&mut self, tab_id: u64, keep_mode: bool, cx: &mut Context<Self>) {
+        let Some(tab) = self.tab_by_id_mut(tab_id) else {
+            return;
+        };
+        tab.search_ticket += 1;
+        if !keep_mode {
+            tab.recursive = false;
+            tab.filter.clear();
+        }
+        let Some(search) = tab.take_search() else {
+            cx.notify();
+            return;
+        };
+        // A listing has no Folder column to sort by.
+        if tab.sort.column == Column::Folder {
+            tab.sort.column = Column::Name;
+            tab.sort.descending = false;
+        }
+        match search.listing {
+            Some(listing) => {
+                let reorder = listing.sort_spec() != tab.sort;
+                tab.set_snapshot(listing);
+                tab.selection.clear();
+                tab.change_listing(|snapshot| {
+                    let view = ViewOptions {
+                        filter: String::new(),
+                        ..snapshot.view().clone()
+                    };
+                    snapshot.set_view(view);
+                });
+                tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
+                if search.listing_stale {
+                    self.load_tab(tab_id, true, cx);
+                } else if reorder {
+                    self.resort(tab_id, cx);
+                }
+            }
+            None => self.load_tab(tab_id, false, cx),
+        }
+        cx.notify();
+    }
+}
+
+/// The rows of `next` holding the items selected (and focused) in `old`, matched by folder
+/// and name. Only the selected names are looked up, so a large result set costs no paths.
+fn keep_by_path(
+    old: &DirSnapshot,
+    selection: &sx_core::Selection,
+    next: &DirSnapshot,
+) -> (Vec<u32>, Option<u32>) {
+    let key = |snapshot: &DirSnapshot, row: usize| {
+        let entry = snapshot.row(row)?;
+        Some((
+            snapshot.folder(entry.index)?.to_path_buf(),
+            entry.name.to_string(),
+        ))
+    };
+    let selected: HashSet<(PathBuf, String)> = selection
+        .iter()
+        .filter_map(|row| key(old, row as usize))
+        .collect();
+    let focus = selection.focus().and_then(|row| key(old, row as usize));
+    if selected.is_empty() && focus.is_none() {
+        return (Vec::new(), None);
+    }
+    let names: HashSet<&str> = selected
+        .iter()
+        .chain(focus.iter())
+        .map(|(_, name)| name.as_str())
+        .collect();
+    let mut rows = Vec::new();
+    let mut focus_row = None;
+    for row in 0..next.visible_len() {
+        let Some(entry) = next.row(row) else {
+            continue;
+        };
+        if !names.contains(entry.name) {
+            continue;
+        }
+        let Some(folder) = next.folder(entry.index) else {
+            continue;
+        };
+        let key = (folder.to_path_buf(), entry.name.to_string());
+        if selected.contains(&key) {
+            rows.push(row as u32);
+        }
+        if focus.as_ref() == Some(&key) {
+            focus_row = Some(row as u32);
+        }
+    }
+    (rows, focus_row)
+}
+
+/// The search thread: walks `root` and sends each folder's matches, then the end. Stops at
+/// [`RESULT_LIMIT`], when cancelled, or when the window is gone.
+fn run_search(
+    root: &Path,
+    query: &Query,
+    options: WalkOptions,
+    cancel: &AtomicBool,
+    tx: &mpsc::UnboundedSender<Found>,
+) {
+    let mut total = 0;
+    let mut capped = false;
+    let stats = sx_search::search(
+        root,
+        query,
+        options,
+        filetime_now(),
+        cancel,
+        |folder, entries| {
+            let take = entries.len().min(RESULT_LIMIT - total);
+            total += take;
+            capped = total >= RESULT_LIMIT;
+            let sent = tx.unbounded_send(Found::Folder(
+                folder.to_path_buf(),
+                entries[..take].to_vec(),
+            ));
+            if sent.is_err() || capped {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        },
+    );
+    let _ = tx.unbounded_send(Found::Done { stats, capped });
+}
+
+/// The current time as FILETIME ticks (100 ns since 1601), for `modified:`.
+fn filetime_now() -> i64 {
+    const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
+    let since = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let ticks = i64::try_from(since.as_nanos() / 100).unwrap_or(i64::MAX - UNIX_EPOCH_TICKS);
+    UNIX_EPOCH_TICKS.saturating_add(ticks)
 }
 
 /// Where `folded_filter` (from [`sx_fs::fold_case`]) occurs in `name`, ignoring case.
@@ -337,6 +868,12 @@ mod tests {
         let name = "İstanbul";
         let range = match_range(name, &sx_fs::fold_case("İst")).unwrap();
         assert_eq!(&name[range], "İst");
+    }
+
+    #[test]
+    fn now_is_a_plausible_filetime() {
+        // 2024-01-01 is 133_485_408_000_000_000 ticks.
+        assert!(filetime_now() > 133_485_408_000_000_000);
     }
 
     #[test]

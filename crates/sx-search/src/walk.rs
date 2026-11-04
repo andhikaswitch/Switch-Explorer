@@ -27,11 +27,23 @@ pub struct Stats {
     pub cancelled: bool,
 }
 
-/// Options of a walk.
+/// Options of a walk: which items are seen, by the same rules as a folder listing.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WalkOptions {
-    /// List hidden and system items too (`view.show_hidden`, `view.show_system`).
-    pub hidden: bool,
+    /// Hidden items (`view.show_hidden`).
+    pub show_hidden: bool,
+    /// Protected OS items, hidden and system (`view.show_system`, with `show_hidden`).
+    pub show_system: bool,
+}
+
+impl WalkOptions {
+    fn shows(self, attrs: u32) -> bool {
+        if !self.show_hidden && attrs & FILE_ATTRIBUTE_HIDDEN != 0 {
+            return false;
+        }
+        let protected = FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+        attrs & protected != protected || self.show_system
+    }
 }
 
 const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
@@ -63,8 +75,7 @@ pub fn search(
         let listed = sx_win::enumerate(&dir, |entries| {
             for entry in entries {
                 stats.entries += 1;
-                let hidden = entry.attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0;
-                if hidden && !options.hidden {
+                if !options.shows(entry.attrs) {
                     continue;
                 }
                 if entry.kind == EntryKind::Dir {
@@ -231,6 +242,24 @@ mod tests {
         );
         assert!(stats.cancelled);
         assert_eq!(batches, 1);
+    }
+
+    #[test]
+    fn hidden_and_system_follow_the_listing_rules() {
+        let plain = WalkOptions::default();
+        let hidden = WalkOptions {
+            show_hidden: true,
+            show_system: false,
+        };
+        let all = WalkOptions {
+            show_hidden: true,
+            show_system: true,
+        };
+        let (h, s) = (FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM);
+        assert!(plain.shows(0) && plain.shows(s));
+        assert!(!plain.shows(h) && !plain.shows(h | s));
+        assert!(hidden.shows(h) && !hidden.shows(h | s));
+        assert!(all.shows(h | s));
     }
 
     #[test]

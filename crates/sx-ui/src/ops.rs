@@ -413,6 +413,7 @@ impl Workspace {
         let (tx, mut rx) = mpsc::unbounded::<JobEvent>();
         let owner = self.hwnd;
         let planned = op;
+        let from_tab = self.tab().id;
         let spawned = std::thread::Builder::new()
             .name("sx-op".into())
             .spawn(move || {
@@ -452,6 +453,7 @@ impl Workspace {
                     }
                     JobEvent::Finished(outcome) => {
                         this.on_job_finished(id, journal_id, origin, &outcome, cx);
+                        this.search_after_job(from_tab, &outcome, cx);
                     }
                 });
                 if alive.is_err() {
@@ -535,12 +537,27 @@ impl Workspace {
             // Also after an error when part of the job was done: that part can be undone.
             self.show_toast(message, undo, cx);
         }
-        // Without a watcher (perf.watcher off) the folder would not update by itself.
-        if !self.features.perf_watcher {
+        // Without a watcher (perf.watcher off) the folder would not update by itself. (Search
+        // results are refreshed by `search_after_job`.)
+        if !self.features.perf_watcher && self.tab().search.is_none() {
             let tab_id = self.tab().id;
             self.load_tab(tab_id, true, cx);
         }
         cx.notify();
+    }
+
+    /// Search results never follow changes by themselves (the items can be in any subfolder):
+    /// the tab an operation came from searches again when the operation changed something. The
+    /// results on screen stay until the new ones are in, and so does the operation's message.
+    fn search_after_job(&mut self, tab_id: u64, outcome: &Outcome, cx: &mut Context<Self>) {
+        let changed = !outcome.done.is_noop() || !outcome.deleted.is_empty();
+        if changed
+            && let Some(tab) = self.tab_by_id_mut(tab_id)
+            && tab.search.is_some()
+        {
+            let text = tab.filter.clone();
+            self.start_search(tab_id, &text, true, cx);
+        }
     }
 
     fn show_toast(&mut self, text: SharedString, undo: bool, cx: &mut Context<Self>) {

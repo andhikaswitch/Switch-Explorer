@@ -28,6 +28,7 @@ nav:
   shell_unsupported: "Nama shell: bisa dibuka di versi berikutnya. Ketik path lengkap dulu."
   invalid_address: Tidak bisa membuka "%{input}". Ketik path lengkap, misalnya C:\Users.
 details:
+  folder: Folder
   name: Nama
   modified: Diubah
   type: Tipe
@@ -82,6 +83,19 @@ search:
   no_match: "Tidak ada yang cocok dengan \"%{query}\" di folder ini. Periksa ejaannya, atau kosongkan pencarian."
   clear: Kosongkan pencarian
   clear_tip: Kosongkan pencarian (Esc)
+  placeholder_recursive: "Cari di %{folder} dan subfoldernya"
+  searching: Mencari…
+  status_running: "Mencari… %{found}"
+  found_one: 1 hasil
+  found: "%{count} hasil"
+  no_results: "Tidak ada yang cocok dengan \"%{query}\" di %{folder} dan subfoldernya. Periksa ejaannya, atau kosongkan pencarian."
+  skipped_one: "1 folder tidak bisa dibaca"
+  skipped: "%{count} folder tidak bisa dibaca"
+  capped: "Berhenti di %{count} hasil. Tambah kata untuk mempersempit pencarian."
+  bad_size: "\"%{value}\" bukan ukuran. Pakai angka dengan satuan, misalnya size:>10mb atau size:<500kb."
+  bad_age: "\"%{value}\" bukan rentang waktu. Pakai angka dengan h, d, w, m, atau y, misalnya modified:7d."
+  bad_kind: "\"%{value}\" bukan jenis. Pakai kind:folder atau kind:file."
+  failed: Pencarian tidak bisa dimulai. Tutup beberapa window lalu coba lagi.
 size:
   bytes: "%{n} byte"
 ops:

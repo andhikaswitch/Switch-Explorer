@@ -28,6 +28,7 @@ nav:
   shell_unsupported: "shell: names open in a later version. Type a full path instead."
   invalid_address: Can't open "%{input}". Type a full path, like C:\Users.
 details:
+  folder: Folder
   name: Name
   modified: Date modified
   type: Type
@@ -82,6 +83,19 @@ search:
   no_match: "Nothing in this folder matches \"%{query}\". Check the spelling, or clear the search."
   clear: Clear search
   clear_tip: Clear search (Esc)
+  placeholder_recursive: "Search %{folder} and subfolders"
+  searching: Searching…
+  status_running: "Searching… %{found}"
+  found_one: 1 result
+  found: "%{count} results"
+  no_results: "Nothing in %{folder} or its subfolders matches \"%{query}\". Check the spelling, or clear the search."
+  skipped_one: "1 folder could not be read"
+  skipped: "%{count} folders could not be read"
+  capped: "Stopped at %{count} results. Add words to narrow the search."
+  bad_size: "\"%{value}\" is not a size. Use a number with a unit, like size:>10mb or size:<500kb."
+  bad_age: "\"%{value}\" is not an age. Use a number with h, d, w, m or y, like modified:7d."
+  bad_kind: "\"%{value}\" is not a kind. Use kind:folder or kind:file."
+  failed: Search could not start. Close some windows and try again.
 size:
   bytes: "%{n} bytes"
 ops:

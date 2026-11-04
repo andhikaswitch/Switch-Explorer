@@ -88,6 +88,7 @@ Aturan dependensi:
 | Worker STA shell | `perf.shell_workers` (2) | STA + message pump (`sx_shell::StaWorker`) | `IShellItemImageFactory`, `SHGetFileInfo`, property store, data context menu | Antrean prioritas (item terlihat dulu). Fase 1: satu worker ikon, permintaan terbaru dulu (`Order::Newest`) |
 | Worker ops | maks `ops.parallel_jobs` (2) | — | `CopyFile2`, `MoveFileExW`, hashing verifikasi | Progress di-throttle 10 Hz |
 | STA ops-shell | 1 | STA | `IFileOperation` (Recycle Bin, namespace shell, elevasi UAC) | Terpisah dari worker thumbnail |
+| Pencarian rekursif | 1 per pencarian berjalan (`sx-search`) | — | Menelusuri folder + subfolder untuk satu query; hasil per folder dikirim lewat channel, UI menggabungkan yang sudah tiba dalam satu update | Berhenti seketika saat query berubah, tab pindah folder, atau tab ditutup (flag batal); maks 100.000 hasil |
 | Watcher | 1 per tab | — | `FindFirstChangeNotificationW` folder yang terbuka + `CM_Register_Notification` untuk pelepasan drive | Debounce 250 ms → muat ulang (ADR-022). Semua setup (buka folder, registrasi PnP) di thread watcher, tidak di UI thread. Saat drive diminta dilepas (eject USB), handle ditutup sebelum callback kembali. Eject ditolak app lain → satu perubahan dilaporkan, UI memuat ulang dan memasang watcher baru. Gagal muat → watcher dilepas |
 | HotkeyService | 1 (message-only window) | — | `RegisterHotKey`, `WM_HOTKEY` | Hanya jika ada binding scope global |
 | Tokio (lazy) | 2 | — | HTTP Drive, server loopback OAuth | Dibuat saat cloud pertama dipakai; dimatikan setelah idle |

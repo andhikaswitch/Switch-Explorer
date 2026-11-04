@@ -6178,6 +6178,7 @@ dependencies = [
  "sx-core",
  "sx-fs",
  "sx-ops",
+ "sx-search",
  "sx-settings",
  "sx-shell",
  "sx-theme",

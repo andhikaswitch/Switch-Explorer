@@ -31,6 +31,27 @@ pub enum Content {
     Page,
 }
 
+/// A recursive search shown in a tab (F-SRCH-02). While it lasts the tab's content holds the
+/// results and the folder listing waits in `listing`.
+#[derive(Debug)]
+pub struct SearchState {
+    /// Which search this is; batches of an older one are dropped.
+    pub generation: u64,
+    pub cancel: Arc<AtomicBool>,
+    pub running: bool,
+    /// The first word of the query, case-folded, to highlight in names.
+    pub highlight: String,
+    pub stats: Option<sx_search::Stats>,
+    /// The walk stopped at the result limit.
+    pub capped: bool,
+    /// The folder listing to go back to.
+    pub listing: Option<Arc<DirSnapshot>>,
+    /// The folder changed while the results were shown: reload it when the search ends.
+    pub listing_stale: bool,
+    /// A refresh's results, collected out of sight until its walk ends.
+    pub building: Option<DirSnapshot>,
+}
+
 #[derive(Debug)]
 pub struct Tab {
     pub id: u64,
@@ -57,9 +78,16 @@ pub struct Tab {
     selection_summary: Cell<Option<(u64, usize, usize, u64)>>,
     /// Widths of the fixed details columns, as dragged in the header.
     pub columns: crate::details::ColumnWidths,
-    /// What the search box filters this folder by, as typed (F-SRCH-01); cleared when the tab
-    /// goes to another folder.
+    /// What the search box holds, as typed: the folder's filter (F-SRCH-01), or the query of the
+    /// recursive search (F-SRCH-02). Cleared when the tab goes to another folder.
     pub filter: String,
+    /// The recursive search the tab shows, if any.
+    pub search: Option<SearchState>,
+    /// `Ctrl+E` / `F3`: typing searches subfolders too, instead of filtering.
+    pub recursive: bool,
+    /// Bumped by every change to the box in recursive mode; a debounced search runs only if it
+    /// is still the latest.
+    pub search_ticket: u64,
 }
 
 impl Tab {
@@ -83,6 +111,9 @@ impl Tab {
             selection_summary: Cell::new(None),
             columns: crate::details::ColumnWidths::default(),
             filter: String::new(),
+            search: None,
+            recursive: false,
+            search_ticket: 0,
         }
     }
 
@@ -115,6 +146,30 @@ impl Tab {
 
     pub fn cancel_load(&self) {
         self.cancel.store(true, Ordering::Relaxed);
+        if let Some(search) = &self.search {
+            search.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Whether typing in the box searches subfolders rather than filtering the folder.
+    pub fn searches(&self, recursive_default: bool) -> bool {
+        self.search.is_some() || self.recursive || recursive_default
+    }
+
+    /// The filter the folder listing gets: none while the box holds a recursive query.
+    pub fn listing_filter(&self, recursive_default: bool) -> &str {
+        if self.searches(recursive_default) {
+            ""
+        } else {
+            &self.filter
+        }
+    }
+
+    /// Stops and forgets the recursive search, if any; returns it (with the folder listing).
+    pub fn take_search(&mut self) -> Option<SearchState> {
+        let search = self.search.take()?;
+        search.cancel.store(true, Ordering::Relaxed);
+        Some(search)
     }
 
     /// Shows a new listing, keeping the selection by entry name when it is the same folder.
@@ -199,7 +254,15 @@ impl Tab {
             rows.entry(entry.index)
                 .or_insert_with(|| {
                     let mut text = format::row_text(&entry, show_extensions);
-                    text.matched = crate::search::match_range(&text.name, &snapshot.view().filter);
+                    let needle = match &self.search {
+                        Some(search) => search.highlight.as_str(),
+                        None => snapshot.view().filter.as_str(),
+                    };
+                    text.matched = crate::search::match_range(&text.name, needle);
+                    if let Some(folder) = snapshot.folder(entry.index) {
+                        text.folder = format::found_in(self.location().as_path(), folder);
+                        text.folder_full = folder.display().to_string().into();
+                    }
                     text
                 })
                 .clone(),

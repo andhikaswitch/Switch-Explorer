@@ -12,6 +12,10 @@ pub struct RowText {
     pub name: SharedString,
     /// The part of `name` that matches the filter, to show in bold.
     pub matched: Option<std::ops::Range<usize>>,
+    /// Search results: the folder the item was found in (relative to where the search ran),
+    /// and its full path for the tooltip.
+    pub folder: SharedString,
+    pub folder_full: SharedString,
     pub modified: SharedString,
     pub kind: SharedString,
     pub size: SharedString,
@@ -44,6 +48,8 @@ pub fn row_text(entry: &EntryView<'_>, show_extensions: bool) -> RowText {
     RowText {
         name: SharedString::from(name.to_string()),
         matched: None,
+        folder: SharedString::default(),
+        folder_full: SharedString::default(),
         modified: sx_win::format::file_time(entry.modified)
             .unwrap_or_default()
             .into(),
@@ -123,16 +129,76 @@ pub fn item_count(count: usize) -> SharedString {
     if count == 1 {
         t!("status.items_one").into()
     } else {
-        t!("status.items", count = count).into()
+        t!("status.items", count = number(count)).into()
+    }
+}
+
+/// The Folder column of a search result: the folder from where the search ran, starting with
+/// that folder's name (`Received\docs\2026`; just `Received` for items found directly in it).
+pub fn found_in(root: Option<&std::path::Path>, folder: &std::path::Path) -> SharedString {
+    let Some((root, rel)) = root.and_then(|root| Some((root, folder.strip_prefix(root).ok()?)))
+    else {
+        return folder.display().to_string().into();
+    };
+    let base = root.file_name().map_or_else(
+        || root.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    std::path::Path::new(&base)
+        .join(rel)
+        .display()
+        .to_string()
+        .into()
+}
+
+/// A count with digit groups as the UI language writes them (`100,000`, `100.000`).
+pub fn number(n: usize) -> String {
+    let separator = if &*rust_i18n::locale() == "id" {
+        '.'
+    } else {
+        ','
+    };
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (ix, digit) in digits.chars().enumerate() {
+        if ix > 0 && (digits.len() - ix).is_multiple_of(3) {
+            out.push(separator);
+        }
+        out.push(digit);
+    }
+    out
+}
+
+/// The message for a search query with a bad operator value (cause and fix, DESIGN.md §10).
+pub fn query_error(err: &sx_search::QueryError) -> SharedString {
+    match err {
+        sx_search::QueryError::Size(value) => t!("search.bad_size", value = value),
+        sx_search::QueryError::Age(value) => t!("search.bad_age", value = value),
+        sx_search::QueryError::Kind(value) => t!("search.bad_kind", value = value),
+    }
+    .into()
+}
+
+/// `120 results` found by a recursive search.
+pub fn found_count(count: usize) -> SharedString {
+    if count == 1 {
+        t!("search.found_one").into()
+    } else {
+        t!("search.found", count = number(count)).into()
     }
 }
 
 /// `12 of 207 items` while the search box filters the folder.
 pub fn filtered_count(shown: usize, total: usize) -> SharedString {
     if total == 1 {
-        t!("status.filtered_one", shown = shown).into()
+        t!("status.filtered_one", shown = number(shown)).into()
     } else {
-        t!("status.filtered", shown = shown, total = total).into()
+        t!(
+            "status.filtered",
+            shown = number(shown),
+            total = number(total)
+        )
+        .into()
     }
 }
 
@@ -140,6 +206,6 @@ pub fn selected_count(count: usize) -> SharedString {
     if count == 1 {
         t!("status.selected_one").into()
     } else {
-        t!("status.selected", count = count).into()
+        t!("status.selected", count = number(count)).into()
     }
 }

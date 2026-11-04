@@ -139,6 +139,34 @@ Home, This PC, dan Recycle Bin.
   mengosongkannya. Refresh dan watcher mempertahankannya.
 - Folder baru (`Ctrl+Shift+N`) mengosongkan filter dulu, supaya folder itu terlihat untuk di-rename.
 - Yang diketik selama folder masih dimuat tetap berlaku begitu daftarnya datang.
+- `Enter` di kotak cari menjalankan pencarian rekursif (F-SRCH-02) di folder ini dan semua subfoldernya.
+  `Ctrl+E` / `F3` memfokuskan kotak dalam mode rekursif, dan placeholder-nya menjadi "Cari di X dan
+  subfoldernya". Dengan `search.recursive_default`, mode rekursif berlaku sejak awal.
+- Hasil pencarian mengalir per folder saat penelusuran berjalan:
+  - Hasil menggantikan daftar, dengan kolom Folder: path dari folder asal, diawali nama folder itu
+    ("Received\docs"). Tooltip-nya berisi path lengkap.
+  - Kata pertama query ditebalkan di nama.
+  - Status bar menulis "Mencari… 12 hasil", lalu "12 hasil", ditambah jumlah folder yang tidak bisa dibaca.
+  - Saat selesai, hasil diurutkan sesuai sort tab. Klik header selama pencarian berjalan hanya mencatat
+    urutan, yang diterapkan saat pencarian selesai.
+- Selama hasil tampil, mengetik menghentikan pencarian yang berjalan saat itu juga. Pencarian baru mulai
+  setelah jeda ketik 300 ms, juga di tab yang sudah tidak aktif.
+- Mengosongkan kotak dengan mengetik mengembalikan daftar folder, tapi mode rekursif tetap aktif. Hanya
+  `Esc`, tombol ×, dan pindah folder yang mengakhiri mode itu.
+- Batas 100.000 hasil. Bila tercapai, status bar menyarankan mempersempit query.
+- Nilai operator yang salah (`size:banyak`) memunculkan pesan yang menyebut nilainya dan contoh yang benar,
+  dan pencarian tidak dijalankan.
+- Hasil bisa dibuka, dipilih, di-rename, dihapus, dan disalin seperti item biasa. Membuka folder dari hasil
+  berarti pindah ke folder itu, dan pencarian berakhir. Back (`Alt+←`) selagi hasil tampil kembali ke daftar
+  folder.
+- Operasi yang mengubah sesuatu menjalankan ulang pencarian di tab asal operasinya. `F5` dan switch `view.*`
+  juga menjalankannya ulang.
+  - Hasil lama tetap tampil sampai hasil baru lengkap, lalu ditukar sekaligus dengan seleksi dipertahankan
+    per path.
+  - Pesan error operasi tidak hilang.
+- Watcher tidak mengganti hasil yang tampil: daftar folder dimuat ulang begitu pencarian berakhir.
+- Hidden dan system mengikuti aturan daftar folder (`view.show_hidden`, `view.show_system`).
+- `Esc`, tombol ×, atau mengosongkan kotak mengakhiri pencarian, dan daftar folder kembali tanpa filter.
 - Di window lebih sempit dari 720 px kotak cari menjadi ikon. Ikon itu atau `Ctrl+F` membukanya, dan kotak
   terlipat lagi saat fokus keluar dalam keadaan kosong.
 

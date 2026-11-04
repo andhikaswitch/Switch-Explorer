@@ -84,7 +84,12 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
       wildcard, frasa berkutip; hasil streaming, batal, link tidak diikuti, folder tak terbaca dilewati).
       Filter instan (F-SRCH-01) selesai: kotak cari di command bar, highlight `match.fg`, "x dari y item",
       `Ctrl+F`/`Esc`/`↓`; terukur di release 0,1 ms per ketikan untuk 10k item dan ~1 ms untuk 100k.
-      Belum: pencarian rekursif di UI (kolom Path), Everything.
+      Pencarian rekursif di UI (F-SRCH-02) selesai:
+      - `Enter`/`Ctrl+E`/`F3` menjalankannya, dan hasil streaming dari thread sendiri dengan kolom Folder.
+      - Pencarian dibatalkan saat query berubah, lalu dijalankan lagi setelah jeda ketik 300 ms.
+      - Hasil diurutkan saat selesai; batas 100.000 hasil.
+      - Hasil bisa dibuka, di-rename, dihapus, dan disalin.
+      Belum: Everything.
 - [ ] Split view, session restore, mode tampilan per folder, checkbox seleksi, floating action bar.
 - [ ] Home dashboard (gauge, kategori pintar, pinned, terbaru, aktivitas); halaman Aktivitas; Recycle Bin view.
 - [ ] Properties (`Alt+Enter`), copy path, buka terminal/VS Code, mode baca-saja, elevasi via `IFileOperation`.
