@@ -144,6 +144,10 @@ pub fn found_in(root: Option<&std::path::Path>, folder: &std::path::Path) -> Sha
         || root.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
     );
+    if rel.as_os_str().is_empty() {
+        // `join("")` would add a trailing separator.
+        return base.into();
+    }
     std::path::Path::new(&base)
         .join(rel)
         .display()
@@ -207,5 +211,33 @@ pub fn selected_count(count: usize) -> SharedString {
         t!("status.selected_one").into()
     } else {
         t!("status.selected", count = number(count)).into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn found_in_starts_with_the_searched_folder() {
+        let root = Path::new(r"C:\Users\Raka\Received");
+        assert_eq!(found_in(Some(root), root).as_ref(), "Received");
+        assert_eq!(
+            found_in(Some(root), &root.join("docs").join("2026")).as_ref(),
+            r"Received\docs\2026"
+        );
+        let other = Path::new(r"D:\Elsewhere");
+        assert_eq!(found_in(Some(root), other).as_ref(), r"D:\Elsewhere");
+    }
+
+    #[test]
+    fn numbers_get_digit_groups() {
+        rust_i18n::set_locale("en");
+        assert_eq!(number(7), "7");
+        assert_eq!(number(1234), "1,234");
+        assert_eq!(number(100_000), "100,000");
+        assert_eq!(number(1_234_567), "1,234,567");
     }
 }

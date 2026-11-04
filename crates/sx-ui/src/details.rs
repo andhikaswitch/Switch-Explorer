@@ -38,6 +38,8 @@ const COL_MAX: f32 = 480.0;
 /// for a readable file name next to the other columns.
 const HIDE_TYPE_BELOW: f32 = 640.0;
 const HIDE_MODIFIED_BELOW: f32 = 480.0;
+/// Room Name keeps for a readable file name next to the Folder column of search results.
+const NAME_MIN: f32 = 200.0;
 
 /// The widths of a tab's fixed columns, as the user dragged them (per tab, for the session).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -111,10 +113,14 @@ struct Columns {
 impl Columns {
     fn for_width(width: Pixels, widths: &ColumnWidths, results: bool) -> Self {
         let width = f32::from(width);
-        // Results give the room of Type to Folder first.
-        let extra = if results { widths.folder } else { 0.0 };
+        // Results give the room of Type, then Modified, to Folder. Folder itself shrinks to
+        // leave Name its room, and goes when not even its minimum fits.
+        let folder = results
+            .then(|| widths.folder.min(width - widths.size - NAME_MIN))
+            .filter(|w| *w >= COL_MIN);
+        let extra = folder.unwrap_or(0.0);
         Self {
-            folder: results.then(|| gpui_kit::px(widths.folder)),
+            folder: folder.map(gpui_kit::px),
             modified: (width >= HIDE_MODIFIED_BELOW + extra).then(|| gpui_kit::px(widths.modified)),
             kind: (width >= HIDE_TYPE_BELOW + extra).then(|| gpui_kit::px(widths.kind)),
             size: gpui_kit::px(widths.size),
@@ -831,5 +837,28 @@ mod tests {
         assert_eq!(widths.get(Column::Size), Some(COL_MAX));
         assert_eq!(widths.get(Column::Type), Some(COL_TYPE));
         assert_eq!(widths.get(Column::Name), None);
+    }
+
+    #[test]
+    fn results_keep_room_for_names() {
+        let widths = ColumnWidths::default();
+        let wide = Columns::for_width(gpui_kit::px(1200.0), &widths, true);
+        assert_eq!(wide.folder, Some(gpui_kit::px(COL_FOLDER)));
+        assert!(wide.modified.is_some() && wide.kind.is_some());
+        // A narrow window: Folder shrinks so Name keeps its room; Type and Modified go.
+        let narrow = Columns::for_width(gpui_kit::px(408.0), &widths, true);
+        let folder = f32::from(narrow.folder.unwrap());
+        assert!(folder >= COL_MIN && 408.0 - folder - COL_SIZE >= NAME_MIN);
+        assert!(narrow.modified.is_none() && narrow.kind.is_none());
+        // Too narrow for even a short Folder column: Name wins.
+        assert_eq!(
+            Columns::for_width(gpui_kit::px(320.0), &widths, true).folder,
+            None
+        );
+        // A folder listing has no Folder column.
+        assert_eq!(
+            Columns::for_width(gpui_kit::px(1200.0), &widths, false).folder,
+            None
+        );
     }
 }
