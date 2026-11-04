@@ -159,6 +159,7 @@ impl Workspace {
         if self.ops.dialog.is_some() {
             return;
         }
+        self.context_menu = None;
         let restore = match self.palette.take() {
             Some(open) if open.mode == mode => {
                 self.palette = Some(open);
@@ -196,7 +197,9 @@ impl Workspace {
     /// Quick open: the open tabs' folders, pinned folders, folders opened this session, then the
     /// drives; each folder once, where it first appears.
     fn folder_items(&self) -> Vec<Item> {
+        // Each folder once: Windows paths ignore case.
         let mut seen = std::collections::HashSet::new();
+        let mut first = |path: &std::path::Path| seen.insert(path.to_string_lossy().to_lowercase());
         let mut items = Vec::new();
         let name = |path: &std::path::Path| -> SharedString {
             path.file_name()
@@ -208,7 +211,7 @@ impl Workspace {
         };
         for tab in &self.tabs {
             if let Some(path) = tab.location().as_path()
-                && seen.insert(path.to_path_buf())
+                && first(path)
             {
                 items.push(Item {
                     label: name(path),
@@ -227,17 +230,17 @@ impl Workspace {
             enabled: true,
         };
         for pin in &self.pins {
-            if seen.insert(pin.path.clone()) {
+            if first(&pin.path) {
                 items.push(folder(pin.name.clone(), &pin.path));
             }
         }
         for path in &self.recent_folders {
-            if seen.insert(path.clone()) {
+            if first(path) {
                 items.push(folder(name(path), path));
             }
         }
         for drive in &self.drives {
-            if seen.insert(drive.root.clone()) {
+            if first(&drive.root) {
                 items.push(folder(crate::format::drive_label(drive), &drive.root));
             }
         }
@@ -254,9 +257,9 @@ impl Workspace {
             "nav.forward" => tab.history.can_go_forward(),
             "nav.up" => tab.location().parent().is_some(),
             "tab.next" | "tab.previous" => self.tabs.len() > 1,
-            "search.filter" | "search.find" | "file.new_folder" | "file.paste" | "sidebar.pin" => {
-                folder
-            }
+            "search.filter" | "search.find" | "file.new_folder" | "sidebar.pin"
+            | "file.open_new_tab" | "file.properties" => folder,
+            "file.paste" => folder && sx_shell::clipboard::has_files(),
             "file.rename"
             | "file.delete"
             | "file.delete_permanent"
@@ -538,7 +541,10 @@ impl Workspace {
                 .py(t.px(Token::SpaceMd))
                 .text_color(t.color(Token::FgMuted))
                 .child(SharedString::from(t!(
-                    "palette.empty",
+                    match palette.mode {
+                        PaletteMode::Commands => "palette.empty",
+                        PaletteMode::Folders => "palette.empty_folders",
+                    },
                     query = crate::search::quoted_query(&palette.input.read(cx).value())
                 )))
                 .into_any_element()
@@ -546,7 +552,10 @@ impl Workspace {
             div()
                 .id("palette-list")
                 .role(gpui_kit::Role::ListBox)
-                .aria_label(SharedString::from(t!("palette.label")))
+                .aria_label(match palette.mode {
+                    PaletteMode::Commands => SharedString::from(t!("palette.label")),
+                    PaletteMode::Folders => SharedString::from(t!("palette.label_folders")),
+                })
                 .relative()
                 .h(row_height * rows.min(VISIBLE_ROWS) as f32 + t.px(Token::SpaceXs) * 2.0)
                 .child(
@@ -584,10 +593,11 @@ impl Workspace {
         let shown = palette.shown.get(ix)?;
         let item = palette.items.get(shown.item)?;
         let selected = ix == palette.selected;
-        let (selected_bg, selected_border, hover) = (
+        let (selected_bg, selected_border, hover, pressed) = (
             t.color(Token::RowSelectedBg),
             t.color(Token::RowSelectedBorder),
             t.color(Token::RowHoverBg),
+            t.color(Token::PressedBg),
         );
         let tint = |token: Token| {
             if item.enabled {
@@ -649,6 +659,7 @@ impl Workspace {
                 .when(!selected && item.enabled, |el| {
                     el.hover(move |s| s.bg(hover))
                 })
+                .when(item.enabled, |el| el.active(move |s| s.bg(pressed)))
                 .text_color(tint(Token::FgPrimary))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.run_palette(ix, window, cx);

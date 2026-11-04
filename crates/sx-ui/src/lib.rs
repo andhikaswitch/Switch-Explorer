@@ -9,6 +9,7 @@ rust_i18n::i18n!("../../locales", fallback = "en");
 pub mod actions;
 mod assets;
 mod chrome;
+mod context_menu;
 mod details;
 mod focus;
 mod format;

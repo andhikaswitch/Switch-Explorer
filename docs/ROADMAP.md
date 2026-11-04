@@ -71,8 +71,12 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
       - Menu item dan menu latar folder, dengan submenu berikon lewat subclass.
       - Rename, Hapus, dan Tempel dijalankan sendiri.
       - Tema dark/light ikut `integration.native_menu_dark`.
-      - Klik kanan (sementara juga tanpa `Shift`) dan `Shift+F10` menempatkan menu di baris yang fokus.
-      Belum: menu bertema, menu sidebar.
+      - `Shift`+klik kanan dan `Shift+F10` menempatkan menu di baris yang fokus.
+      Menu bertema juga selesai (DESIGN §8.10): menu item, menu latar (Urutkan ▸, Muat ulang, Tempel,
+      Folder baru, Pin, Properties), dan menu sidebar (Buka, Tab baru, Lepas pin, Naik/Turun,
+      Properties). Klik kanan dan tombol Menu membukanya, dan "Tampilkan opsi lain" ada di setiap menu.
+      Properties (`Alt+Enter`) memakai dialog Windows. Belum: Buka dengan ▸, Upload ke Drive, Kompres, dan
+      di menu latar: Tampilan ▸, Baru ▸ (selain folder), Buka terminal di sini.
 - [ ] `CommandRegistry`; command palette (`Ctrl+Shift+P`); quick open (`Ctrl+P`).
       Progres: command palette selesai (DESIGN §8.9; fuzzy dengan matcher sendiri, ADR-023). Isinya
       command, switch beserta statusnya, dan tempat; label command ada dalam en dan id. Quick open (`Ctrl+P`)

@@ -28,6 +28,8 @@ actions!(
         CommandPalette,
         QuickOpen,
         NativeMenu,
+        ContextMenuKey,
+        FileProperties,
         TabNew,
         TabClose,
         TabNext,
@@ -85,6 +87,9 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "app.command_palette" => Box::new(CommandPalette),
         "app.quick_open" => Box::new(QuickOpen),
         "menu.more_options" => Box::new(NativeMenu),
+        "menu.context" => Box::new(ContextMenuKey),
+        "file.open_new_tab" => Box::new(OpenInNewTab),
+        "file.properties" => Box::new(FileProperties),
         "tab.new" => Box::new(TabNew),
         "tab.close" => Box::new(TabClose),
         "tab.next" => Box::new(TabNext),
@@ -131,8 +136,8 @@ fn predicate(id: &str, context: CommandContext) -> Option<Rc<KeyBindingContextPr
             .map(Rc::new);
     }
     let source = match context {
-        CommandContext::Workspace => "Workspace && !Input",
-        CommandContext::List => "List && !Input",
+        CommandContext::Workspace => "Workspace && !Input && !ContextMenu",
+        CommandContext::List => "List && !Input && !ContextMenu",
         CommandContext::Input => "Input",
         CommandContext::Dialog => "Dialog",
     };
@@ -159,7 +164,7 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
             }
         }
     }
-    let list = Some("List && !Input");
+    let list = Some("List && !Input && !ContextMenu");
     bindings.extend([
         KeyBinding::new("up", SelectPrevious, list),
         KeyBinding::new("down", SelectNext, list),
@@ -191,7 +196,7 @@ fn bind_hot_switches(bindings: &mut Vec<KeyBinding>, cx: &App) {
             continue;
         }
         let context = if spec.keys.contains(' ') {
-            "Workspace && !Input"
+            "Workspace && !Input && !ContextMenu"
         } else {
             WORKSPACE_CONTEXT
         };

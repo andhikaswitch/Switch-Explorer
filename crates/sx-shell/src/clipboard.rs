@@ -103,6 +103,13 @@ fn set(format: u32, block: Global) -> Result<(), ShellError> {
 
 /// Changes whenever the clipboard content changes. Read it with [`read`] and pass it to
 /// [`clear_if_unchanged`] so a later copy by the user (in any app) is never wiped.
+/// Whether the clipboard holds files (`CF_HDROP`), for enabling Paste. Cheap: it does not open
+/// the clipboard.
+pub fn has_files() -> bool {
+    // SAFETY: a query of the clipboard's formats; no handle is taken.
+    unsafe { IsClipboardFormatAvailable(u32::from(CF_HDROP.0)) }.is_ok()
+}
+
 pub fn sequence() -> u32 {
     // SAFETY: a plain query.
     unsafe { GetClipboardSequenceNumber() }

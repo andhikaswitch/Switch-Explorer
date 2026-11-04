@@ -14,13 +14,13 @@ use crate::schema::Token::{
     ButtonSecondaryBgHover, ButtonSecondaryBgPressed, ButtonSecondaryFg, ButtonSecondaryFgHover,
     CardHoverFg, CheckboxBorder, CheckboxCheck, CheckboxCheckedBg, DangerText, DropBlockedBorder,
     DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing, HeaderFg,
-    InfoText, InputPlaceholder, MatchFg, NavItemActiveBg, NavItemActiveFg, NavItemFg,
+    HoverBg, InfoText, InputPlaceholder, MatchFg, NavItemActiveBg, NavItemActiveFg, NavItemFg,
     NavItemHoverBg, NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg, OsdIconOff,
-    OsdIconOn, OsdStateOff, OsdStateOn, ProgressFill, RowHoverBg, RowSelectedBg, RowSelectedBorder,
-    RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff, StatuschipOn,
-    StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover, SurfaceChip, SurfaceInput,
-    SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg, ToastFg,
-    ToggleOffBorder, ToggleOnBg, ToggleOnThumb, WarningText,
+    OsdIconOn, OsdStateOff, OsdStateOn, PressedBg, ProgressFill, RowHoverBg, RowSelectedBg,
+    RowSelectedBorder, RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff,
+    StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover, SurfaceChip,
+    SurfaceInput, SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg,
+    ToastFg, ToggleOffBorder, ToggleOnBg, ToggleOnThumb, WarningText,
 };
 
 /// A foreground/background requirement.
@@ -78,6 +78,13 @@ pub const PAIRS: &[ContrastPair] = &[
         &[SurfaceOverlay],
         &[BgContent],
         NON_TEXT,
+    ),
+    // The context menu: its rows under the pointer and pressed.
+    pair(
+        &[FgPrimary, FgSecondary],
+        &[HoverBg, PressedBg],
+        &[BgContent, SurfaceOverlay],
+        TEXT,
     ),
     // The matching part of a name, on every row state.
     pair(&[MatchFg], &[BgContent], &[], TEXT),

@@ -6,8 +6,9 @@ use std::path::Path;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    ClickEvent, Context, Div, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
-    SharedString, StatefulInteractiveElement as _, Styled as _, div, relative,
+    ClickEvent, Context, Div, ElementId, FocusHandle, InteractiveElement as _, IntoElement,
+    MouseButton, MouseUpEvent, ParentElement as _, SharedString, StatefulInteractiveElement as _,
+    Styled as _, div, relative,
 };
 use rust_i18n::t;
 use sx_core::Location;
@@ -233,9 +234,7 @@ impl Workspace {
                 let id = element_id.clone();
                 move |this, hovered: &bool, _, cx| this.set_hovered(&id, *hovered, cx)
             }))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.navigate(to.clone(), cx);
-            }))
+            .map(|el| self.sidebar_pointer(el, to, &focus, cx))
             .child(
                 div()
                     .flex_none()
@@ -275,6 +274,76 @@ impl Workspace {
                             .child(text)
                     })),
             )
+    }
+}
+
+/// A sidebar item drawn this frame (see `Workspace::sidebar_targets`).
+#[derive(Debug)]
+pub(crate) struct SidebarTarget {
+    focus: FocusHandle,
+    location: Location,
+    bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
+}
+
+impl Workspace {
+    /// The sidebar item with keyboard focus: its place, and where a menu for it goes (below
+    /// its start).
+    pub(crate) fn focused_sidebar_item(
+        &self,
+        window: &gpui_kit::Window,
+    ) -> Option<(Location, Option<gpui_kit::Point<gpui_kit::Pixels>>)> {
+        let targets = self.sidebar_targets.borrow();
+        let target = targets.iter().find(|t| t.focus.is_focused(window))?;
+        let at = target.bounds.get().map(|b| b.bottom_left());
+        Some((target.location.clone(), at))
+    }
+
+    /// A click on a sidebar item goes there; a right-click opens its menu (with `Shift`,
+    /// Windows' own menu for its folder).
+    fn sidebar_pointer(
+        &self,
+        el: gpui_kit::Stateful<Div>,
+        to: Location,
+        focus: &FocusHandle,
+        cx: &Context<Self>,
+    ) -> gpui_kit::Stateful<Div> {
+        let bounds = std::rc::Rc::new(std::cell::Cell::new(None));
+        self.sidebar_targets.borrow_mut().push(SidebarTarget {
+            focus: focus.clone(),
+            location: to.clone(),
+            bounds: bounds.clone(),
+        });
+        let menu_for = to.clone();
+        el.child(
+            gpui_kit::canvas(move |area, _, _| bounds.set(Some(area)), |_, (), _, _| {})
+                .absolute()
+                .size_full(),
+        )
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(|this, _, _, _| this.swallow_right_up = false),
+        )
+        .on_mouse_up(
+            MouseButton::Right,
+            cx.listener(move |this, event: &MouseUpEvent, window, cx| {
+                if std::mem::take(&mut this.swallow_right_up) {
+                    return;
+                }
+                match menu_for.as_path().map(Path::to_path_buf) {
+                    Some(path) if event.modifiers.shift => this.open_native_menu_for(
+                        sx_shell::menu::MenuTarget::Items(vec![path]),
+                        Some(event.position),
+                        true,
+                        window,
+                        cx,
+                    ),
+                    _ => this.open_sidebar_menu(&menu_for, event.position, false, window, cx),
+                }
+            }),
+        )
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            this.navigate(to.clone(), cx);
+        }))
     }
 }
 

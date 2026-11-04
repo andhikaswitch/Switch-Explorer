@@ -149,7 +149,7 @@ impl Workspace {
     /// (when it has an action), in a cycle.
     fn focus_area(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         // A dialog or the palette keeps the focus until it closes (DESIGN.md §11).
-        if self.ops.dialog.is_some() || self.palette.is_some() {
+        if self.ops.dialog.is_some() || self.palette.is_some() || self.context_menu.is_some() {
             return;
         }
         let areas = self.focus_areas();
@@ -195,7 +195,7 @@ impl Workspace {
     /// `Tab` / `Shift+Tab`: the next or previous stop in screen order; inside an open dialog,
     /// around its buttons only.
     fn focus_stop_step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.palette.is_some() {
+        if self.palette.is_some() || self.context_menu.is_some() {
             return;
         }
         if self.ops.dialog.is_some() {
@@ -227,6 +227,10 @@ impl Workspace {
         }
         if let Some(palette) = &self.palette {
             palette.focus_input(window, cx);
+            return;
+        }
+        if let Some(menu) = &self.context_menu {
+            menu.focus_menu(window, cx);
             return;
         }
         let target = window.focus_lost_restore_target(cx);

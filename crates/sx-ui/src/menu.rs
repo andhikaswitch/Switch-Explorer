@@ -36,7 +36,7 @@ impl Workspace {
 
     /// What the shell menu is for: the selected items that share the focused item's folder
     /// (search results can span folders), else the folder itself.
-    fn menu_target(&self) -> Option<MenuTarget> {
+    pub(crate) fn menu_target(&self) -> Option<MenuTarget> {
         let paths = self.selected_paths();
         if paths.is_empty() {
             return self
@@ -64,6 +64,24 @@ impl Workspace {
         Some(MenuTarget::Items(items))
     }
 
+    /// A right-click released in the list: the themed menu, or with `Shift` Windows' own menu
+    /// with its extended verbs.
+    pub(crate) fn right_click_menu(
+        &mut self,
+        event: &gpui_kit::MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if std::mem::take(&mut self.swallow_right_up) {
+            return;
+        }
+        if event.modifiers.shift {
+            self.open_native_menu(Some(event.position), true, window, cx);
+        } else {
+            self.open_list_menu(event.position, false, window, cx);
+        }
+    }
+
     /// Where a menu opened from the keyboard goes: on the focused row, when it is on screen.
     pub(crate) fn keyboard_menu_point(&self, cx: &gpui_kit::App) -> Option<Point<Pixels>> {
         let tab = self.tab();
@@ -86,7 +104,21 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (Some(owner), Some(target)) = (self.hwnd, self.menu_target()) else {
+        if let Some(target) = self.menu_target() {
+            self.open_native_menu_for(target, at, extended, window, cx);
+        }
+    }
+
+    /// Opens the shell's menu for `target` (see [`Self::open_native_menu`]).
+    pub(crate) fn open_native_menu_for(
+        &mut self,
+        target: MenuTarget,
+        at: Option<Point<Pixels>>,
+        extended: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(owner) = self.hwnd else {
             return;
         };
         tracing::debug!(keyboard = at.is_none(), extended, "shell menu requested");
@@ -145,6 +177,34 @@ impl Workspace {
                 // The host could not run it, or it panicked (logged there).
                 Err(_) => {}
             });
+        })
+        .detach();
+    }
+
+    /// The Windows properties of `target` (`Alt+Enter`): the shell's own dialog, for several
+    /// items too.
+    pub(crate) fn show_properties(&mut self, target: MenuTarget, cx: &mut Context<Self>) {
+        let Some(owner) = self.hwnd else {
+            return;
+        };
+        let prepared = crate::ops::off_thread(move || sx_shell::menu::prepare(target));
+        cx.spawn(async move |this, cx| {
+            let shown = match prepared.await {
+                Some(Ok(prepared)) => sx_shell::modal::run(move || {
+                    sx_shell::menu::invoke(&prepared, owner, "properties")
+                })
+                .await
+                .ok(),
+                Some(Err(err)) => Some(Err(err)),
+                None => None,
+            };
+            if let Some(Err(err)) = shown {
+                tracing::debug!(error = %err, "properties not shown");
+                let _ = this.update(cx, |this, cx| {
+                    this.notice = Some(t!("menu.properties_failed").into());
+                    cx.notify();
+                });
+            }
         })
         .detach();
     }

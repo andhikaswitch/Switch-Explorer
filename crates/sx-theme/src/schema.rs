@@ -271,6 +271,8 @@ define_tokens! {
     SizeSearchWidth = "size.search_width": Number,
     // The command palette (F-CMD-01).
     SizePaletteWidth = "size.palette_width": Number,
+    // The themed context menu and its submenus (F-CTX-01).
+    SizeMenuWidth = "size.menu_width": Number,
     FocusRingWidth = "focus.ring_width": Number,
     // Opacity of disabled controls (0..1).
     OpacityDisabled = "opacity.disabled": Number,

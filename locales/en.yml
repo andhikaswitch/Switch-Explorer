@@ -226,6 +226,8 @@ hotswitch:
   tip_off: "off"
   badge: Drag off
 command:
+  menu:
+    more_options: Show more options
   tab:
     new: New tab
     close: Close tab
@@ -241,6 +243,9 @@ command:
     filter: Filter this folder
     find: Search this folder and subfolders
   file:
+    open: Open
+    open_new_tab: Open in new tab
+    properties: Properties
     rename: Rename
     new_folder: New folder
     delete: Delete to the Recycle Bin
@@ -261,14 +266,21 @@ command:
   sidebar:
     pin: Pin or unpin this folder
 menu:
+  label: Context menu
+  sort_by: Sort by
+  paste_into: Paste into this folder
+  move_up: Move up
+  move_down: Move down
+  properties_failed: Windows could not show the properties. Try again; if it keeps failing, use Show more options.
   failed: Windows could not show its menu here. Try again; if it keeps failing, restart Switch Explorer.
 palette:
   label: Command palette
   label_folders: Quick open
   placeholder: Type a command, a switch or a place
-  placeholder_folders: Type a folder name or path
-  open_tab: Open tab
+  placeholder_folders: Type the name of an open, pinned or recent folder
+  open_tab: Already open
   empty: "Nothing matches \"%{query}\". Try fewer letters."
+  empty_folders: "No open, pinned or recent folder matches \"%{query}\". To go to any folder, type its path in the address bar (Ctrl+L)."
   switch_on: Switch, on
   switch_off: Switch, off
   place: Place

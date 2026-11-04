@@ -67,7 +67,13 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - Huruf yang cocok ditulis tebal, dan shortcut tampil di sisi kanan.
   - Setelah palette tertutup, fokus kembali ke tempat semula.
 - ADR-023: matcher fuzzy sendiri di `sx-search`, bukan nucleo.
-- Menu konteks Windows (klik kanan, `Shift`+klik kanan untuk verb tambahan, `Shift+F10`):
+- Menu konteks bertema (klik kanan, tombol Menu):
+  - Menu item: Buka, Buka di tab baru, Potong, Salin, Tempel ke folder, Ganti nama, Hapus, Salin path, Pin,
+    Properties, dan "Tampilkan opsi lain".
+  - Menu area kosong: Urutkan menurut ▸, Muat ulang, Tempel, Folder baru, Pin folder ini, dan Properties.
+  - Menu sidebar: Buka, Buka di tab baru, Lepas pin, Naikkan/Turunkan, dan Properties.
+  - Properties (`Alt+Enter`) membuka dialog Windows, juga untuk beberapa item sekaligus.
+- Menu konteks Windows (`Shift`+klik kanan untuk verb tambahan, `Shift+F10`, "Tampilkan opsi lain"):
   - Untuk item terpilih dan area kosong folder, termasuk entri pihak ketiga dan submenu berikon.
   - Rename, Hapus, dan Tempel dari menu itu tercatat di journal dan bisa di-undo.
 - Quick open (`Ctrl+P`): lompat ke tab terbuka, folder pinned, folder yang dibuka di sesi ini, atau drive,

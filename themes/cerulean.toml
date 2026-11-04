@@ -78,6 +78,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "size.osd_offset" = 72
 "size.search_width" = 240
 "size.palette_width" = 560
+"size.menu_width" = 260
 "focus.ring_width" = 2
 "opacity.disabled" = 0.4
 

@@ -191,12 +191,7 @@ impl Workspace {
                                     MouseButton::Right,
                                     cx.listener(
                                         |this, event: &gpui_kit::MouseUpEvent, window, cx| {
-                                            this.open_native_menu(
-                                                Some(event.position),
-                                                event.modifiers.shift,
-                                                window,
-                                                cx,
-                                            );
+                                            this.right_click_menu(event, window, cx);
                                         },
                                     ),
                                 )
@@ -364,6 +359,7 @@ impl Workspace {
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(|this, _, window, cx| {
+                            this.swallow_right_up = false;
                             window.focus(&this.list_focus, cx);
                             this.tab_mut().selection.clear();
                             cx.notify();
@@ -372,12 +368,7 @@ impl Workspace {
                     .on_mouse_up(
                         MouseButton::Right,
                         cx.listener(|this, event: &gpui_kit::MouseUpEvent, window, cx| {
-                            this.open_native_menu(
-                                Some(event.position),
-                                event.modifiers.shift,
-                                window,
-                                cx,
-                            );
+                            this.right_click_menu(event, window, cx);
                         }),
                     )
                     .flex()
@@ -794,6 +785,7 @@ impl Workspace {
             MouseButton::Right,
             cx.listener(move |this, _, window, cx| {
                 cx.stop_propagation();
+                this.swallow_right_up = false;
                 window.focus(&this.list_focus, cx);
                 if !this.tab().selection.contains(row as u32) {
                     this.select_row(row, false, false);
@@ -805,7 +797,7 @@ impl Workspace {
             MouseButton::Right,
             cx.listener(|this, event: &gpui_kit::MouseUpEvent, window, cx| {
                 cx.stop_propagation();
-                this.open_native_menu(Some(event.position), event.modifiers.shift, window, cx);
+                this.right_click_menu(event, window, cx);
             }),
         )
     }

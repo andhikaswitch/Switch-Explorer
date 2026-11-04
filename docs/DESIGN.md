@@ -327,6 +327,51 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
   - Drive.
   Menekan shortcut mode yang lain selagi panel terbuka langsung pindah mode.
 
+### 8.10 Menu konteks bertema
+
+```text
+  ┌──────────────────────────────┐
+  │   Open                 Enter │
+  │ ──────────────────────────── │
+  │   Cut                 Ctrl+X │
+  │   Copy                Ctrl+C │
+  │ ──────────────────────────── │
+  │   Rename                  F2 │   baris di bawah pointer: hover.bg
+  │   Delete to the Recycle Bin  │
+  │ ──────────────────────────── │
+  │   Properties       Alt+Enter │
+  │   Show more options Shift+F10│
+  └──────────────────────────────┘
+```
+
+- Lebar `size.menu_width` (260 px). Panel memakai `surface.overlay`, `border.subtle`, `radius.md`, dan
+  `shadow.popover`. Baris setinggi `size.control`, separator `divider`.
+- Baris yang disorot atau ditekan memakai `hover.bg` / `pressed.bg`. Baris pilihan keyboard juga diberi cincin
+  fokus. Baris yang tidak bisa dijalankan memakai `fg.disabled`. Centang menandai pilihan aktif
+  (misalnya urutan di "Urutkan menurut ▸").
+- Menu muncul di titik klik kanan. Bila tidak muat di bawah, menu dibuka ke atas; bila tidak muat di kanan,
+  menu digeser ke dalam window. Submenu terbuka di kanan menu, atau di kiri bila ruangnya tidak cukup.
+- Isi setiap menu mengikuti FEATURES F-CTX-01/03/04. Label dan shortcut diambil dari `CommandRegistry`, sama
+  dengan palette. Tempel ke folder item tidak memakai shortcut, karena `Ctrl+V` menempel ke folder yang
+  sedang tampil.
+- `↑`/`↓` memilih baris (melewati separator dan baris nonaktif), `→`/`←` membuka dan menutup submenu,
+  `Enter`/`Space` atau klik menjalankan baris. `Esc` atau klik di luar menu menutupnya.
+- Fokus tertahan di menu selama terbuka, dan shortcut window mati (key context `ContextMenu`). Setelah menu
+  ditutup, fokus kembali ke tempat semula; command daftar dijalankan di daftar.
+- Cara membuka:
+  - Klik kanan (dilepas) pada item, area kosong, atau item sidebar.
+  - Tombol Menu, untuk seleksi atau item sidebar yang fokus. Baris pertama langsung terpilih, dengan cincin
+    fokus.
+  - `Shift`+klik kanan dan `Shift+F10` langsung membuka menu Windows.
+- Cara menutup: `Esc`, klik di luar menu (klik itu hanya menutup, tidak membuka menu baru), menjalankan
+  baris, window kehilangan fokus, atau dialog/rename yang dimulai.
+- Panel muncul dengan fade `motion.base`, tanpa animasi bila `perf.animations` mati.
+- Hanya satu baris yang menyala, yaitu baris pilihan pointer atau keyboard. Tempel nonaktif bila clipboard
+  tidak berisi file.
+- Pembaca layar: panel memakai role menu dengan nama, dan baris memakai role menuitem (urutan memakai
+  menuitemradio dan toggled). Baris pilihan keyboard diumumkan sebagai baris yang fokus (active descendant),
+  dan shortcut-nya ikut dibacakan.
+
 ## 9. Umpan balik status: OSD, chip, hint
 
 ### 9.1 OSD Hot Switch

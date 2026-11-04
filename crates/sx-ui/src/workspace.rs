@@ -114,6 +114,14 @@ pub struct Workspace {
     pub(crate) osd: Option<crate::hotswitch::Osd>,
     /// The command palette, while it is open.
     pub(crate) palette: Option<crate::palette::Palette>,
+    /// The themed context menu, while it is open.
+    pub(crate) context_menu: Option<crate::context_menu::ContextMenu>,
+    pub(crate) menu_openings: u64,
+    /// A right-click outside the menu closed it: its release opens nothing.
+    pub(crate) swallow_right_up: bool,
+    /// The sidebar items drawn this frame: their focus, place and bounds (the keyboard opens
+    /// their menu and properties).
+    pub(crate) sidebar_targets: std::cell::RefCell<Vec<crate::sidebar::SidebarTarget>>,
     /// Folders opened this session, most recent first (quick open; never written to disk).
     pub(crate) recent_folders: Vec<PathBuf>,
     /// The newest shell menu asked for; an older one does not open.
@@ -216,6 +224,10 @@ impl Workspace {
             settings_writer: crate::hotswitch::SettingsWriter::start(),
             osd: None,
             palette: None,
+            context_menu: None,
+            menu_openings: 0,
+            swallow_right_up: false,
+            sidebar_targets: std::cell::RefCell::default(),
             recent_folders: Vec::new(),
             menu_ticket: std::rc::Rc::default(),
             next_osd: 0,
@@ -1053,7 +1065,7 @@ impl Pin {
 
 impl Workspace {
     pub(crate) fn is_pinned(&self, path: &std::path::Path) -> bool {
-        self.pins.iter().any(|p| p.path == path)
+        self.pins.iter().any(|p| same_path(&p.path, path))
     }
 
     /// Pins or unpins the current folder (F-SIDE-02), unless `sidebar.pins_locked`.
@@ -1061,24 +1073,43 @@ impl Workspace {
         let Some(path) = self.tab().location().as_path().map(PathBuf::from) else {
             return;
         };
+        if self.is_pinned(&path) {
+            self.edit_pins(|pins| pins.retain(|p| *p != path), cx);
+        } else {
+            self.edit_pins(|pins| pins.push(path), cx);
+        }
+    }
+
+    /// Changes the pinned folders (add, remove, reorder) and saves them, unless
+    /// `sidebar.pins_locked`.
+    pub(crate) fn edit_pins(
+        &mut self,
+        change: impl FnOnce(&mut Vec<PathBuf>),
+        cx: &mut Context<Self>,
+    ) {
         if self.features.sidebar_pins_locked {
             self.notice = Some(t!("nav.pins_locked").into());
             cx.notify();
             return;
         }
-        if self.is_pinned(&path) {
-            self.pins.retain(|p| p.path != path);
-        } else {
-            self.pins.push(Pin::new(path));
+        let mut paths: Vec<PathBuf> = self.pins.iter().map(|p| p.path.clone()).collect();
+        change(&mut paths);
+        let mut seen = HashSet::new();
+        paths.retain(|p| seen.insert(p.to_string_lossy().to_lowercase()));
+        self.pins = paths.iter().cloned().map(Pin::new).collect();
+        if let Some(file) = &self.pins_file
+            && let Err(err) = crate::pins::save(file, &paths)
+        {
+            tracing::warn!(error = %err, "pins not saved");
         }
-        if let Some(file) = &self.pins_file {
-            let paths: Vec<PathBuf> = self.pins.iter().map(|p| p.path.clone()).collect();
-            if let Err(err) = crate::pins::save(file, &paths) {
-                tracing::warn!(error = %err, "pins not saved");
-            }
-        }
+        self.hovered = None;
         cx.notify();
     }
+}
+
+/// Whether two paths name the same folder: Windows paths ignore case.
+pub(crate) fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
+    a == b || a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
 fn hwnd(window: &Window) -> Option<isize> {
@@ -1094,9 +1125,15 @@ impl Render for Workspace {
         self.focus_stops.begin_frame();
         // A dialog (a paste conflict) or an inline rename that starts takes over from the
         // palette; the focus goes to it.
-        if self.palette.is_some() && (self.ops.dialog.is_some() || self.ops.renaming.is_some()) {
+        if self.ops.dialog.is_some() || self.ops.renaming.is_some() {
             self.palette = None;
+            self.context_menu = None;
         }
+        // Like Windows' menus, it closes when the window loses focus.
+        if self.context_menu.is_some() && !window.is_window_active() {
+            self.context_menu = None;
+        }
+        self.sidebar_targets.borrow_mut().clear();
         self.sync_search(window, cx);
         self.focused_now = window.focused(cx);
         // The toast holds its timer while it has focus (keyboard users reaching for Undo).
@@ -1167,6 +1204,7 @@ impl Render for Workspace {
             .child(self.render_status_bar(cx))
             .children(overlays)
             .children(self.render_palette(window, cx))
+            .children(self.render_context_menu(window, cx))
             // Above dialogs too: a Hot Switch is never dimmed by a scrim.
             .children(self.render_osd(cx));
         let root = self.nav_actions(root, cx);
@@ -1225,9 +1263,46 @@ impl Workspace {
             this.open_palette(crate::palette::PaletteMode::Folders, window, cx);
         }))
         .on_action(cx.listener(|this, _: &actions::NativeMenu, window, cx| {
+            if let Some((location, at)) = this.focused_sidebar_item(window) {
+                if let Some(path) = location.as_path() {
+                    let target = sx_shell::menu::MenuTarget::Items(vec![path.to_path_buf()]);
+                    this.open_native_menu_for(target, at, false, window, cx);
+                }
+                return;
+            }
             let at = this.keyboard_menu_point(cx);
             this.open_native_menu(at, false, window, cx);
         }))
+        .on_action(
+            cx.listener(|this, _: &actions::ContextMenuKey, window, cx| {
+                let viewport = window.viewport_size();
+                let middle = gpui_kit::point(viewport.width / 2.0, viewport.height / 3.0);
+                if let Some((location, at)) = this.focused_sidebar_item(window) {
+                    this.open_sidebar_menu(&location, at.unwrap_or(middle), true, window, cx);
+                    return;
+                }
+                // Below the focused row, else at the top of the list, else mid-window (an
+                // empty folder has no rows).
+                let at = this
+                    .keyboard_menu_point(cx)
+                    .or_else(|| this.tab().rows_bounds.get().map(|b| b.origin))
+                    .unwrap_or(middle);
+                this.open_list_menu(at, true, window, cx);
+            }),
+        )
+        .on_action(
+            cx.listener(|this, _: &actions::FileProperties, window, cx| {
+                let target = match this.focused_sidebar_item(window) {
+                    Some((location, _)) => location
+                        .as_path()
+                        .map(|p| sx_shell::menu::MenuTarget::Items(vec![p.to_path_buf()])),
+                    None => this.menu_target(),
+                };
+                if let Some(target) = target {
+                    this.show_properties(target, cx);
+                }
+            }),
+        )
     }
 }
 
