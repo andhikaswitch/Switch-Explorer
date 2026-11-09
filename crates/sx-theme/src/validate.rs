@@ -13,14 +13,14 @@ use crate::schema::Token::{
     ButtonPrimaryBgHover, ButtonPrimaryBgPressed, ButtonPrimaryFg, ButtonSecondaryBg,
     ButtonSecondaryBgHover, ButtonSecondaryBgPressed, ButtonSecondaryFg, ButtonSecondaryFgHover,
     CardHoverFg, CheckboxBorder, CheckboxCheck, CheckboxCheckedBg, DangerText, DropBlockedBorder,
-    DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing, HeaderFg,
-    HoverBg, InfoText, InputPlaceholder, MatchFg, NavItemActiveBg, NavItemActiveFg, NavItemFg,
-    NavItemHoverBg, NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg, OsdIconOff,
-    OsdIconOn, OsdStateOff, OsdStateOn, PressedBg, ProgressFill, RowHoverBg, RowSelectedBg,
-    RowSelectedBorder, RowSelectedInactiveBg, SelectionBorder, SliderFill, StatuschipOff,
-    StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover, SurfaceChip,
-    SurfaceInput, SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg, ToastBg,
-    ToastFg, ToggleOffBorder, ToggleOffThumb, ToggleOnBg, ToggleOnThumb, WarningText,
+    DropTargetBg, DropTargetBorder, FgLink, FgMuted, FgOnSolid, FgPrimary, FgSecondary, FocusRing,
+    HeaderFg, HoverBg, InfoText, InputPlaceholder, MatchFg, NavItemActiveBg, NavItemActiveFg,
+    NavItemFg, NavItemHoverBg, NavItemHoverFg, NavItemPressedBg, NavSectionFg, OsdBg, OsdFg,
+    OsdIconOff, OsdIconOn, OsdStateOff, OsdStateOn, PressedBg, ProgressFill, RowHoverBg,
+    RowSelectedBg, RowSelectedBorder, RowSelectedInactiveBg, SelectionBorder, SliderFill,
+    StatuschipOff, StatuschipOn, StatuschipPartial, SuccessText, SurfaceCard, SurfaceCardHover,
+    SurfaceChip, SurfaceInput, SurfaceOverlay, TabActiveBg, TabActiveFg, TabActiveIndicator, TabFg,
+    ToastBg, ToastFg, ToggleOffBorder, ToggleOffThumb, ToggleOnBg, ToggleOnThumb, WarningText,
 };
 
 /// A foreground/background requirement.
@@ -90,6 +90,20 @@ pub const PAIRS: &[ContrastPair] = &[
         &[ToggleOffBorder, ToggleOffThumb, ToggleOnBg],
         &[RowHoverBg, RowSelectedBg, PressedBg],
         &[BgContent, SurfaceOverlay],
+        NON_TEXT,
+    ),
+    // A drag over a folder row, the content pane or a sidebar item (DESIGN.md §11).
+    pair(
+        &[FgPrimary, FgSecondary, FgMuted, MatchFg],
+        &[DropTargetBg],
+        &[BgContent],
+        TEXT,
+    ),
+    pair(&[NavItemFg, FgMuted], &[DropTargetBg], &[BgSidebar], TEXT),
+    pair(
+        &[DropTargetBorder, DropBlockedBorder],
+        &[BgSidebar],
+        &[],
         NON_TEXT,
     ),
     // The context menu: its rows under the pointer and pressed.

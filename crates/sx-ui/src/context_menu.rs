@@ -43,6 +43,10 @@ enum Run {
     Pin(PathBuf),
     Unpin(PathBuf),
     MovePin(PathBuf, isize),
+    /// Dropped items, put where they were dropped (the menu of an `Ask` drop).
+    Drop(Vec<PathBuf>, PathBuf, sx_ops::Mode),
+    /// Closes the menu and does nothing else.
+    Close,
     Submenu(Vec<Entry>),
 }
 
@@ -130,6 +134,17 @@ pub(crate) struct ContextMenu {
     restore: Option<FocusHandle>,
     /// Which opening this is, so the panel fades in once.
     opened: u64,
+    /// The window has been active while the menu was open. A menu closes when the window loses
+    /// activation; one opened by a drop from another app may start in an inactive window.
+    seen_active: bool,
+}
+
+impl ContextMenu {
+    /// Notes this frame's activation; `false` when the menu should close now.
+    pub(crate) fn keep_open(&mut self, active: bool) -> bool {
+        self.seen_active |= active;
+        active || !self.seen_active
+    }
 }
 
 impl std::fmt::Debug for ContextMenu {
@@ -232,6 +247,43 @@ impl ContextMenu {
 }
 
 impl Workspace {
+    /// Where dropped items go, asked at the drop (`dnd.default_action = ask`, or a right-button
+    /// drag; DEVELOPER-MODE.md §5.4).
+    pub(crate) fn open_drop_menu(
+        &mut self,
+        paths: Vec<PathBuf>,
+        dest: PathBuf,
+        at: Point<Pixels>,
+        allowed: sx_shell::dnd::Allowed,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // A drop from another app leaves that app in front: bring this window forward, or the
+        // menu would sit behind it.
+        window.activate_window();
+        // Moving items to where they already are does nothing.
+        let here = paths.iter().all(|path| {
+            path.parent()
+                .is_some_and(|parent| crate::workspace::same_path(parent, &dest))
+        });
+        // Only what the source allows: a copy-only source is never moved.
+        let entries = vec![
+            Entry::new(
+                t!("menu.drop_copy"),
+                allowed.copy,
+                Run::Drop(paths.clone(), dest.clone(), sx_ops::Mode::Copy),
+            ),
+            Entry::new(
+                t!("menu.drop_move"),
+                allowed.moves && !here,
+                Run::Drop(paths, dest, sx_ops::Mode::Move),
+            ),
+            Entry::separator(),
+            Entry::new(t!("menu.drop_cancel"), true, Run::Close),
+        ];
+        self.show_menu(entries, at, false, window, cx);
+    }
+
     /// A right-click in the list (or the Menu key): the menu of the selection, or of the
     /// folder's empty area with nothing selected.
     pub(crate) fn open_list_menu(
@@ -293,6 +345,7 @@ impl Workspace {
             focus,
             restore,
             opened: self.menu_openings,
+            seen_active: window.is_window_active(),
         });
         cx.notify();
     }
@@ -585,6 +638,11 @@ impl Workspace {
                 }
             }
             Run::PasteInto(folder) => self.paste_into(folder, cx),
+            // Choosing here is the confirmation: no second question about moving folders.
+            Run::Drop(paths, dest, mode) => {
+                let quiet = !self.features.dnd_undo_toast;
+                self.transfer(paths, dest, mode, quiet, cx);
+            }
             Run::Pin(path) => self.edit_pins(|pins| pins.push(path), cx),
             Run::Unpin(path) => self.edit_pins(
                 |pins| pins.retain(|p| !crate::workspace::same_path(p, &path)),
@@ -602,7 +660,7 @@ impl Workspace {
                 },
                 cx,
             ),
-            Run::Submenu(_) => {}
+            Run::Close | Run::Submenu(_) => {}
         }
         cx.notify();
     }

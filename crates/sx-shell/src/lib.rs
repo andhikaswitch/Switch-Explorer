@@ -6,6 +6,7 @@
 pub mod appearance;
 pub mod clipboard;
 pub mod com;
+pub mod dnd;
 pub mod dwm;
 pub mod error;
 pub mod exec;

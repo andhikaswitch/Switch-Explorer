@@ -156,9 +156,11 @@ untuk drag image. Spike membuktikan ini aman dan menerima drop dari Explorer mau
 - API `on_drop::<ExternalPaths>` GPUI tidak dipakai di area file.
 - Efek selalu diiriskan dengan efek yang diizinkan sumber (`*pdweffect` masuk). Modifier yang tidak
   diizinkan menghasilkan NONE.
-- `Drop` membalas efek yang **benar-benar** dijalankan `sx-ops`. Kalau MOVE dibalas tanpa dikerjakan,
-  sumber non-optimized akan menghapus file aslinya. Ikuti aturan optimized move dan
-  `CFSTR_PERFORMEDDROPEFFECT`.
+- `Drop` tidak pernah membalas MOVE. Kalau MOVE dibalas sebelum dikerjakan, sumber non-optimized akan
+  menghapus file aslinya. Operasi `sx-ops` berjalan setelah `Drop` kembali, jadi: salin → COPY; pindah →
+  *optimized move* (`Performed DropEffect` = NONE, `Logical Performed DropEffect` = MOVE, balasan NONE);
+  menu atau konfirmasi → NONE. Sumber yang mendukung `IDataObjectAsyncCapability` kelak diberi tahu
+  hasil sebenarnya lewat `EndOperation` (menyusul).
 - Zona drop harus memakai bounds yang benar: elemen `absolute` wajib diberi `inset_0`, kalau tidak ia
   jatuh ke posisi statisnya.
 

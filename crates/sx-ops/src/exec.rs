@@ -337,7 +337,7 @@ fn check_target(pair: &Pair) -> Result<(), OpsError> {
     if pair.to.exists() {
         return Err(OpsError::Exists(pair.to.clone()));
     }
-    if pair.from.is_dir() && pair.to.starts_with(&pair.from) {
+    if pair.from.is_dir() && crate::plan::within(&pair.to, &pair.from) {
         return Err(OpsError::IntoItself(pair.from.clone()));
     }
     Ok(())

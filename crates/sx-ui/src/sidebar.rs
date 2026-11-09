@@ -192,6 +192,7 @@ impl Workspace {
             t.color(Token::NavItemHoverFg),
         );
         let lit = !active && self.hovered.as_ref() == Some(&element_id);
+        let drop = self.sidebar_drop(&to);
         let gauge = drive.and_then(|d| self.drive_gauge(d, active || lit, cx));
         let detail = drive.map(format::drive_space);
         let control = t.px(Token::SizeControl);
@@ -230,6 +231,12 @@ impl Workspace {
                     .hover(move |s| s.bg(hover).text_color(hover_fg))
                     .active(move |s| s.bg(pressed).text_color(hover_fg))
             })
+            // A drag over the item: it takes the drop, or a switch refuses it there. The ring is
+            // drawn over the item, so it takes no room.
+            .when(drop == Some(false), |el| {
+                el.bg(t.color(Token::DropTargetBg))
+            })
+            .children(crate::dnd::drop_ring(drop, Token::RadiusSm, cx))
             .on_hover(cx.listener({
                 let id = element_id.clone();
                 move |this, hovered: &bool, _, cx| this.set_hovered(&id, *hovered, cx)
@@ -280,9 +287,9 @@ impl Workspace {
 /// A sidebar item drawn this frame (see `Workspace::sidebar_targets`).
 #[derive(Debug)]
 pub(crate) struct SidebarTarget {
-    focus: FocusHandle,
-    location: Location,
-    bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
+    pub(crate) focus: FocusHandle,
+    pub(crate) location: Location,
+    pub(crate) bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
 }
 
 impl Workspace {
@@ -314,14 +321,35 @@ impl Workspace {
             bounds: bounds.clone(),
         });
         let menu_for = to.clone();
+        let (press_left, press_right) = (to.clone(), to.clone());
         el.child(
-            gpui_kit::canvas(move |area, _, _| bounds.set(Some(area)), |_, (), _, _| {})
-                .absolute()
-                .size_full(),
+            // Only the part that shows: the sidebar scrolls, and an item scrolled out of view
+            // must take no drop (over the bars above or below it).
+            gpui_kit::canvas(
+                move |area, window, _| {
+                    let shown = area.intersect(&window.content_mask().bounds);
+                    let visible = shown.size.width > gpui_kit::px(0.0)
+                        && shown.size.height > gpui_kit::px(0.0);
+                    bounds.set(visible.then_some(shown));
+                },
+                |_, (), _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        )
+        // A press may become a drag (the Drag Guard decides, DEVELOPER-MODE.md §5).
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, event: &gpui_kit::MouseDownEvent, _, _| {
+                this.press_sidebar(&press_left, event, sx_core::drag::Button::Left);
+            }),
         )
         .on_mouse_down(
             MouseButton::Right,
-            cx.listener(|this, _, _, _| this.swallow_right_up = false),
+            cx.listener(move |this, event: &gpui_kit::MouseDownEvent, _, _| {
+                this.swallow_right_up = false;
+                this.press_sidebar(&press_right, event, sx_core::drag::Button::Right);
+            }),
         )
         .on_mouse_up(
             MouseButton::Right,
@@ -342,6 +370,10 @@ impl Workspace {
             }),
         )
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            // The release that ends a drag is not a click.
+            if std::mem::take(&mut this.drag.dragged) {
+                return;
+            }
             this.navigate(to.clone(), cx);
         }))
     }

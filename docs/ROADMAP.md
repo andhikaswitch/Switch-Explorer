@@ -82,15 +82,22 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
       command, switch beserta statusnya, dan tempat; label command ada dalam en dan id. Quick open (`Ctrl+P`)
       selesai: tab terbuka, folder pinned, folder dari sesi ini, dan drive.
 - [ ] OLE drag & drop dua arah (termasuk virtual files) + drag internal ke folder/sidebar/breadcrumb/tab.
+      Progres: drag keluar dari daftar dan sidebar (pin & drive) lewat OLE dengan drag image; drop target
+      sendiri untuk drop dari aplikasi lain maupun dari Switch Explorer ke folder di daftar, folder terbuka,
+      dan item sidebar; salin/pindah/menu tanya/konfirmasi pindah folder lewat `sx-ops` (journal + undo);
+      highlight `drop_target`/`drop_blocked`. Belum: shortcut (`Alt`), breadcrumb/tab sebagai target,
+      spring-open, virtual files, menyusun ulang pinned lewat drag, `IDataObjectAsyncCapability`, membaca
+      "Shell IDList Array" saat `DragEnter`, identitas file (ID) untuk alias path (drive map vs UNC).
 - [ ] **Drag Guard** lengkap (DEVELOPER-MODE.md §5) + preset "Anti salah drag" + test state machine.
       Progres: aturan §5.3 dan state machine §5.4 di `sx_core::drag` dengan tabel test; preset bisa di-toggle
-      lewat Hot Switch. Belum: sambungan ke DnD.
+      lewat Hot Switch. Tersambung ke tekan/drag di daftar dan sidebar serta ke drop target (DEVELOPER-MODE.md
+      §5.4). Belum: test UI otomatis untuk state machine di window.
 - [ ] **Hot Switch**: `Ctrl+Shift+D`, chord `Ctrl+K` (F, D, S, E, G, L, H, X, T, R, K); OSD ≤ 50 ms; chip status;
       badge title bar; hint saat diblokir; persisten/sesi; chord tidak aktif di input teks.
       Progres: semua binding termasuk `K` (panel Hot Switch sebagai mode palette, juga dari klik chip), OSD (ganti di tempat, hover menahan, fade), chip "Drag: …"
       dengan tooltip, badge title bar, persisten/sesi lewat `hotswitch.persist` (ditulis di thread sendiri),
-      chord mati di input teks, `view.show_extensions` kini berlaku di daftar. Belum: hint
-      saat drag diblokir (menunggu DnD), pengukuran OSD ≤ 50 ms, OSD `system` untuk hotkey global.
+      chord mati di input teks, `view.show_extensions` kini berlaku di daftar, hint saat drag diblokir (OSD).
+      Belum: pengukuran OSD ≤ 50 ms, OSD `system` untuk hotkey global.
 - [ ] Grid/gallery + thumbnail dua pass; preview pane (gambar/teks + spike preview handler); details pane;
       Quick Look (`Space`).
 - [ ] Filter instan + pencarian rekursif + integrasi Everything.

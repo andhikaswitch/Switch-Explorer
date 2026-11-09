@@ -99,6 +99,7 @@ search:
 size:
   bytes: "%{n} bytes"
 ops:
+  busy_dialog: Finish the open dialog first, then try again.
   working_one: Working
   undoing_one: Undoing
   copying_one: "Copying 1 item"
@@ -180,6 +181,9 @@ flag:
       files: File dragging
       folders: Folder dragging
       sidebar: Dragging from the sidebar
+    target:
+      folders: Dropping on folders
+      sidebar: Dropping on the sidebar
   sidebar:
     pins_locked: Pinned folder lock
   view:
@@ -193,6 +197,14 @@ preset:
 preset_title:
   anti_drag: Anti accidental drag preset
 hotswitch:
+  drag_blocked_on: "%{name} is on"
+  drag_blocked_keys_off: "Turn it off with %{keys}."
+  drag_blocked_mixed: Nothing in the selection was dragged.
+  drag_needs_key: "Hold %{key} to drag"
+  drag_needs_key_why: A drag switch asks for this key (dnd.require_modifier).
+  drag_blocked: "%{name} is off"
+  drag_blocked_keys: "Turn it on with %{keys}."
+  drag_blocked_panel: Click to open the Hot Switch panel.
   panel_title: Hot Switch
   panel_hint: Enter or Space turns the selected switch on or off; the panel stays open. Esc closes it.
   panel_blocked: On hold
@@ -280,6 +292,9 @@ command:
   sidebar:
     pin: Pin or unpin this folder
 menu:
+  drop_copy: Copy here
+  drop_move: Move here
+  drop_cancel: Cancel
   label: Context menu
   sort_by: Sort by
   paste_into: Paste into this folder
@@ -299,3 +314,9 @@ palette:
   switch_on: Switch, on
   switch_off: Switch, off
   place: Place
+dnd:
+  drag_failed: These items can't be dragged. A path may be too long (over 260 characters).
+  no_drop_target: "Drops into this window don't work: Windows refused the drop target. Restart Switch Explorer to try again."
+  confirm_move_one: "Move \"%{name}\" to \"%{dest}\"?"
+  confirm_move_many: "Move %{count} items to \"%{dest}\"?"
+  move: Move

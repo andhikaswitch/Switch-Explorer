@@ -57,6 +57,8 @@ pub(crate) struct PendingPaste {
     pub apply_all: bool,
     /// For a cut: the clipboard sequence when it was read, to clear it after the move.
     pub clipboard_sequence: Option<u32>,
+    /// No toast when it succeeds (a drop with `dnd.undo_toast` off; errors still say so).
+    pub quiet: bool,
 }
 
 #[derive(Debug)]
@@ -64,6 +66,12 @@ pub(crate) enum Dialog {
     ConfirmRecycle(Vec<PathBuf>),
     ConfirmDelete(Vec<PathBuf>),
     Conflict(PendingPaste),
+    /// A drag moves folders and `dnd.confirm_folder_move` asks first.
+    ConfirmMove {
+        sources: Vec<PathBuf>,
+        dest: PathBuf,
+        quiet: bool,
+    },
 }
 
 /// The message after an operation, with Undo when it can be undone.
@@ -101,6 +109,8 @@ pub(crate) struct OpsState {
     pub interrupted: Vec<(u64, Op)>,
     /// Cut-paste jobs and the clipboard sequence to clear once they have moved everything.
     clear_clipboard_after: HashMap<u64, u32>,
+    /// Jobs that end without a toast when they succeed (see [`PendingPaste::quiet`]).
+    quiet: std::collections::HashSet<u64>,
     /// The clipboard thread: clipboard calls run there in order (a paste right after a copy
     /// sees that copy), off the UI thread.
     clipboard: Option<sx_shell::StaWorker>,
@@ -531,9 +541,10 @@ impl Workspace {
             })
             .detach();
         }
+        let quiet = self.ops.quiet.remove(&id) && outcome.error.is_none() && !outcome.cancelled;
         if outcome.error.is_some() && done.is_noop() {
             self.notice = Some(message);
-        } else {
+        } else if !quiet {
             // Also after an error when part of the job was done: that part can be undone.
             self.show_toast(message, undo, cx);
         }
@@ -733,16 +744,69 @@ impl Workspace {
             }
         };
         let mode = if files.cut { Mode::Move } else { Mode::Copy };
-        let pending = PendingPaste {
-            sources: files.paths,
-            dest,
-            mode,
-            conflicts,
-            index: 0,
-            decisions: HashMap::new(),
-            apply_all: false,
-            clipboard_sequence: files.cut.then_some(sequence),
-        };
+        self.plan_transfer(
+            PendingPaste {
+                sources: files.paths,
+                dest,
+                mode,
+                conflicts,
+                index: 0,
+                decisions: HashMap::new(),
+                apply_all: false,
+                clipboard_sequence: files.cut.then_some(sequence),
+                quiet: false,
+            },
+            cx,
+        );
+    }
+
+    /// Copies or moves `sources` into `dest` as a paste does (conflict decisions, journal,
+    /// undo): what a drop runs.
+    pub(crate) fn transfer(
+        &mut self,
+        sources: Vec<PathBuf>,
+        dest: PathBuf,
+        mode: Mode,
+        quiet: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if sources.is_empty() || !self.writable(cx) {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            // The destination checks can take seconds on a network folder.
+            let (list, target) = (sources.clone(), dest.clone());
+            let conflicts = off_thread(move || sx_ops::plan::conflicts(&list, &target))
+                .await
+                .unwrap_or_default();
+            let _ = this.update(cx, |this, cx| {
+                this.plan_transfer(
+                    PendingPaste {
+                        sources,
+                        dest,
+                        mode,
+                        conflicts,
+                        index: 0,
+                        decisions: HashMap::new(),
+                        apply_all: false,
+                        clipboard_sequence: None,
+                        quiet,
+                    },
+                    cx,
+                );
+            });
+        })
+        .detach();
+    }
+
+    /// Runs a paste or a drop, after asking about its conflicts when there are any.
+    fn plan_transfer(&mut self, pending: PendingPaste, cx: &mut Context<Self>) {
+        // Never in place of a dialog already open: its question would be lost.
+        if self.ops.dialog.is_some() {
+            self.notice = Some(t!("ops.busy_dialog").into());
+            cx.notify();
+            return;
+        }
         if pending.conflicts.is_empty() {
             self.finish_paste(pending, cx);
         } else {
@@ -784,6 +848,7 @@ impl Workspace {
     /// and runs it.
     fn finish_paste(&mut self, pending: PendingPaste, cx: &mut Context<Self>) {
         let sequence = pending.clipboard_sequence;
+        let quiet = pending.quiet;
         cx.spawn(async move |this, cx| {
             let planned = off_thread(move || {
                 let decisions = pending.decisions;
@@ -799,8 +864,12 @@ impl Workspace {
                 let Some(Some(op)) = planned else {
                     return;
                 };
-                if let (Some(id), Some(sequence)) = (this.run_op(op, Origin::User, cx), sequence) {
+                let id = this.run_op(op, Origin::User, cx);
+                if let (Some(id), Some(sequence)) = (id, sequence) {
                     this.ops.clear_clipboard_after.insert(id, sequence);
+                }
+                if let (Some(id), true) = (id, quiet) {
+                    this.ops.quiet.insert(id);
                 }
             });
         })
@@ -822,6 +891,11 @@ impl Workspace {
             Some(Dialog::ConfirmDelete(paths)) => {
                 self.run_op(Op::Delete { paths }, Origin::User, cx);
             }
+            Some(Dialog::ConfirmMove {
+                sources,
+                dest,
+                quiet,
+            }) => self.transfer(sources, dest, Mode::Move, quiet, cx),
             Some(conflict @ Dialog::Conflict(_)) => self.ops.dialog = Some(conflict),
             None => {}
         }

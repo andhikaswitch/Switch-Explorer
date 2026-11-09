@@ -480,14 +480,14 @@ impl Drop for SubclassGuard {
 
 /// An absolute PIDL, freed on drop.
 #[derive(Debug)]
-struct Pidl(*mut ITEMIDLIST);
+pub(crate) struct Pidl(pub(crate) *mut ITEMIDLIST);
 
 // SAFETY: a PIDL is a block of task-allocator memory with no thread affinity; it is owned by
 // one `Pidl` at a time and freed once.
 unsafe impl Send for Pidl {}
 
 impl Pidl {
-    fn parse(path: &Path) -> Result<Self, ShellError> {
+    pub(crate) fn parse(path: &Path) -> Result<Self, ShellError> {
         let path = shell_path(path)?;
         let wide = sx_win::to_wide(path.as_os_str())
             .map_err(|err| ShellError::InvalidPath(err.to_string()))?;
@@ -525,7 +525,7 @@ fn shell_path(path: &Path) -> Result<PathBuf, ShellError> {
     };
     if plain.as_os_str().len() >= MAX_PATH {
         return Err(ShellError::InvalidPath(format!(
-            "a path of {} characters is too long for the shell's menu",
+            "a path of {} characters is too long for the shell",
             plain.as_os_str().len()
         )));
     }

@@ -304,7 +304,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "selection.border" = "alpha({pal.accent.700}, 0.80)"
 "selection.inactive_bg" = "alpha(#607389, 0.12)"
 "focus.ring" = "{pal.accent.700}"
-"drop_target.bg" = "alpha({pal.lagoon}, 0.18)"
+"drop_target.bg" = "alpha({pal.lagoon}, 0.10)"
 "drop_target.border" = "{pal.accent.700}"
 "drop_blocked.border" = "#B45309"
 "slider.track" = "alpha(#607389, 0.30)"
@@ -367,7 +367,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "selection.border" = "alpha({pal.lagoon}, 0.80)"
 "selection.inactive_bg" = "alpha(#A9BCD3, 0.12)"
 "focus.ring" = "{pal.lagoon}"
-"drop_target.bg" = "alpha({pal.lagoon}, 0.16)"
+"drop_target.bg" = "alpha({pal.lagoon}, 0.10)"
 "drop_target.border" = "{pal.lagoon}"
 "drop_blocked.border" = "#F59E0B"
 "slider.track" = "alpha(#A9BCD3, 0.24)"
@@ -532,7 +532,9 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 | `fg.secondary` | `osd.bg` (di atas `bg.content`) | 4.5:1 |
 | `statuschip.off` | `bg.titlebar` (badge "Drag mati") | 4.5:1 |
 | `checkbox.border`, `toggle.off.border`, `selection.border` | `bg.content` | 3:1 |
-| `drop_target.border`, `drop_blocked.border` | `bg.content` | 3:1 |
+| `drop_target.border`, `drop_blocked.border` | `bg.content`, `bg.sidebar` | 3:1 |
+| `fg.primary`, `fg.secondary`, `fg.muted`, `match.fg` | `drop_target.bg` (di atas `bg.content`) | 4.5:1 |
+| `nav.item.fg`, `fg.muted` | `drop_target.bg` (di atas `bg.sidebar`) | 4.5:1 |
 | `slider.fill`, `progress.fill`, `toggle.on.bg` | `bg.content` | 3:1 |
 | `tab.active.indicator` | `bg.titlebar` | 3:1 |
 | `checkbox.check` | `checkbox.checked.bg` (di atas `bg.content`) | 3:1 |

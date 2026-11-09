@@ -158,7 +158,9 @@ impl Workspace {
             (Content::Folder(_), _) => self.render_details(window, cx).into_any_element(),
         };
         let t = cx.tokens();
+        let tab_id = self.tab().id;
         div()
+            .relative()
             .flex()
             .flex_col()
             .flex_1()
@@ -167,6 +169,14 @@ impl Workspace {
             .bg(t.paint(Token::BgContent))
             .rounded_tl(t.px(Token::RadiusLg))
             .overflow_hidden()
+            // Drops land anywhere in the pane: rows, an empty folder, a search without matches.
+            .child(self.pane_bounds())
+            // A drag over the open folder (outside its folder rows) outlines the pane.
+            .children(crate::dnd::drop_ring(
+                self.folder_drop(tab_id),
+                Token::RadiusLg,
+                cx,
+            ))
             .children(self.notice.clone().map(|notice| {
                 div()
                     .flex_none()
@@ -350,10 +360,21 @@ impl Workspace {
                     .id("rows-area")
                     .relative()
                     .child({
-                        let bounds = self.tab().rows_bounds.clone();
-                        gpui_kit::canvas(move |area, _, _| bounds.set(Some(area)), |_, (), _, _| {})
-                            .absolute()
-                            .size_full()
+                        let tab = self.tab();
+                        let (bounds, offset, scroll) = (
+                            tab.rows_bounds.clone(),
+                            tab.rows_offset.clone(),
+                            tab.scroll.clone(),
+                        );
+                        gpui_kit::canvas(
+                            move |area, _, _| {
+                                bounds.set(Some(area));
+                                offset.set(scroll.0.borrow().base_handle.offset().y);
+                            },
+                            |_, (), _, _| {},
+                        )
+                        .absolute()
+                        .size_full()
                     })
                     // The empty area below the rows: the folder's menu.
                     .on_mouse_down(
@@ -622,10 +643,18 @@ impl Workspace {
         let style = RowStyle::new(cx);
         let tab = self.tab();
         let focus_row = tab.selection.focus().map(|f| f as usize);
+        let dragging_over = self.drag.hover.is_some();
         range
             .filter_map(|row| {
+                let drop = dragging_over
+                    .then(|| {
+                        let index = tab.snapshot()?.row(row)?.index;
+                        self.row_drop(tab.id, index)
+                    })
+                    .flatten();
                 let state = RowState {
                     selected: tab.selection.contains(row as u32),
+                    drop,
                     focused,
                     is_focus: focused && focus_row == Some(row),
                 };
@@ -703,6 +732,14 @@ impl Workspace {
             .when(state.selected && !state.focused, |el| el.bg(s.inactive_bg))
             .when(state.is_focus, |el| el.border_color(s.focus_ring))
             .when(!state.selected, |el| el.hover(move |st| st.bg(hover)))
+            // A drag over a folder row: it takes the drop, or a switch refuses it there.
+            .when_some(state.drop, |el, blocked| {
+                if blocked {
+                    el.border_color(s.drop_blocked)
+                } else {
+                    el.bg(s.drop_bg).border_color(s.drop_border)
+                }
+            })
             .map(|el| self.row_pointer(el, row, cx))
             .child(
                 div()
@@ -761,6 +798,10 @@ impl Workspace {
     /// middle-click opens a folder in a new tab, right button selects and opens the menu.
     fn row_pointer(&self, el: Stateful<Div>, row: usize, cx: &Context<Self>) -> Stateful<Div> {
         el.on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+            // The release that ends a drag is not a click.
+            if std::mem::take(&mut this.drag.dragged) {
+                return;
+            }
             window.focus(&this.list_focus, cx);
             let m = event.modifiers();
             if event.click_count() >= 2 && !m.control && !m.shift {
@@ -771,6 +812,17 @@ impl Workspace {
             }
             cx.notify();
         }))
+        // A press may become a drag (the Drag Guard decides, DEVELOPER-MODE.md §5).
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, event: &gpui_kit::MouseDownEvent, window, cx| {
+                // The list takes focus at once, so the row shows the active selection while
+                // it is pressed and dragged.
+                window.focus(&this.list_focus, cx);
+                this.press_row(row, event, sx_core::drag::Button::Left);
+                cx.notify();
+            }),
+        )
         .on_mouse_down(
             gpui_kit::MouseButton::Middle,
             cx.listener(move |this, _, _, cx| {
@@ -783,13 +835,14 @@ impl Workspace {
         // the menu opens when the button is released.
         .on_mouse_down(
             MouseButton::Right,
-            cx.listener(move |this, _, window, cx| {
+            cx.listener(move |this, event: &gpui_kit::MouseDownEvent, window, cx| {
                 cx.stop_propagation();
                 this.swallow_right_up = false;
                 window.focus(&this.list_focus, cx);
                 if !this.tab().selection.contains(row as u32) {
                     this.select_row(row, false, false);
                 }
+                this.press_row(row, event, sx_core::drag::Button::Right);
                 cx.notify();
             }),
         )
@@ -839,6 +892,8 @@ impl Workspace {
 #[derive(Clone, Copy)]
 struct RowState {
     selected: bool,
+    /// A drag is over this folder row: `Some(blocked)`.
+    drop: Option<bool>,
     /// The list has keyboard focus (active vs inactive selection colours).
     focused: bool,
     /// This row holds the keyboard focus.
@@ -861,6 +916,9 @@ struct RowStyle {
     radius: Pixels,
     /// The colour of the filter's match in names.
     match_fg: Hsla,
+    drop_bg: Hsla,
+    drop_border: Hsla,
+    drop_blocked: Hsla,
 }
 
 impl RowStyle {
@@ -880,6 +938,9 @@ impl RowStyle {
             space_sm: t.px(Token::SpaceSm),
             radius: t.px(Token::RadiusSm),
             match_fg: t.color(Token::MatchFg),
+            drop_bg: t.color(Token::DropTargetBg),
+            drop_border: t.color(Token::DropTargetBorder),
+            drop_blocked: t.color(Token::DropBlockedBorder),
         }
     }
 }

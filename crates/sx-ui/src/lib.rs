@@ -11,6 +11,7 @@ mod assets;
 mod chrome;
 mod context_menu;
 mod details;
+mod dnd;
 mod focus;
 mod format;
 mod hotswitch;

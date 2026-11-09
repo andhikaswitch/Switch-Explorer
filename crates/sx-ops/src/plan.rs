@@ -35,14 +35,44 @@ pub enum Resolution {
     ReplaceIfNewer,
 }
 
+/// A path for comparing places on Windows: lower case, without a verbatim prefix (`\\?\`) or a
+/// trailing separator. Paths from other apps (a drop) need not be spelled as ours are.
+fn comparable(path: &Path) -> String {
+    let text = path.to_string_lossy().to_lowercase();
+    let text = if let Some(rest) = text.strip_prefix(r"\\?\unc\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        text
+    };
+    text.trim_end_matches('\\').to_string()
+}
+
+/// Whether two paths name the same place (however each is spelled).
+pub(crate) fn same_place(a: &Path, b: &Path) -> bool {
+    a == b || comparable(a) == comparable(b)
+}
+
+/// Whether `path` is `folder` or inside it (however each is spelled).
+pub(crate) fn within(path: &Path, folder: &Path) -> bool {
+    let (path, folder) = (comparable(path), comparable(folder));
+    path == folder
+        || (path.len() > folder.len()
+            && path.starts_with(&folder)
+            && path.as_bytes().get(folder.len()) == Some(&b'\\'))
+}
+
 /// Where each source would land in `dest` and which of those collide.
 pub fn conflicts(sources: &[PathBuf], dest: &Path) -> Vec<Conflict> {
     sources
         .iter()
         .filter_map(|source| {
             let target = dest.join(source.file_name()?);
-            if source == &target {
-                return None; // Pasting into the same folder: always "Keep both".
+            // Pasting into the same folder: always "Keep both". Never a conflict of an item
+            // with itself, where "Replace" would recycle the source.
+            if same_place(source, &target) {
+                return None;
             }
             let target_meta = std::fs::metadata(&target).ok()?;
             let source_meta = std::fs::metadata(source).ok();
@@ -75,7 +105,7 @@ pub fn paste(
             continue;
         };
         let target = dest.join(file_name);
-        if source == &target {
+        if same_place(source, &target) {
             if mode == Mode::Move {
                 continue;
             }
@@ -145,6 +175,62 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn places_compare_however_they_are_spelled() {
+        assert!(same_place(
+            Path::new(r"C:\Data\a.txt"),
+            Path::new(r"c:\data\A.TXT")
+        ));
+        assert!(same_place(
+            Path::new(r"\\?\C:\Data"),
+            Path::new(r"C:\Data\")
+        ));
+        assert!(same_place(
+            Path::new(r"\\?\UNC\server\share\x"),
+            Path::new(r"\\Server\Share\x")
+        ));
+        assert!(!same_place(
+            Path::new(r"C:\Data\a"),
+            Path::new(r"C:\Data\b")
+        ));
+        assert!(within(
+            Path::new(r"c:\DATA\sub\deeper"),
+            Path::new(r"C:\Data\Sub")
+        ));
+        assert!(!within(
+            Path::new(r"C:\Data\Sub 2"),
+            Path::new(r"C:\Data\Sub")
+        ));
+    }
+
+    /// An item dropped into its own folder, spelled differently, is no conflict with itself
+    /// (where Replace would recycle the source): a copy keeps both, a move does nothing.
+    #[test]
+    fn an_item_never_conflicts_with_itself() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("notes.txt");
+        fs::write(&file, "x").unwrap();
+        let spelled = PathBuf::from(root.path().to_string_lossy().to_uppercase());
+        assert_eq!(conflicts(std::slice::from_ref(&file), &spelled).len(), 0);
+        let copy = paste(std::slice::from_ref(&file), &spelled, Mode::Copy, |_| {
+            Resolution::Replace
+        });
+        match copy {
+            Some(Op::Copy {
+                pairs, replaced, ..
+            }) => {
+                assert_eq!(replaced.len(), 0);
+                assert_eq!(pairs.len(), 1);
+                assert!(!same_place(&pairs[0].to, &file));
+            }
+            other => panic!("expected a copy, got {other:?}"),
+        }
+        let moved = paste(std::slice::from_ref(&file), &spelled, Mode::Move, |_| {
+            Resolution::Replace
+        });
+        assert!(moved.is_none_or(|op| op.is_noop()));
+    }
 
     #[test]
     fn resolutions() {

@@ -113,6 +113,7 @@ seleksi campuran (file + folder): semua item harus lolos; jika satu gagal → se
 boleh_drop(target)  = (target.sidebar ? dnd.target.sidebar : dnd.target.folders) && !safety.readonly_mode
 boleh_keluar        = dnd.external_out      boleh_masuk = dnd.external_in
 menyusun ulang pinned = dnd.enabled && !sidebar.pins_locked   (tidak memindahkan file)
+drag yang mulai di sidebar tidak pernah memindahkan foldernya: hanya salin atau shortcut (§5.1)
 ```
 
 ### 5.4 State machine inisiasi drag
@@ -139,7 +140,26 @@ Dragging (internal atau OLE):
 Implementasi: `sx_core::drag` (logika murni, waktu dan posisi diberikan pemanggil). `DragPolicy` diisi dari
 snapshot switch; `DragPolicy::may_start`/`may_drop`/`effect` = aturan §5.3; `DragGuard` = state machine di
 atas. Policy saat tombol ditekan berlaku sampai drag selesai, jadi Hot Switch tidak memutus drag yang
-sedang berjalan. Sambungan ke OLE dan daftar menyusul bersama DnD.
+sedang berjalan.
+
+Sambungan (`sx_ui::dnd`):
+- Tekan tombol di baris daftar atau item sidebar (pin & drive) memanggil `DragGuard::press`. Gerak dan lepas
+  dibaca listener tingkat window (capture), jadi tetap sampai walau kursor sudah keluar dari item. Scroll di
+  mana pun mencatat `scroll_terakhir`.
+- `StartDrag` menjalankan OLE drag lewat modal host (ADR-015). Drop ke window ini sendiri juga lewat drop
+  target OLE milik kita (ADR-016), jadi aturan drop sama untuk drag internal maupun dari aplikasi lain.
+- Drop target menjawab seketika dari zona frame terakhir (baris folder, area folder terbuka, item sidebar)
+  dan `DragPolicy`. Pindah ke folder asal tidak melakukan apa pun. Masuk ke dirinya sendiri atau subfolder-nya
+  ditolak. Sumber yang tidak mengizinkan pindah mendapat salin (kecuali modifier meminta pindah).
+- `Ask` membuka menu bertema (Salin di sini / Pindahkan ke sini / Batal), hanya dengan efek yang diizinkan
+  sumber; memilih di menu sudah menjadi konfirmasi. `ConfirmMove` membuka dialog bila ada folder di
+  antara item.
+- Drag milik kita memakai switch saat tombol ditekan sampai selesai. Pin yang di-drag ke item sidebar
+  ditolak (memindahkan folder pinned tidak boleh terjadi; menyusun ulang pinned lewat drag menyusul).
+  Drive atau share utuh tidak pernah disalin/dipindah. Selama dialog, palette, menu, atau rename terbuka,
+  drop ditolak.
+- Belum: shortcut (`Alt`, `Ctrl+Shift`) ditolak dulu, spring-open, menyusun ulang pinned lewat drag, drop
+  ke breadcrumb/tab, dan virtual files.
 
 ### 5.5 Preset "Anti salah drag"
 

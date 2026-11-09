@@ -134,10 +134,24 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 
 ## 9. OLE drag & drop
 
+Implementasi: `sx_shell::dnd` (sisi OLE) dan `sx_ui::dnd` (zona, Drag Guard, menjalankan drop).
+
 **Sebagai sumber (drag keluar):**
-- `IDataObject` dari shell untuk item terpilih (`SHCreateDataObject` atau
-  `IShellFolder::GetUIObjectOf(IID_IDataObject)`) sehingga aplikasi lain menerima format lengkap.
-- Drag image dari bitmap kita (ikon + badge jumlah) lewat `IDragSourceHelper`.
+- `IDataObject` dari shell untuk item terpilih (`SHCreateShellItemArrayFromIDLists` lalu
+  `BindToHandler(BHID_DataObject)`) sehingga aplikasi lain menerima format lengkap. PIDL diurai di
+  thread lain (`dnd::prepare`); drag baru dimulai bila tombol masih ditekan.
+- Efek yang ditawarkan diiriskan dengan kemampuan item (`SFGAO_CANCOPY/CANMOVE/CANLINK`), seperti view
+  Explorer: drive hanya bisa dijadikan shortcut, media baca-saja tidak bisa dipindah.
+- Setelah drag, `WM_LBUTTONUP`/`WM_RBUTTONUP` sintetis dikirim (loop modal menelannya), memperhitungkan
+  tombol mouse yang ditukar (`SM_SWAPBUTTON`).
+- Drag image dari bitmap kita lewat `IDragSourceHelper::InitializeFromBitmap`: ikon item pertama
+  (`IShellItemImageFactory`, `SIIGBF_ICONONLY`, 96 px pada skala 100%). Tanpa ini shell meminta gambar ke
+  window (`DI_GETDRAGIMAGE`) yang tidak dijawab GPUI, dan yang tampil kotak putih. Badge jumlah menyusul.
+- `IDropSource` milik kita: `Esc` atau tombol lain membatalkan. Bila `dnd.external_out` mati, kursor menjadi
+  "tidak boleh" di atas window lain dan melepas di sana membatalkan drag.
+- Sebagai sumber, Switch Explorer tidak pernah menghapus file asli sendiri. Pindah ke aplikasi lain
+  dikerjakan target (Explorer selalu memindahkan sendiri); efek MOVE yang dilaporkan tanpa itu paling buruk
+  menjadi salinan.
 - `SHDoDragDrop` di UI thread (STA), dijalankan lewat modal host (ADR-015), **bukan** langsung di handler
   atau task GPUI. Setelah selesai, kirim `WM_LBUTTONUP` sintetis. Efek yang diizinkan dihitung Drag Guard
   (DEVELOPER-MODE.md §5).
@@ -149,8 +163,18 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 - `DragEnter`/`DragOver`: titik layar → koordinat client → registry zona drop (bounds folder/sidebar/tab yang
   dicatat per frame) → target → efek dari modifier (`MK_CONTROL`/`MK_SHIFT`/`MK_ALT`), Drag Guard, dan
   volume sama/beda → `*pdwEffect`; `IDropTargetHelper` untuk drag image.
-- `Drop`: `CF_HDROP` atau "Shell IDList Array"; virtual files lewat `CFSTR_FILEDESCRIPTORW` +
-  `CFSTR_FILECONTENTS` (stream). Operasi dijalankan `sx-ops` (journal + undo).
+- `Drop`: `CF_HDROP` (sudah; path relatif dan isi `$Recycle.Bin` ditolak); "Shell IDList Array" dan
+  virtual files lewat `CFSTR_FILEDESCRIPTORW` + `CFSTR_FILECONTENTS` (stream) menyusul. Drive atau share
+  utuh tidak pernah disalin/dipindah lewat drop.
+- Belum: `IDataObjectAsyncCapability`. Sumber yang menulis file sementara (pengelola arsip, klien mail)
+  bisa menghapusnya begitu `DoDragDrop` selesai, sebelum `sx-ops` menyalinnya. Drop seperti itu gagal
+  (tanpa kehilangan data). Membaca "Shell IDList Array" di `DragEnter` (bukan `CF_HDROP`, yang memaksa
+  sumber malas merender) juga menyusul. Operasi dijalankan `sx-ops` (journal + undo), setelah `Drop`
+  kembali.
+- Yang dilaporkan ke sumber: salin → `DROPEFFECT_COPY`. Pindah → *optimized move*: kita yang memindahkan,
+  jadi `Performed DropEffect` = NONE, `Logical Performed DropEffect` = MOVE, dan `Drop` mengembalikan NONE
+  agar sumber tidak pernah menghapus file asli yang belum selesai kita pindahkan. Menu (`Ask`) dan
+  konfirmasi → NONE; keputusannya dijalankan kemudian oleh kita.
 - Skenario pindah: ikuti dokumentasi Microsoft "Handling Shell Data Transfer Scenarios" (*optimized move*,
   *delete-on-paste*, `CFSTR_PERFORMEDDROPEFFECT`, `CFSTR_LOGICALPERFORMEDDROPEFFECT`, `CFSTR_PASTESUCCEEDED`).
 

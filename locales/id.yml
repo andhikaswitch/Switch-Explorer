@@ -99,6 +99,7 @@ search:
 size:
   bytes: "%{n} byte"
 ops:
+  busy_dialog: Selesaikan dialog yang terbuka dulu, lalu coba lagi.
   working_one: Memproses
   undoing_one: Mengurungkan
   copying_one: "Menyalin 1 item"
@@ -180,6 +181,9 @@ flag:
       files: Drag file
       folders: Drag folder
       sidebar: Drag dari sidebar
+    target:
+      folders: Drop ke folder
+      sidebar: Drop ke sidebar
   sidebar:
     pins_locked: Kunci folder pinned
   view:
@@ -193,6 +197,14 @@ preset:
 preset_title:
   anti_drag: Preset anti salah drag
 hotswitch:
+  drag_blocked_on: "%{name} sedang aktif"
+  drag_blocked_keys_off: "Matikan dengan %{keys}."
+  drag_blocked_mixed: Tidak ada item terpilih yang di-drag.
+  drag_needs_key: "Tahan %{key} untuk drag"
+  drag_needs_key_why: Switch drag meminta tombol ini (dnd.require_modifier).
+  drag_blocked: "%{name} sedang nonaktif"
+  drag_blocked_keys: "Nyalakan dengan %{keys}."
+  drag_blocked_panel: Klik untuk membuka panel Hot Switch.
   panel_title: Hot Switch
   panel_hint: Enter atau Spasi menyalakan atau mematikan switch yang dipilih; panel tetap terbuka. Esc menutupnya.
   panel_blocked: Tertahan
@@ -280,6 +292,9 @@ command:
   sidebar:
     pin: Pin atau lepas pin folder ini
 menu:
+  drop_copy: Salin di sini
+  drop_move: Pindahkan ke sini
+  drop_cancel: Batal
   label: Menu konteks
   sort_by: Urutkan menurut
   paste_into: Tempel ke folder ini
@@ -299,3 +314,9 @@ palette:
   switch_on: Switch, aktif
   switch_off: Switch, nonaktif
   place: Tempat
+dnd:
+  drag_failed: Item ini tidak bisa di-drag. Mungkin path-nya terlalu panjang (lebih dari 260 karakter).
+  no_drop_target: "Drop ke window ini tidak berfungsi: Windows menolak drop target. Jalankan ulang Switch Explorer untuk mencoba lagi."
+  confirm_move_one: "Pindahkan \"%{name}\" ke \"%{dest}\"?"
+  confirm_move_many: "Pindahkan %{count} item ke \"%{dest}\"?"
+  move: Pindahkan

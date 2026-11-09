@@ -85,6 +85,25 @@ impl Workspace {
                 cx,
             ),
             Some(Dialog::Conflict(_)) => self.conflict_body(cx),
+            Some(Dialog::ConfirmMove { sources, dest, .. }) => self.confirm_body(
+                if sources.len() == 1 {
+                    t!(
+                        "dnd.confirm_move_one",
+                        name = file_name(&sources[0]),
+                        dest = file_name(dest)
+                    )
+                } else {
+                    t!(
+                        "dnd.confirm_move_many",
+                        count = sources.len(),
+                        dest = file_name(dest)
+                    )
+                }
+                .into(),
+                t!("dnd.move").into(),
+                false,
+                cx,
+            ),
             None => div().into_any_element(),
         };
         div()

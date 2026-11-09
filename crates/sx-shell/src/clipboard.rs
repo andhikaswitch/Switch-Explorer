@@ -67,8 +67,8 @@ impl Drop for Open {
     }
 }
 
-/// A movable global block we own; freed on drop unless the clipboard took it.
-struct Global(HGLOBAL);
+/// A movable global block we own; freed on drop unless it was handed over.
+pub(crate) struct Global(pub(crate) HGLOBAL);
 
 impl Drop for Global {
     fn drop(&mut self) {
@@ -78,7 +78,7 @@ impl Drop for Global {
 }
 
 /// A movable global block of `len` bytes filled by `fill`.
-fn global(len: usize, fill: impl FnOnce(&mut [u8])) -> Result<Global, ShellError> {
+pub(crate) fn global(len: usize, fill: impl FnOnce(&mut [u8])) -> Result<Global, ShellError> {
     // SAFETY: allocates a block we own (freed by `Global` unless handed over), then locks, fills
     // and unlocks it; the slice covers exactly the allocated length.
     unsafe {
@@ -165,15 +165,7 @@ pub fn read() -> Result<Option<(ClipboardFiles, u32)>, ShellError> {
         let Ok(handle) = GetClipboardData(u32::from(CF_HDROP.0)) else {
             return Ok(None);
         };
-        let drop = HDROP(handle.0);
-        let count = DragQueryFileW(drop, u32::MAX, None);
-        let mut paths = Vec::with_capacity(count as usize);
-        for i in 0..count {
-            let len = DragQueryFileW(drop, i, None) as usize;
-            let mut buf = vec![0u16; len + 1];
-            let got = DragQueryFileW(drop, i, Some(&mut buf)) as usize;
-            paths.push(PathBuf::from(OsString::from_wide(&buf[..got.min(len)])));
-        }
+        let paths = hdrop_paths(HDROP(handle.0));
         let cut = GetClipboardData(preferred_drop_effect())
             .ok()
             .and_then(|h| {
@@ -193,6 +185,26 @@ pub fn read() -> Result<Option<(ClipboardFiles, u32)>, ShellError> {
             })
             .is_some_and(|effect| effect & DROPEFFECT_MOVE.0 != 0);
         Ok(Some((ClipboardFiles { paths, cut }, sequence())))
+    }
+}
+
+/// The paths in a `CF_HDROP` block, with their exact UTF-16 (NTFS names need not be valid
+/// Unicode).
+///
+/// # Safety
+/// `drop` must be a valid HDROP that stays alive for the call.
+pub(crate) unsafe fn hdrop_paths(drop: HDROP) -> Vec<PathBuf> {
+    // SAFETY: guaranteed by the caller; each buffer is as long as DragQueryFileW says.
+    unsafe {
+        let count = DragQueryFileW(drop, u32::MAX, None);
+        let mut paths = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let len = DragQueryFileW(drop, i, None) as usize;
+            let mut buf = vec![0u16; len + 1];
+            let got = DragQueryFileW(drop, i, Some(&mut buf)) as usize;
+            paths.push(PathBuf::from(OsString::from_wide(&buf[..got.min(len)])));
+        }
+        paths
     }
 }
 

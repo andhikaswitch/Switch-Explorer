@@ -275,6 +275,27 @@ impl Workspace {
         cx.notify();
     }
 
+    /// The Hot Switch panel, with `binding` chosen when given (a hint's switch).
+    pub(crate) fn open_switch_panel(
+        &mut self,
+        binding: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_palette(PaletteMode::Switches, window, cx);
+        if let (Some(binding), Some(palette)) = (binding, self.palette.as_mut())
+            && let Some(row) = palette.shown.iter().position(|shown| {
+                palette
+                    .items
+                    .get(shown.item)
+                    .is_some_and(|item| matches!(item.run, Run::Switch(b) if b == binding))
+            })
+        {
+            palette.selected = row;
+            palette.scroll.scroll_to_item(row, ScrollStrategy::Nearest);
+        }
+    }
+
     /// Quick open: the open tabs' folders, pinned folders, folders opened this session, then the
     /// drives; each folder once, where it first appears.
     fn folder_items(&self) -> Vec<Item> {

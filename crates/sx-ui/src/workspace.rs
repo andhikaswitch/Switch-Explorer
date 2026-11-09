@@ -121,7 +121,9 @@ pub struct Workspace {
     pub(crate) swallow_right_up: bool,
     /// The sidebar items drawn this frame: their focus, place and bounds (the keyboard opens
     /// their menu and properties).
-    pub(crate) sidebar_targets: std::cell::RefCell<Vec<crate::sidebar::SidebarTarget>>,
+    pub(crate) sidebar_targets: std::rc::Rc<std::cell::RefCell<Vec<crate::sidebar::SidebarTarget>>>,
+    /// Drag and drop: the Drag Guard, our drop target, the drop highlight.
+    pub(crate) drag: crate::dnd::DragState,
     /// Folders opened this session, most recent first (quick open; never written to disk).
     pub(crate) recent_folders: Vec<PathBuf>,
     /// The newest shell menu asked for; an older one does not open.
@@ -198,6 +200,8 @@ impl Workspace {
             crate::icons::IconCache::start(usize::from(features.perf_icon_cache_entries));
         let (changes, changed_tabs) = mpsc::unbounded();
 
+        let sidebar_targets: std::rc::Rc<std::cell::RefCell<Vec<crate::sidebar::SidebarTarget>>> =
+            std::rc::Rc::default();
         let mut this = Self {
             tabs: Vec::new(),
             active: 0,
@@ -227,7 +231,8 @@ impl Workspace {
             context_menu: None,
             menu_openings: 0,
             swallow_right_up: false,
-            sidebar_targets: std::cell::RefCell::default(),
+            sidebar_targets: sidebar_targets.clone(),
+            drag: crate::dnd::DragState::new(sidebar_targets),
             recent_folders: Vec::new(),
             menu_ticket: std::rc::Rc::default(),
             next_osd: 0,
@@ -270,6 +275,7 @@ impl Workspace {
         this.active = 0;
         this.refresh_drives(cx);
         this.watch_appearance(window, cx);
+        this.install_drop_target(window, cx);
         this.watch_changes(changed_tabs, cx);
         this.receive_icons(loaded_icons, cx);
         if let Some(requests) = options.requests {
@@ -1130,10 +1136,16 @@ impl Render for Workspace {
             self.context_menu = None;
         }
         // Like Windows' menus, it closes when the window loses focus.
-        if self.context_menu.is_some() && !window.is_window_active() {
+        let active = window.is_window_active();
+        if self
+            .context_menu
+            .as_mut()
+            .is_some_and(|menu| !menu.keep_open(active))
+        {
             self.context_menu = None;
         }
         self.sidebar_targets.borrow_mut().clear();
+        self.sync_drag(window, cx);
         self.sync_search(window, cx);
         self.focused_now = window.focused(cx);
         // The toast holds its timer while it has focus (keyboard users reaching for Undo).
@@ -1191,6 +1203,7 @@ impl Render for Workspace {
                 this.hovered = None;
                 cx.notify();
             }))
+            .child(self.drag_listeners(cx))
             .child(self.render_title_bar(window, cx))
             .child(self.render_command_bar(window, cx))
             .child(

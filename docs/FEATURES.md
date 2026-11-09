@@ -97,7 +97,7 @@ Setiap fitur punya ID `F-AREA-nn`, prioritas (P0/P1/P2), dan fase (F0–F8). Fla
 | F-DND-04 | Efek: `Ctrl` = salin, `Shift` = pindah, `Alt` = shortcut; tanpa modifier → `dnd.default_action` (system: pindah di volume sama, salin beda volume; atau copy/move/ask) | P0 | F2 |
 | F-DND-05 | Drag tombol kanan selalu menampilkan menu saat drop (paritas Explorer) | P0 | F2 |
 | F-DND-06 | **Drag Guard**: switch per sumber/target, cooldown setelah scroll, ambang jarak, tahan-dulu, modifier wajib, konfirmasi pindah folder (DEVELOPER-MODE.md §5) | P0 | F2 |
-| F-DND-07 | Hint saat drag diblokir switch + tombol Aktifkan (`dnd.blocked_hint`, DESIGN.md §9.3) | P0 | F2 |
+| F-DND-07 | Hint saat drag diblokir switch; klik membuka panel Hot Switch untuk menyalakannya (`dnd.blocked_hint`, DESIGN.md §9.3) | P0 | F2 |
 | F-DND-08 | Spring-loaded folder: hover saat drag membuka folder (`dnd.spring_open`, `dnd.spring_delay_ms`) | P1 | F2 |
 | F-DND-09 | Toast "Urungkan" 10 detik setelah drop (`dnd.undo_toast`) | P0 | F2 |
 

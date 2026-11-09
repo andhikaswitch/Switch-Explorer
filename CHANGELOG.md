@@ -89,12 +89,33 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Shortcut mode palette (`Ctrl+Shift+P`, `Ctrl+P`, `Ctrl+K`, `K`) kini juga berlaku dari dalam palette
   untuk pindah mode.
 - Token `size.toggle_width` dan `size.toggle_height`.
+- Drag & drop (OLE, dengan Drag Guard):
+  - Item di daftar dan pin/drive di sidebar bisa di-drag ke folder lain, ke sidebar, atau ke aplikasi lain,
+    dengan ikon item sebagai drag image.
+  - Drop dari Explorer atau aplikasi lain, maupun dari Switch Explorer sendiri, ke folder di daftar, ke
+    folder yang terbuka, atau ke item sidebar. Folder tujuan diberi garis `drop_target`; garis
+    `drop_blocked` bila switch menolaknya.
+  - `Ctrl` salin, `Shift` pindah; tanpa modifier mengikuti `dnd.default_action` (pindah di volume sama,
+    salin beda volume). Drag tombol kanan atau `ask` membuka menu Salin di sini / Pindahkan ke sini / Batal.
+  - Pindah folder bisa minta konfirmasi (`dnd.confirm_folder_move`). Semua drop masuk journal dan bisa
+    di-undo; toast-nya mengikuti `dnd.undo_toast`.
+  - Semua switch Drag Guard berlaku: sumber, target, mode baca-saja, ambang, tahan-dulu, cooldown scroll,
+    modifier wajib, drag tombol kanan, dan larangan keluar ke aplikasi lain.
+  - Drag atau drop yang diblokir switch memunculkan OSD yang menyebut switch-nya dan cara mengubahnya;
+    klik membuka panel Hot Switch dengan switch itu terpilih.
+  - Pengaman: item sidebar (pin, drive) tidak pernah dipindah lewat drag, hanya disalin atau dijadikan
+    shortcut; pin tidak bisa di-drop ke item sidebar, drive tidak pernah disalin/dipindah utuh, menu
+    tanya hanya menawarkan yang diizinkan sumber, drop ditolak selama dialog terbuka, dan sumber tidak
+    pernah diberi tahu "dipindah" sebelum kita yang memindahkannya.
 
 ### Changed
 - OSD Hot Switch: catatan untuk sub-switch yang tertahan kini menyebut induknya (Tertahan karena "Semua
   drag" mati.) dan hanya muncul saat menyalakannya, juga untuk grup `Ctrl+K`, `E`.
 - Cerulean dark: `toggle.off.border` memakai `{fg.muted}` agar toggle mati tetap 3:1 di baris terpilih.
 - Preset di palette dan panel bernama "Preset anti salah drag".
+- Cerulean: `drop_target.bg` alpha 0,10 di light dan dark (teks `fg.muted` di atasnya tetap 4.5:1).
+- Tempel atau drop ke folder yang sama dengan ejaan path berbeda (huruf besar/kecil, `\\?\`) tidak lagi
+  dianggap konflik dengan dirinya sendiri; folder juga tidak bisa disalin ke dalam dirinya lewat ejaan lain.
 - ARCHITECTURE §8.4: perubahan tema dipicu notifikasi registry, bukan `WM_SETTINGCHANGE`.
 - SYSTEM-INTEGRATION §3, §9, §15: koreksi berdasarkan temuan spike (Mica tanpa fallback di bawah build
   22621, latar Root opak, manifest GPUI dipaksa, pola modal host).

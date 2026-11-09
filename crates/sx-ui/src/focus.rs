@@ -175,9 +175,9 @@ impl Workspace {
     /// The buttons of the open dialog, in their order on screen.
     fn dialog_stops(&self) -> Vec<FocusHandle> {
         let ids: &[&str] = match &self.ops.dialog {
-            Some(Dialog::ConfirmRecycle(_) | Dialog::ConfirmDelete(_)) => {
-                &["dialog-cancel", "dialog-confirm"]
-            }
+            Some(
+                Dialog::ConfirmRecycle(_) | Dialog::ConfirmDelete(_) | Dialog::ConfirmMove { .. },
+            ) => &["dialog-cancel", "dialog-confirm"],
             Some(Dialog::Conflict(_)) => &[
                 "conflict-all",
                 "conflict-skip",

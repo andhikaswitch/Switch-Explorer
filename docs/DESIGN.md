@@ -410,6 +410,9 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
   Ctrl+K, D".
 - **Kelompok & preset:** "Drag ke/dari aplikasi lain dinonaktifkan (2 switch)", "Preset anti salah drag
   aktif (9 switch diubah)".
+- **Hint diblokir (§9.3):** OSD yang sama juga membawa hint saat drag atau drop ditolak switch. Hint
+  mengikuti `dnd.blocked_hint` saja (tetap muncul walau `hotswitch.osd = off`). Klik membuka panel Hot
+  Switch dengan switch itu sudah terpilih, jadi `Enter` langsung mengubahnya.
 - **Perilaku:** muncul ≤ 50 ms setelah tombol; tampil `hotswitch.osd_ms` (1800 ms); toggle berulang
   memperbarui OSD yang sama dan mereset timer (tidak menumpuk); hover menahan; klik membuka panel Hot
   Switch. Tidak pernah mengambil fokus.
@@ -426,9 +429,14 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
   master drag nonaktif, agar tetap terlihat walau status bar disembunyikan.
 
 ### 9.3 Hint saat diblokir
-- Saat pengguna mencoba drag item yang switch-nya nonaktif: toast kecil dekat kursor "Drag folder sedang
-  nonaktif." dengan tombol [Aktifkan] dan hotkey-nya. Maksimal sekali per 30 detik per switch
-  (`dnd.blocked_hint`).
+- Saat pengguna mencoba drag item yang switch-nya nonaktif: OSD Hot Switch (§9.1) "Drag folder sedang
+  nonaktif" dengan cara menyalakannya ("Nyalakan dengan Ctrl+K, D."; tanpa hotkey bila
+  `hotswitch.enabled` mati: "Klik untuk membuka panel Hot Switch."). Klik OSD membuka panel Hot Switch
+  (§8.4) dengan switch itu terpilih. Maksimal sekali per 30 detik per switch (`dnd.blocked_hint`). Drag
+  tidak dimulai; tekan tetap menjadi klik biasa.
+- Hal yang sama saat drop ditolak: mode baca-saja ("Mode baca-saja sedang aktif" · "Matikan dengan
+  Ctrl+K, R."), `dnd.external_in`, `dnd.target.*`. Tekan yang tertahan `dnd.require_modifier` memberi
+  "Tahan Alt untuk drag".
 - Seleksi campuran (file + folder) dengan salah satu nonaktif: drag ditolak seluruhnya, hint menyebut
   alasannya. Tidak ada item yang diam-diam tertinggal.
 
@@ -444,7 +452,7 @@ dengan bahasa Windows pengguna.
 | Hapus permanen | "Hapus 3 item secara permanen? Item tidak masuk Recycle Bin." [Hapus permanen] [Batal] | "Permanently delete 3 items? They won't go to the Recycle Bin." |
 | Setelah pindah | "3 item dipindahkan ke Arsip." [Urungkan] | "Moved 3 items to Archive." [Undo] |
 | OSD | "Drag folder dinonaktifkan" / "Drag file tetap aktif. Balik lagi: Ctrl+K, D" | "Folder dragging turned off" / "File dragging is still on. Toggle: Ctrl+K, D" |
-| Hint diblokir | "Drag folder sedang nonaktif." [Aktifkan] | "Folder dragging is off." [Turn on] |
+| Hint diblokir (OSD) | "Drag folder sedang nonaktif" · "Nyalakan dengan Ctrl+K, D." | "Folder dragging is off" · "Turn it on with Ctrl+K, D." |
 | File terkunci | "Tidak bisa memindahkan "Laporan.xlsx" karena sedang dibuka di Excel. Tutup file lalu coba lagi." | "Can't move "Laporan.xlsx" because it's open in Excel. Close it and try again." |
 | Folder kosong | "Folder ini kosong. Seret file ke sini atau tekan Ctrl+Shift+N untuk membuat folder." | "This folder is empty. Drag files here or press Ctrl+Shift+N to create a folder." |
 | Verifikasi Drive gagal | "Checksum "video.mp4" tidak cocok setelah diunggah. File lokal tetap aman." [Unggah ulang] | "Checksum for "video.mp4" didn't match after upload. Your local file is safe." [Upload again] |

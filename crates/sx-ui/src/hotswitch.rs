@@ -89,6 +89,8 @@ pub(crate) struct Osd {
     hovered: bool,
     /// Fading out; gone after `motion.fast`.
     leaving: bool,
+    /// A hint about this binding: a click opens the panel with it chosen.
+    binding: Option<usize>,
 }
 
 /// The name of a switch (`flag.<id>`).
@@ -306,8 +308,56 @@ fn binding_keys(id: &str) -> Option<String> {
     })
 }
 
+/// The binding that toggles `id`, by index in `DEFAULT_BINDINGS`.
+fn binding_of(id: &str) -> Option<usize> {
+    DEFAULT_BINDINGS.iter().position(|b| match b.action {
+        HotSwitchAction::Toggle(target) => target == id,
+        HotSwitchAction::Group(ids) => ids.contains(&id),
+        _ => false,
+    })
+}
+
 impl Workspace {
-    /// Whether a binding's switch cannot take effect now: one it depends on is off.
+    /// A drag or a drop a switch refuses (DESIGN.md §9.3): the OSD names the switch and how to
+    /// change it; a click on it opens the Hot Switch panel with that switch chosen. It shows
+    /// whatever `hotswitch.osd` says: `dnd.blocked_hint` alone decides.
+    pub(crate) fn show_blocked_hint(&mut self, flag: &str, mixed: bool, cx: &mut Context<Self>) {
+        // Read-only mode blocks by being on; the drag switches block by being off.
+        let on_blocks = flag == "safety.readonly_mode";
+        let name = label(flag);
+        let title = if on_blocks {
+            t!("hotswitch.drag_blocked_on", name = name)
+        } else {
+            t!("hotswitch.drag_blocked", name = name)
+        }
+        .into_owned();
+        // Keys only when they work (`hotswitch.enabled`).
+        let keys = binding_keys(flag).filter(|_| self.features.hotswitch_enabled);
+        let how = match (keys, on_blocks) {
+            (Some(keys), false) => t!("hotswitch.drag_blocked_keys", keys = keys),
+            (Some(keys), true) => t!("hotswitch.drag_blocked_keys_off", keys = keys),
+            (None, _) => t!("hotswitch.drag_blocked_panel"),
+        };
+        let detail = if mixed {
+            format!("{} {how}", t!("hotswitch.drag_blocked_mixed"))
+        } else {
+            how.into_owned()
+        };
+        self.present_osd(title, detail, false, binding_of(flag), cx);
+    }
+
+    /// A press held back by `dnd.require_modifier`: which key starts a drag.
+    pub(crate) fn show_key_hint(&mut self, key: sx_core::drag::Modifier, cx: &mut Context<Self>) {
+        let key = match key {
+            sx_core::drag::Modifier::Alt => "Alt",
+            sx_core::drag::Modifier::Ctrl => "Ctrl",
+            sx_core::drag::Modifier::Shift => "Shift",
+        };
+        let title = t!("hotswitch.drag_needs_key", key = key).into_owned();
+        let detail = t!("hotswitch.drag_needs_key_why").into_owned();
+        self.present_osd(title, detail, false, None, cx);
+    }
+
     /// The switch holding a binding back: one it depends on that is off.
     pub(crate) fn binding_holder(&self, index: usize) -> Option<&'static str> {
         match DEFAULT_BINDINGS.get(index).map(|b| b.action) {
@@ -408,6 +458,17 @@ impl Workspace {
         if self.features.hotswitch_osd == "off" {
             return;
         }
+        self.present_osd(title, detail, on, None, cx);
+    }
+
+    fn present_osd(
+        &mut self,
+        title: String,
+        detail: String,
+        on: bool,
+        binding: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
         self.next_osd += 1;
         let id = self.next_osd;
         let appearance = match &self.osd {
@@ -426,6 +487,7 @@ impl Workspace {
             on,
             hovered,
             leaving: false,
+            binding,
         });
         self.hide_osd_later(id, cx);
         cx.notify();
@@ -564,10 +626,12 @@ impl Workspace {
             .shadow(t.shadow(Token::ShadowPopover))
             .text_color(t.color(Token::OsdFg))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hover_osd(*hovered, cx)))
-            // A click opens the Hot Switch panel (DESIGN.md §9.1).
+            // A click opens the Hot Switch panel (DESIGN.md §9.1), with the switch of a hint
+            // chosen so Enter changes it.
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                 cx.stop_propagation();
-                this.open_palette(crate::palette::PaletteMode::Switches, window, cx);
+                let binding = this.osd.as_ref().and_then(|osd| osd.binding);
+                this.open_switch_panel(binding, window, cx);
             }))
             .child(badge)
             .child(
