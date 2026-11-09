@@ -9,6 +9,9 @@ pub enum HotSwitchAction {
     Group(&'static [&'static str]),
     /// Turn a preset on (remembering the previous values) or back off (restoring them).
     Preset(&'static str),
+    /// One value of an enum switch, shown as on/off: on sets it, off puts the switch back to
+    /// its default (e.g. "menu on drop" = `dnd.default_action` is `ask`).
+    Choice(&'static str, &'static str),
     /// Open the Hot Switch panel.
     Panel,
 }
@@ -44,6 +47,8 @@ pub const DEFAULT_BINDINGS: &[HotSwitchBinding] = &[
         HotSwitchAction::Group(&["dnd.external_out", "dnd.external_in"]),
     ),
     bind("ctrl-k g", HotSwitchAction::Preset("anti_drag")),
+    // No default keys: in the Hot Switch panel and the palette (DEVELOPER-MODE.md §6.2).
+    bind("", HotSwitchAction::Choice("dnd.default_action", "ask")),
     bind("ctrl-k l", HotSwitchAction::Toggle("sidebar.pins_locked")),
     bind("ctrl-k h", HotSwitchAction::Toggle("view.show_hidden")),
     bind("ctrl-k x", HotSwitchAction::Toggle("view.show_extensions")),
@@ -119,6 +124,14 @@ mod tests {
                 HotSwitchAction::Preset(id) => {
                     assert!(preset(id).is_some(), "unknown preset {id}");
                     &[]
+                }
+                HotSwitchAction::Choice(id, value) => {
+                    let m = meta(id).unwrap_or_else(|| panic!("unknown flag {id}"));
+                    assert!(
+                        matches!(m.kind, crate::FlagKind::Enum(variants) if variants.contains(value)),
+                        "{value} is not a value of {id}"
+                    );
+                    std::slice::from_ref(id)
                 }
                 HotSwitchAction::Panel => &[],
             };

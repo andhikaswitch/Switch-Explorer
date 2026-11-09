@@ -224,6 +224,8 @@ sama. Dibuka dengan `Ctrl+K`, `K` atau klik chip status (§9.2).
   keadaan tidak hanya dibedakan lewat warna.
 - **Tinggi:** semua baris tampil bila window cukup tinggi (maks 20 baris, min 4); lebih dari itu
   daftar bergulir.
+- **Pilihan:** switch enum yang ditampilkan sebagai on/off (mis. "Menu saat drop" = `dnd.default_action`
+  `ask`); mematikannya mengembalikan nilai default. Tanpa hotkey default, kolom hotkey kosong.
 - **Judul kelompok:** caption `fg.muted`, tidak bisa dipilih; disembunyikan saat mencari.
   Panah dan PageUp/PageDown melompatinya (PageUp di atas berhenti di switch pertama); naik ke baris
   pertama kelompok ikut menampilkan judulnya.

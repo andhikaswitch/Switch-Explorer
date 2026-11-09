@@ -621,14 +621,13 @@ impl Workspace {
         }
         let right = press.button == Button::Right;
         // A drive is offered as a shortcut only (as in Explorer): never a whole-drive copy or
-        // move. Read-only mode: nothing leaves this folder by a move. A sidebar item is never
-        // moved by a drag (DEVELOPER-MODE.md §5.1: pinned folders such as Desktop are what gets
-        // moved by accident); it can be copied or linked.
+        // move. Read-only mode: nothing leaves this folder by a move. Sidebar items follow
+        // `dnd.source.sidebar` (and the anti-drag preset turns that off).
         let drive = paths.iter().any(|path| path.parent().is_none());
         let from_sidebar = matches!(press.what, Pressed::Sidebar(_));
         let allowed = Allowed {
             copy: !drive,
-            moves: !drive && !press.policy.readonly && !from_sidebar,
+            moves: !drive && !press.policy.readonly,
             link: true,
         };
         let leave_window = press.policy.external_out;
@@ -933,6 +932,9 @@ impl Router {
             DropEffect::Copy => Effect::Copy,
             // Moving items to where they already are does nothing.
             DropEffect::Move | DropEffect::ConfirmMove if !here => Effect::Move,
+            // A left drag let go over the folder it came from: nothing, no menu (as Explorer).
+            // With the right button the menu still offers a copy.
+            DropEffect::Ask if here && !keys.right => Effect::None,
             DropEffect::Ask if allowed.copy => Effect::Copy,
             DropEffect::Ask if allowed.moves && !here => Effect::Move,
             // Shortcuts are not made yet.

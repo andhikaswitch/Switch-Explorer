@@ -194,6 +194,10 @@ flag:
     readonly_mode: Read-only mode
 preset:
   anti_drag: Anti accidental drag
+choice:
+  dnd:
+    default_action:
+      ask: Menu on drop (Copy here / Move here)
 preset_title:
   anti_drag: Anti accidental drag preset
 hotswitch:

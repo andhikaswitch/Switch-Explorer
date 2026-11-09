@@ -207,8 +207,9 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
 /// in text inputs, where they would eat what is typed; single combinations work anywhere.
 fn bind_hot_switches(bindings: &mut Vec<KeyBinding>, cx: &App) {
     for (binding, spec) in DEFAULT_BINDINGS.iter().enumerate() {
-        // The panel is a command of the registry (`hotswitch.panel`), bound with the others.
-        if matches!(spec.action, HotSwitchAction::Panel) {
+        // The panel is a command of the registry (`hotswitch.panel`), bound with the others;
+        // a binding without keys lives in the panel and the palette only.
+        if matches!(spec.action, HotSwitchAction::Panel) || spec.keys.is_empty() {
             continue;
         }
         let context = if spec.keys.contains(' ') {

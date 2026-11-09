@@ -194,6 +194,10 @@ flag:
     readonly_mode: Mode baca-saja
 preset:
   anti_drag: anti salah drag
+choice:
+  dnd:
+    default_action:
+      ask: Menu saat drop (Salin di sini / Pindahkan ke sini)
 preset_title:
   anti_drag: Preset anti salah drag
 hotswitch:

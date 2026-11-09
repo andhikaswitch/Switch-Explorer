@@ -103,10 +103,14 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
     modifier wajib, drag tombol kanan, dan larangan keluar ke aplikasi lain.
   - Drag atau drop yang diblokir switch memunculkan OSD yang menyebut switch-nya dan cara mengubahnya;
     klik membuka panel Hot Switch dengan switch itu terpilih.
-  - Pengaman: item sidebar (pin, drive) tidak pernah dipindah lewat drag, hanya disalin atau dijadikan
-    shortcut; pin tidak bisa di-drop ke item sidebar, drive tidak pernah disalin/dipindah utuh, menu
-    tanya hanya menawarkan yang diizinkan sumber, drop ditolak selama dialog terbuka, dan sumber tidak
-    pernah diberi tahu "dipindah" sebelum kita yang memindahkannya.
+  - Pengaman: pin tidak bisa di-drop ke item sidebar, drive tidak pernah disalin/dipindah utuh, menu
+    tanya hanya berisi yang diizinkan sumber dan yang bisa dijalankan, drop ditolak selama dialog
+    terbuka, dan sumber tidak pernah diberi tahu "dipindah" sebelum kita yang memindahkannya.
+  - Drag kiri yang dilepas di folder asalnya tidak melakukan apa pun (tanpa menu).
+  - Panel Hot Switch punya baris "Menu saat drop (Salin di sini / Pindahkan ke sini)" untuk menyalakan
+    atau mematikan menu itu (`dnd.default_action` = `ask` ⇄ default). Jenis binding baru: pilihan.
+  - `dnd.hold_delay_ms`: gerak sebelum delay selesai tidak lagi membatalkan drag; drag mulai pada gerak
+    pertama setelah delay. Drag dengan preset "Anti salah drag" tidak lagi terasa berat.
 
 ### Changed
 - OSD Hot Switch: catatan untuk sub-switch yang tertahan kini menyebut induknya (Tertahan karena "Semua

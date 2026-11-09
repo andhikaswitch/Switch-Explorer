@@ -360,16 +360,11 @@ impl DragGuard {
         if held {
             return Step::Wait;
         }
+        // Not yet: the button has not been held long enough. The press stays a press, so the
+        // first move after the delay starts the drag. (Cancelling it here made every quick
+        // drag fail and feel heavy; a flick that is released within the delay is still a
+        // click.)
         if now_ms.saturating_sub(at_ms) < policy.hold_delay_ms {
-            // Moved before the hold delay passed: a swipe, not a drag (this press stays a click).
-            self.state = State::Pressed {
-                at_ms,
-                x: x0,
-                y: y0,
-                allowed,
-                held: true,
-                hinted,
-            };
             return Step::Wait;
         }
         self.state = State::Dragging;
@@ -591,12 +586,15 @@ mod tests {
             hold_delay_ms: 150,
             ..DragPolicy::default()
         };
-        // Moving before the delay: this press can no longer drag, even after waiting.
+        // Moving before the delay waits; the first move after it starts the drag.
         let mut g = guard(&hold, None, NONE);
         assert_eq!(g.moved(1_050, 40.0, 10.0), Step::Wait);
-        assert_eq!(g.moved(1_400, 80.0, 10.0), Step::Wait);
+        assert_eq!(g.moved(1_160, 45.0, 10.0), Step::StartDrag);
+        // A flick released within the delay stays a click.
+        let mut g = guard(&hold, None, NONE);
+        assert_eq!(g.moved(1_050, 40.0, 10.0), Step::Wait);
         assert_eq!(g.release(), Step::Click);
-        // Holding still first, then moving: a drag.
+        // Holding still first, then moving: a drag at once.
         let mut g = guard(&hold, None, NONE);
         assert_eq!(g.moved(1_200, 40.0, 10.0), Step::StartDrag);
 

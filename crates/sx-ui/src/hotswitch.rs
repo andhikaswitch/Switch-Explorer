@@ -98,6 +98,11 @@ fn label(id: &str) -> String {
     t!(format!("flag.{id}")).into_owned()
 }
 
+/// The name of one value of an enum switch shown as on/off (`choice.<id>.<value>`).
+fn choice_label(id: &str, value: &str) -> String {
+    t!(format!("choice.{id}.{value}")).into_owned()
+}
+
 /// `ctrl-k d` → `Ctrl+K, D`; `ctrl-shift-d` → `Ctrl+Shift+D`.
 pub(crate) fn keys_text(keys: &str) -> String {
     keys.split(' ')
@@ -220,7 +225,9 @@ fn describe(
     features: &Features,
     preset_active: bool,
 ) -> (String, String, bool) {
-    let again = t!("hotswitch.again", keys = keys_text(binding.keys)).into_owned();
+    // A binding without keys says nothing about them.
+    let again = (!binding.keys.is_empty())
+        .then(|| t!("hotswitch.again", keys = keys_text(binding.keys)).into_owned());
     match binding.action {
         HotSwitchAction::Toggle(id) => {
             let value = changes
@@ -239,7 +246,7 @@ fn describe(
                 Some(by) => on.then(|| held_note(by)),
                 None => impact(id, on, features),
             };
-            (title.into_owned(), detail(&[note, Some(again)]), on)
+            (title.into_owned(), detail(&[note, again.clone()]), on)
         }
         HotSwitchAction::Group(ids) => {
             let on = changes.first().is_some_and(|c| is_on(&c.value));
@@ -254,7 +261,7 @@ fn describe(
                 Some(by) => on.then(|| held_note(by)),
                 None => ids.first().and_then(|id| impact(id, on, features)),
             };
-            (title.into_owned(), detail(&[note, Some(again)]), on)
+            (title.into_owned(), detail(&[note, again.clone()]), on)
         }
         HotSwitchAction::Preset(id) => {
             let name = t!(format!("preset.{id}")).into_owned();
@@ -269,9 +276,21 @@ fn describe(
             };
             (
                 title.into_owned(),
-                detail(&[note, Some(again)]),
+                detail(&[note, again.clone()]),
                 preset_active,
             )
+        }
+        HotSwitchAction::Choice(id, value) => {
+            let on = changes
+                .first()
+                .is_some_and(|c| c.value == FlagValue::Text(value.to_string()));
+            let name = choice_label(id, value);
+            let title = if on {
+                t!("hotswitch.on", name = name)
+            } else {
+                t!("hotswitch.off", name = name)
+            };
+            (title.into_owned(), detail(&[again]), on)
         }
         HotSwitchAction::Panel => (String::new(), String::new(), true),
     }
@@ -299,13 +318,16 @@ fn drag_state(features: &Features) -> DragState {
     }
 }
 
-/// The hotkey of the binding that toggles `id`, for tooltips.
+/// The hotkey of the binding that toggles `id`, for tooltips; none when it has no keys.
 fn binding_keys(id: &str) -> Option<String> {
-    DEFAULT_BINDINGS.iter().find_map(|b| match b.action {
-        HotSwitchAction::Toggle(target) if target == id => Some(keys_text(b.keys)),
-        HotSwitchAction::Group(ids) if ids.contains(&id) => Some(keys_text(b.keys)),
-        _ => None,
-    })
+    DEFAULT_BINDINGS
+        .iter()
+        .filter(|b| !b.keys.is_empty())
+        .find_map(|b| match b.action {
+            HotSwitchAction::Toggle(target) if target == id => Some(keys_text(b.keys)),
+            HotSwitchAction::Group(ids) if ids.contains(&id) => Some(keys_text(b.keys)),
+            _ => None,
+        })
 }
 
 /// The binding that toggles `id`, by index in `DEFAULT_BINDINGS`.
@@ -373,6 +395,7 @@ impl Workspace {
             HotSwitchAction::Toggle(id) => label(id),
             HotSwitchAction::Group(ids) => group_label(ids),
             HotSwitchAction::Preset(id) => t!(format!("preset_title.{id}")).into_owned(),
+            HotSwitchAction::Choice(id, value) => choice_label(id, value),
             HotSwitchAction::Panel => return None,
         })
     }
@@ -384,6 +407,9 @@ impl Workspace {
             HotSwitchAction::Toggle(id) => on(id),
             HotSwitchAction::Group(ids) => ids.iter().any(|id| on(id)),
             HotSwitchAction::Preset(id) => self.settings.preset_active(id),
+            HotSwitchAction::Choice(id, value) => {
+                self.features.get(id) == Some(FlagValue::Text(value.to_string()))
+            }
             HotSwitchAction::Panel => return None,
         })
     }
@@ -802,6 +828,11 @@ mod tests {
                 HotSwitchAction::Toggle(id) => vec![id],
                 HotSwitchAction::Group(ids) => ids.to_vec(),
                 HotSwitchAction::Preset(_) | HotSwitchAction::Panel => vec![],
+                HotSwitchAction::Choice(id, value) => {
+                    let key = format!("choice.{id}.{value}");
+                    assert_ne!(choice_label(id, value), key, "{key} missing in en.yml");
+                    vec![]
+                }
             };
             for id in ids {
                 let key = format!("flag.{id}");

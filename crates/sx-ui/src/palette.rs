@@ -359,7 +359,7 @@ impl Workspace {
             enabled: false,
         };
         let is_drag = |action: &HotSwitchAction| match action {
-            HotSwitchAction::Toggle(id) => id.starts_with("dnd."),
+            HotSwitchAction::Toggle(id) | HotSwitchAction::Choice(id, _) => id.starts_with("dnd."),
             HotSwitchAction::Group(ids) => ids.iter().any(|id| id.starts_with("dnd.")),
             HotSwitchAction::Preset(_) => true,
             HotSwitchAction::Panel => false,

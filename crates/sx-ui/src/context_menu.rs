@@ -266,21 +266,30 @@ impl Workspace {
             path.parent()
                 .is_some_and(|parent| crate::workspace::same_path(parent, &dest))
         });
-        // Only what the source allows: a copy-only source is never moved.
-        let entries = vec![
-            Entry::new(
+        // Only what can happen: a copy-only source is never moved, and items are not moved to
+        // where they already are. What cannot happen is left out, not greyed (it read as
+        // missing anyway).
+        let (copy, moves) = (allowed.copy, allowed.moves && !here);
+        if !copy && !moves {
+            return;
+        }
+        let mut entries = Vec::new();
+        if copy {
+            entries.push(Entry::new(
                 t!("menu.drop_copy"),
-                allowed.copy,
+                true,
                 Run::Drop(paths.clone(), dest.clone(), sx_ops::Mode::Copy),
-            ),
-            Entry::new(
+            ));
+        }
+        if moves {
+            entries.push(Entry::new(
                 t!("menu.drop_move"),
-                allowed.moves && !here,
+                true,
                 Run::Drop(paths, dest, sx_ops::Mode::Move),
-            ),
-            Entry::separator(),
-            Entry::new(t!("menu.drop_cancel"), true, Run::Close),
-        ];
+            ));
+        }
+        entries.push(Entry::separator());
+        entries.push(Entry::new(t!("menu.drop_cancel"), true, Run::Close));
         self.show_menu(entries, at, false, window, cx);
     }
 

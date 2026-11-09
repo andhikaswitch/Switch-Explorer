@@ -92,7 +92,7 @@ scroll dengan touchpad — sudah memulai drag. Melepasnya di atas folder lain di
 | `dnd.scroll_cooldown_ms` | u16 | 0 | — | Drag diabaikan selama ini setelah scroll terakhir |
 | `dnd.require_modifier` | enum `none`/`alt`/`ctrl`/`shift` | none | — | Drag hanya jika modifier ditahan saat mulai |
 | `dnd.right_drag_bypass` | bool | false | — | Drag tombol kanan tetap boleh walau sumbernya dimatikan (selalu memunculkan menu konfirmasi) |
-| `dnd.default_action` | enum `system`/`copy`/`move`/`ask` | system | cycle (tanpa hotkey default) | Aksi drop tanpa modifier |
+| `dnd.default_action` | enum `system`/`copy`/`move`/`ask` | system | "Menu saat drop" (`ask` ⇄ default, tanpa hotkey default) | Aksi drop tanpa modifier |
 | `dnd.confirm_folder_move` | bool | false | — | Konfirmasi saat memindahkan folder lewat drag |
 | `dnd.undo_toast` | bool | true | — | Toast "Urungkan" 10 detik setelah drop |
 | `dnd.blocked_hint` | bool | true | — | Beri tahu saat drag diblokir switch |
@@ -113,7 +113,6 @@ seleksi campuran (file + folder): semua item harus lolos; jika satu gagal → se
 boleh_drop(target)  = (target.sidebar ? dnd.target.sidebar : dnd.target.folders) && !safety.readonly_mode
 boleh_keluar        = dnd.external_out      boleh_masuk = dnd.external_in
 menyusun ulang pinned = dnd.enabled && !sidebar.pins_locked   (tidak memindahkan file)
-drag yang mulai di sidebar tidak pernah memindahkan foldernya: hanya salin atau shortcut (§5.1)
 ```
 
 ### 5.4 State machine inisiasi drag
@@ -125,7 +124,9 @@ Pressed:
   • now − scroll_terakhir < dnd.scroll_cooldown_ms → tertahan = true (press ini tidak bisa jadi drag)
   • dnd.require_modifier != none && modifier tidak ditahan → tertahan = true
   • gerak: jarak ≥ ambang && now − t0 ≥ dnd.hold_delay_ms && !tertahan → Dragging
-  • gerak melewati ambang sebelum hold delay selesai → tertahan = true
+  • gerak sebelum hold delay selesai → belum apa-apa; gerak pertama setelahnya (masih lewat ambang)
+    memulai drag. Lepas sebelum delay selesai tetap klik. (Dulu gerak terlalu cepat membatalkan drag
+    untuk tekan itu; terasa berat, karena hampir semua drag cepat gagal.)
   • lepas tombol → Click
 Dragging (internal atau OLE):
   • efek = modifier (Ctrl salin, Shift pindah, Alt shortcut) atau dnd.default_action
@@ -158,6 +159,9 @@ Sambungan (`sx_ui::dnd`):
   ditolak (memindahkan folder pinned tidak boleh terjadi; menyusun ulang pinned lewat drag menyusul).
   Drive atau share utuh tidak pernah disalin/dipindah. Selama dialog, palette, menu, atau rename terbuka,
   drop ditolak.
+- Drag kiri yang dilepas di folder asalnya tidak melakukan apa pun, juga dengan `ask` (seperti Explorer);
+  drag kanan di sana tetap memunculkan menu dengan "Salin di sini". Menu hanya berisi pilihan yang bisa
+  dijalankan.
 - Belum: shortcut (`Alt`, `Ctrl+Shift`) ditolak dulu, spring-open, menyusun ulang pinned lewat drag, drop
   ke breadcrumb/tab, dan virtual files.
 
@@ -195,6 +199,7 @@ Desain visual di `DESIGN.md` §9.
 | `Ctrl+K`, `S` | `dnd.source.sidebar` | toggle |
 | `Ctrl+K`, `E` | `dnd.external_out` + `dnd.external_in` | grup |
 | `Ctrl+K`, `G` | preset "Anti salah drag" | preset |
+| (tanpa hotkey) | "Menu saat drop": `dnd.default_action` = `ask`, atau kembali ke default | pilihan |
 | `Ctrl+K`, `L` | `sidebar.pins_locked` | toggle |
 | `Ctrl+K`, `H` | `view.show_hidden` | toggle |
 | `Ctrl+K`, `X` | `view.show_extensions` | toggle |
