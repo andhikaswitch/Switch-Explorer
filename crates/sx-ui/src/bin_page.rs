@@ -22,6 +22,15 @@ use crate::ops::{Dialog, Origin};
 use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
 
+/// Where the last listing got to.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum Listed {
+    #[default]
+    NotYet,
+    Shown,
+    Failed,
+}
+
 /// What the page shows.
 #[derive(Debug, Default)]
 pub(crate) struct BinView {
@@ -31,8 +40,11 @@ pub(crate) struct BinView {
     selected: BTreeSet<usize>,
     anchor: Option<usize>,
     loading: bool,
-    loaded: bool,
-    failed: bool,
+    /// Something changed while a listing ran: list again when it ends.
+    dirty: bool,
+    listed: Listed,
+    /// Items the listing left out (no readable or plausible record).
+    skipped: usize,
     /// The newest listing asked for; an older one is dropped.
     generation: u64,
     scroll: UniformListScrollHandle,
@@ -48,6 +60,11 @@ impl Workspace {
         {
             return;
         }
+        // One listing at a time; changes meanwhile ask for one more.
+        if self.bin.loading {
+            self.bin.dirty = true;
+            return;
+        }
         self.bin.generation += 1;
         self.bin.loading = true;
         let generation = self.bin.generation;
@@ -58,23 +75,40 @@ impl Workspace {
                     return;
                 }
                 this.bin.loading = false;
-                this.bin.loaded = true;
+                // The selection stays with its items, wherever they now are.
+                let chosen: std::collections::HashSet<std::path::PathBuf> = this
+                    .bin_chosen()
+                    .iter()
+                    .map(|item| item.slot.clone())
+                    .collect();
                 match listed {
-                    Some(Ok(mut items)) => {
+                    Some(Ok(listing)) => {
+                        let mut items = listing.items;
                         items.sort_by_key(|item| std::cmp::Reverse(item.deleted));
-                        this.bin.failed = false;
+                        this.bin.listed = Listed::Shown;
+                        this.bin.skipped = listing.skipped;
                         this.bin.items = items;
                     }
                     other => {
                         if let Some(Err(err)) = other {
                             tracing::warn!(error = %err, "recycle bin not listed");
                         }
-                        this.bin.failed = true;
+                        this.bin.listed = Listed::Failed;
                         this.bin.items.clear();
                     }
                 }
-                this.bin.selected.clear();
+                this.bin.selected = this
+                    .bin
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| chosen.contains(&item.slot))
+                    .map(|(ix, _)| ix)
+                    .collect();
                 this.bin.anchor = None;
+                if std::mem::take(&mut this.bin.dirty) {
+                    this.refresh_bin(cx);
+                }
                 cx.notify();
             });
         })
@@ -121,14 +155,7 @@ impl Workspace {
             cx.notify();
             return;
         }
-        let items: Vec<Binned> = self
-            .bin_chosen()
-            .into_iter()
-            .map(|item| Binned {
-                original: item.original.clone(),
-                slot: item.slot.clone(),
-            })
-            .collect();
+        let items: Vec<Binned> = self.bin_chosen().into_iter().map(binned).collect();
         if items.is_empty() {
             return;
         }
@@ -154,8 +181,8 @@ impl Workspace {
             return;
         };
         let name = file_name(&first.original);
-        let slots = chosen.iter().map(|item| item.slot.clone()).collect();
-        self.ops.dialog = Some(Dialog::ConfirmPurge { slots, name });
+        let items = chosen.iter().map(|item| binned(item)).collect();
+        self.ops.dialog = Some(Dialog::ConfirmPurge { items, name });
         cx.notify();
     }
 
@@ -168,30 +195,11 @@ impl Workspace {
         if self.bin.items.is_empty() {
             return;
         }
+        // Exactly what is listed: an item recycled since stays.
         self.ops.dialog = Some(Dialog::ConfirmEmptyBin {
-            count: self.bin.items.len(),
+            items: self.bin.items.iter().map(binned).collect(),
         });
         cx.notify();
-    }
-
-    /// The bin is emptied (the user said yes): off the UI thread, then listed again.
-    pub(crate) fn empty_bin_now(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| {
-            let emptied = crate::ops::off_thread(sx_shell::recycle::empty_bin).await;
-            let _ = this.update(cx, |this, cx| {
-                match emptied {
-                    Some(Ok(())) => this.notice = None,
-                    other => {
-                        if let Some(Err(err)) = other {
-                            tracing::warn!(error = %err, "recycle bin not emptied");
-                        }
-                        this.notice = Some(t!("recycle_bin.empty_failed").into());
-                    }
-                }
-                this.refresh_bin(cx);
-            });
-        })
-        .detach();
     }
 
     pub(crate) fn render_recycle_bin(&self, cx: &Context<Self>) -> AnyElement {
@@ -238,10 +246,21 @@ impl Workspace {
                     .text_size(t.px(Token::FontSizeCaption))
                     .text_color(t.color(Token::FgSecondary))
                     .child(summary),
-            );
-        let body = if bin.loading && !bin.loaded {
+            )
+            .when(bin.skipped > 0, |el| {
+                el.child(
+                    div()
+                        .text_size(t.px(Token::FontSizeCaption))
+                        .text_color(t.color(Token::FgMuted))
+                        .child(SharedString::from(t!(
+                            "recycle_bin.skipped",
+                            count = bin.skipped
+                        ))),
+                )
+            });
+        let body = if bin.listed == Listed::NotYet {
             self.bin_message(t!("details.loading").into(), cx)
-        } else if bin.failed {
+        } else if bin.listed == Listed::Failed {
             // Honest fallback (F-LOC-06): File Explorer's own view of the bin.
             div()
                 .flex()
@@ -393,7 +412,7 @@ impl Workspace {
         let folder = item
             .original
             .parent()
-            .map(|p| p.display().to_string())
+            .map(|p| shown(&p.display().to_string()))
             .unwrap_or_default();
         let deleted = sx_win::format::file_time(item.deleted).unwrap_or_default();
         let size = if item.folder {
@@ -475,11 +494,33 @@ impl Workspace {
     }
 }
 
+fn binned(item: &BinItem) -> Binned {
+    Binned {
+        original: item.original.clone(),
+        slot: item.slot.clone(),
+    }
+}
+
+/// A name from a bin record, safe to show: bidirectional controls (which can make `exe.txt`
+/// read as `txt.exe`) are shown as a replacement character.
+pub(crate) fn shown(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\u{202A}'..='\u{202E}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{200E}'
+            | '\u{200F}'
+            | '\u{061C}' => '\u{FFFD}',
+            c => c,
+        })
+        .collect()
+}
+
 fn file_name(path: &std::path::Path) -> String {
-    path.file_name().map_or_else(
+    shown(&path.file_name().map_or_else(
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -490,6 +531,12 @@ mod tests {
 
     fn slots(items: &[BinItem]) -> Vec<PathBuf> {
         items.iter().map(|item| item.slot.clone()).collect()
+    }
+
+    #[test]
+    fn bidi_controls_are_not_shown() {
+        assert_eq!(shown("photo\u{202E}gpj.exe"), "photo\u{FFFD}gpj.exe");
+        assert_eq!(shown("notes.txt"), "notes.txt");
     }
 
     #[test]

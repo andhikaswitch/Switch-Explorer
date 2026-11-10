@@ -69,14 +69,14 @@ pub(crate) enum Dialog {
     ConfirmRecycle(Vec<PathBuf>),
     ConfirmDelete(Vec<PathBuf>),
     Conflict(PendingPaste),
-    /// Items deleted for good from the Recycle Bin (their slots), named by the first one.
+    /// Items deleted for good from the Recycle Bin, named by the first one.
     ConfirmPurge {
-        slots: Vec<PathBuf>,
+        items: Vec<sx_ops::Binned>,
         name: String,
     },
-    /// Everything in the Recycle Bin, deleted for good.
+    /// Every item the bin page lists, deleted for good (exactly those: not what came later).
     ConfirmEmptyBin {
-        count: usize,
+        items: Vec<sx_ops::Binned>,
     },
     /// A drag moves folders and `dnd.confirm_folder_move` asks first.
     ConfirmMove {
@@ -235,6 +235,28 @@ impl sx_ops::Trash for ShellTrash {
             error: restored.error.map(trash_error),
         }
     }
+
+    fn purge(&self, items: &[Binned]) -> sx_ops::Purged {
+        self.purge_items(items)
+    }
+}
+
+impl ShellTrash {
+    fn purge_items(&self, items: &[Binned]) -> sx_ops::Purged {
+        let request: Vec<(PathBuf, PathBuf)> = items
+            .iter()
+            .map(|b| (b.original.clone(), b.slot.clone()))
+            .collect();
+        let purged = sx_shell::recycle::purge(&request, self.owner);
+        sx_ops::Purged {
+            done: purged
+                .done
+                .into_iter()
+                .filter_map(|ix| items.get(ix).cloned())
+                .collect(),
+            error: purged.error.map(trash_error),
+        }
+    }
 }
 
 /// Shell failures as the engine's errors, keeping the item and the Win32 code for the message.
@@ -271,7 +293,7 @@ fn job_label(op: &Op, origin: Origin) -> SharedString {
         (_, Op::Move { .. }) => "ops.moving",
         (_, Op::Recycle { .. }) => "ops.recycling",
         (_, Op::Restore { .. }) => "ops.restoring",
-        (_, Op::Delete { .. }) => "ops.deleting",
+        (_, Op::Delete { .. } | Op::Purge { .. }) => "ops.deleting",
         (_, Op::Rename { .. } | Op::NewFolder { .. } | Op::Batch { .. }) => "ops.working",
     };
     if count == 1 {
@@ -323,7 +345,7 @@ fn done_text(op: &Op, origin: Origin) -> SharedString {
         (_, Op::Move { .. }) => plural("ops.done_move"),
         (_, Op::Recycle { .. }) => plural("ops.done_recycle"),
         (_, Op::Restore { .. }) => plural("ops.done_restore"),
-        (_, Op::Delete { .. }) => plural("ops.done_delete"),
+        (_, Op::Delete { .. } | Op::Purge { .. }) => plural("ops.done_delete"),
         (_, Op::Rename { to, .. }) => t!("ops.done_rename", name = file_name(to)),
         (_, Op::NewFolder { .. } | Op::Batch { .. }) => t!("ops.done"),
     }
@@ -352,7 +374,8 @@ pub(crate) fn name_error(err: &NameError) -> SharedString {
 }
 
 fn ops_error(err: &OpsError) -> SharedString {
-    let name = err.path().map(file_name).unwrap_or_default();
+    // Names can come from Recycle Bin records: bidi controls are not shown.
+    let name = crate::bin_page::shown(&err.path().map(file_name).unwrap_or_default());
     match err {
         OpsError::Exists(_) => t!("ops.exists", name = name),
         OpsError::IntoItself(_) => t!("ops.into_itself", name = name),
@@ -918,10 +941,10 @@ impl Workspace {
                 dest,
                 quiet,
             }) => self.transfer(sources, dest, Mode::Move, quiet, cx),
-            Some(Dialog::ConfirmPurge { slots, .. }) => {
-                self.run_op(Op::Delete { paths: slots }, Origin::User, cx);
+            // Through the operation engine: read-only mode, the journal and progress apply.
+            Some(Dialog::ConfirmPurge { items, .. } | Dialog::ConfirmEmptyBin { items }) => {
+                self.run_op(Op::Purge { items }, Origin::User, cx);
             }
-            Some(Dialog::ConfirmEmptyBin { .. }) => self.empty_bin_now(cx),
             Some(conflict @ Dialog::Conflict(_)) => self.ops.dialog = Some(conflict),
             None => {}
         }
@@ -1120,7 +1143,8 @@ impl Workspace {
             Op::Restore { items, .. } => items
                 .first()
                 .and_then(|b| b.original.parent().map(Path::to_path_buf)),
-            Op::Batch { .. } => None,
+            // The bin's own folders are no place to show.
+            Op::Batch { .. } | Op::Purge { .. } => None,
         };
         if let Some(path) = path {
             self.open_tab(Location::Path(path), cx);

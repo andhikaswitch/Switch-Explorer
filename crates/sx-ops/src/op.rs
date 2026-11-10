@@ -64,6 +64,12 @@ pub enum Op {
     Delete {
         paths: Vec<PathBuf>,
     },
+    /// Items deleted for good from the Recycle Bin, by the shell (it removes their records
+    /// too); cannot be undone.
+    Purge {
+        #[serde(default)]
+        items: Vec<Binned>,
+    },
     /// Several operations run in order (an undo that recycles copies and restores what they
     /// replaced).
     Batch {
@@ -92,7 +98,7 @@ impl Op {
                 ..
             } => pairs.is_empty() && replaced_slots.is_empty(),
             Self::Recycle { paths, .. } | Self::Delete { paths } => paths.is_empty(),
-            Self::Restore { items, .. } => items.is_empty(),
+            Self::Restore { items, .. } | Self::Purge { items } => items.is_empty(),
             Self::Batch { ops } => ops.iter().all(Op::is_noop),
         }
     }
@@ -163,7 +169,7 @@ impl Op {
                 paths: restored.clone(),
                 binned: Vec::new(),
             },
-            Self::Delete { .. } => return None,
+            Self::Delete { .. } | Self::Purge { .. } => return None,
             Self::Batch { ops } => Self::Batch {
                 ops: ops.iter().rev().map(Op::inverse).collect::<Option<_>>()?,
             },
@@ -176,7 +182,7 @@ impl Op {
             Self::Rename { .. } | Self::NewFolder { .. } => 1,
             Self::Copy { pairs, .. } | Self::Move { pairs, .. } => pairs.len(),
             Self::Recycle { paths, .. } | Self::Delete { paths } => paths.len(),
-            Self::Restore { items, .. } => items.len(),
+            Self::Restore { items, .. } | Self::Purge { items } => items.len(),
             Self::Batch { ops } => ops.iter().map(Op::item_count).sum(),
         }
     }

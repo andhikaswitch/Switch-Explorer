@@ -122,7 +122,13 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
 - Halaman Recycle Bin (F-LOC-02): isi Recycle Bin semua drive, terbaru dulu, dengan lokasi asal, tanggal
   dihapus, dan ukuran (dibaca dari catatan `$I…`, di luar UI thread). Pulihkan mengembalikan item ke tempat
   asalnya (nama baru bila sudah terpakai) dan bisa di-undo; Hapus permanen dan Kosongkan Recycle Bin
-  bertanya dulu. Hapus permanen dari bin juga membuang catatan `$I…`-nya, jadi tidak ada item hantu.
+  bertanya dulu.
+  - Hapus permanen dan Kosongkan dijalankan shell atas item bin miliknya (`IFileOperation`), lewat engine
+    operasi (journal, progress, mode read-only), jadi catatan `$I…` ikut terhapus dan tidak ada item hantu.
+  - Kosongkan hanya menghapus item yang tampil di daftar; item yang masuk bin sesudahnya tetap aman. Slot
+    yang sudah dipakai ulang item lain dilewati.
+  - Catatan `$I…` yang terlalu besar atau lokasi asalnya tidak masuk akal (relatif, `..`, beda drive)
+    tidak ditampilkan; jumlahnya disebut di bawah judul. Karakter kontrol bidi pada nama diganti.
 - Session restore (F-WIN-05, `tabs.restore_session`): tab yang terbuka, tab aktif, dan posisi/ukuran window
   (termasuk maximized) dibuka lagi saat start tanpa argumen. Disimpan di
   `%LOCALAPPDATA%\SwitchExplorer\session.json` (atomik, di luar UI thread, dan sekali lagi saat window

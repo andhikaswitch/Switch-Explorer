@@ -35,6 +35,15 @@ pub struct Restored {
     pub error: Option<OpsError>,
 }
 
+/// What a purge did.
+#[derive(Debug, Default)]
+pub struct Purged {
+    /// The items deleted for good.
+    pub done: Vec<Binned>,
+    /// Why the remaining items are still in the Recycle Bin.
+    pub error: Option<OpsError>,
+}
+
 /// The Recycle Bin, provided by the shell (`sx-shell`) in the app and by a folder in tests.
 pub trait Trash: Send + Sync {
     /// Recycles `paths` as far as it gets: an item that cannot go does not hide what happened
@@ -43,6 +52,9 @@ pub trait Trash: Send + Sync {
     /// Restores these items from their slots. An item whose original name is taken again comes
     /// back as "name (2)" instead of replacing anything; a missing slot does not stop the rest.
     fn restore(&self, items: &[Binned]) -> Restored;
+    /// Deletes these items from the Recycle Bin for good: only the items that are still in their
+    /// slots and still are what was listed (an emptied and reused slot is left alone).
+    fn purge(&self, items: &[Binned]) -> Purged;
 }
 
 /// Progress of a running operation (reported at most once per item).
@@ -169,6 +181,14 @@ fn run_inner(
                 None => Outcome::finished(done),
             }
         }
+        Op::Purge { items } => {
+            let purged = trash.purge(items);
+            let done = Op::Purge { items: purged.done };
+            match purged.error {
+                Some(err) => Outcome::failed(done, err),
+                None => Outcome::finished(done),
+            }
+        }
         Op::Delete { paths } => {
             let mut done = Vec::new();
             for path in paths {
@@ -179,7 +199,6 @@ fn run_inner(
                 if let Err(err) = remove(path) {
                     return Outcome::failed(Op::Delete { paths: done }, err);
                 }
-                forget_bin_record(path);
                 done.push(path.clone());
             }
             Outcome::finished(Op::Delete { paths: done })
@@ -333,29 +352,6 @@ fn report(progress: &mut dyn FnMut(&Progress), state: &mut Progress, current: &P
     state.done += 1;
 }
 
-/// An item deleted from the Recycle Bin (its `$R…` slot) takes its `$I…` record along, as
-/// Explorer does; a record left behind would list a ghost item. Only a `$I` file next to a `$R`
-/// slot inside a `$Recycle.Bin` folder is ever removed.
-fn forget_bin_record(path: &Path) {
-    let in_bin = path.ancestors().any(|dir| {
-        dir.file_name()
-            .is_some_and(|n| n.eq_ignore_ascii_case("$Recycle.Bin"))
-    });
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-        return;
-    };
-    let Some(rest) = name.strip_prefix("$R") else {
-        return;
-    };
-    if !in_bin || rest.is_empty() {
-        return;
-    }
-    let record = path.with_file_name(format!("$I{rest}"));
-    // Best effort: the item itself is gone either way; a record left behind only shows up as a
-    // ghost in the bin, which the bin's own view then drops.
-    let _ = std::fs::remove_file(&record);
-}
-
 /// Never write over something, and never copy a folder into itself.
 fn check_target(pair: &Pair) -> Result<(), OpsError> {
     if pair.to.exists() {
@@ -499,6 +495,24 @@ pub(crate) mod tests {
                     original: path.clone(),
                     slot,
                 });
+            }
+            out
+        }
+
+        fn purge(&self, items: &[Binned]) -> Purged {
+            let mut out = Purged::default();
+            for item in items {
+                let gone = if item.slot.is_dir() {
+                    fs::remove_dir_all(&item.slot)
+                } else {
+                    fs::remove_file(&item.slot)
+                };
+                match gone {
+                    Ok(()) => out.done.push(item.clone()),
+                    Err(e) => {
+                        out.error.get_or_insert(OpsError::io(&item.slot, e));
+                    }
+                }
             }
             out
         }
@@ -726,6 +740,42 @@ pub(crate) mod tests {
         assert!(!a.exists());
         assert_eq!(fs::read(&b).unwrap(), b"b");
         assert_eq!(outcome.done.item_count(), 1);
+    }
+
+    #[test]
+    fn a_purge_keeps_what_it_deleted_and_has_no_undo() {
+        let root = tempfile::tempdir().unwrap();
+        let trash = FolderTrash::new(root.path().join("bin"));
+        let (a, b) = (root.path().join("a.txt"), root.path().join("b.txt"));
+        fs::write(&a, b"a").unwrap();
+        fs::write(&b, b"b").unwrap();
+        let recycled = run(
+            &Op::Recycle {
+                paths: vec![a.clone(), b.clone()],
+                binned: vec![],
+            },
+            &trash,
+            &Cancel::default(),
+            &mut quiet(),
+        );
+        let Op::Recycle { binned, .. } = recycled.done else {
+            panic!("expected a recycle");
+        };
+        // The second item was emptied elsewhere in the meantime.
+        fs::remove_file(&binned[1].slot).unwrap();
+        let outcome = run(
+            &Op::Purge {
+                items: binned.clone(),
+            },
+            &trash,
+            &Cancel::default(),
+            &mut quiet(),
+        );
+        assert!(outcome.error.is_some());
+        assert!(!binned[0].slot.exists());
+        assert_eq!(outcome.done.item_count(), 1);
+        assert!(outcome.done.inverse().is_none(), "no undo for a purge");
+        assert!(Op::Purge { items: vec![] }.is_noop());
     }
 
     #[test]

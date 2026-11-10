@@ -217,6 +217,22 @@ Succeeded" sesuai skenario delete-on-paste.
 - Sebelum restore: file `$I` slot harus mencatat path asli yang sama (slot `$R` bisa dipakai ulang setelah
   Recycle Bin dikosongkan), dan nama tujuan dipilih dulu ("nama (2)") bila nama asli sudah dipakai, supaya
   shell tidak pernah bertemu tabrakan (ia bisa menggabungkan folder). Callback yang berisi logika dibungkus `catch_unwind`; sisanya hanya mengembalikan `S_OK`.
+- Daftar bin (`list_bin`): `SHGetKnownFolderItem(FOLDERID_RecycleBinFolder)` + `BHID_EnumItems`, metadata
+  dari `$I…` (v1/v2) yang dibaca maksimal ~64 KB. Item ditolak (dan dihitung) bila path asalnya tidak absolut,
+  memuat `.`/`..`, atau tidak berada di drive/share yang sama dengan slotnya.
+- Hapus permanen & Kosongkan = `Op::Purge` (engine `sx-ops`, mode read-only dihormati): enumerasi bin yang
+  sama, cocokkan slot yang diminta dan cek `$I`-nya masih mencatat path asal yang sama, lalu `DeleteItem`
+  atas item shell bin itu (`FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT`, tanpa `ALLOWUNDO`) dengan
+  owner HWND window. Shell sendiri yang membuang `$R`+`$I` dan memberi tahu semua view bin. Kosongkan
+  memakai daftar yang tampil, bukan `SHEmptyRecycleBinW`, jadi item yang baru masuk tidak ikut terhapus.
+  Setiap item punya sink: kegagalan per item (`hrDelete`) dilaporkan, dan item dihitung selesai hanya bila
+  slotnya benar-benar sudah tidak ada (`NotFound`). Purge tidak bisa dibatalkan di tengah jalan; shell
+  menghapus semuanya dalam satu `PerformOperations`.
+- Item di volume tanpa huruf drive (`\\?\Volume{…}`, volume yang di-mount ke folder) tidak lolos cek
+  lokasi asal dan dihitung "tidak ditampilkan"; buka Recycle Bin di File Explorer untuk item itu.
+- Pembersihan `$I` saat restore hanya untuk slot `$R…` yang induknya folder `S-1-…` di bawah
+  `$Recycle.Bin` di root volume. Hapus permanen biasa (Shift+Delete) di dalam folder `$Recycle.Bin` yang
+  dibuka manual bisa meninggalkan `$I` yatim; hapus dari halaman Recycle Bin untuk membersihkan keduanya.
 
 ## 12. Taskbar, notifikasi, hotkey global
 

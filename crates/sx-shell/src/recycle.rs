@@ -20,8 +20,7 @@ use windows::Win32::UI::Shell::{
     BHID_EnumItems, FILEOPERATION_FLAGS, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR,
     FOF_NOERRORUI, FOF_RENAMEONCOLLISION, FOF_SILENT, FOF_WANTNUKEWARNING, FOFX_RECYCLEONDELETE,
     FOLDERID_RecycleBinFolder, FileOperation, IEnumShellItems, IFileOperation, IShellItem,
-    KF_FLAG_DEFAULT, SHCreateItemFromParsingName, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI,
-    SHERB_NOSOUND, SHEmptyRecycleBinW, SHGetKnownFolderItem, SIGDN_FILESYSPATH,
+    KF_FLAG_DEFAULT, SHCreateItemFromParsingName, SHGetKnownFolderItem, SIGDN_FILESYSPATH,
 };
 use windows::core::PCWSTR;
 
@@ -126,6 +125,51 @@ fn parse_record(bytes: &[u8]) -> Option<BinRecord> {
     })
 }
 
+/// The largest `$I…` record: a version 2 header and a path of 32 767 characters and its NUL.
+const MAX_RECORD: u64 = 28 + 2 * 32_768;
+
+/// A `$I…` file's bytes, never more than a record can hold: a giant file planted in a bin on a
+/// drive without permissions (FAT, exFAT) is refused, not read into memory.
+fn read_record(path: &Path) -> Option<Vec<u8>> {
+    use std::io::Read as _;
+    let file = std::fs::File::open(path).ok()?;
+    if file.metadata().ok()?.len() > MAX_RECORD {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_RECORD).read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+/// Whether a record's original path can be where its item came from: absolute, without `.` or
+/// `..`, on the slot's own drive (or share). A restore never goes anywhere else.
+fn plausible(original: &Path, slot: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    fn volume(path: &Path) -> Option<String> {
+        match path.components().next()? {
+            Component::Prefix(prefix) => match prefix.kind() {
+                Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
+                    Some(format!("{}:", char::from(letter).to_ascii_lowercase()))
+                }
+                Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => Some(format!(
+                    r"\\{}\{}",
+                    server.to_string_lossy().to_lowercase(),
+                    share.to_string_lossy().to_lowercase()
+                )),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    let mut parts = original.components();
+    let rooted = matches!(parts.next(), Some(Component::Prefix(_)))
+        && matches!(parts.next(), Some(Component::RootDir));
+    let clean = original
+        .components()
+        .all(|part| !matches!(part, Component::CurDir | Component::ParentDir));
+    rooted && clean && volume(original).is_some() && volume(original) == volume(slot)
+}
+
 /// The `$I…` record next to a `$R…` slot.
 fn record_of(slot: &Path) -> Option<BinRecord> {
     let name: Vec<u16> = slot.file_name()?.encode_wide().collect();
@@ -134,15 +178,25 @@ fn record_of(slot: &Path) -> Option<BinRecord> {
     }
     let mut info = name;
     info[1] = u16::from(b'I');
-    parse_record(&std::fs::read(slot.with_file_name(OsString::from_wide(&info))).ok()?)
+    parse_record(&read_record(
+        &slot.with_file_name(OsString::from_wide(&info)),
+    )?)
+}
+
+/// What the bin page lists.
+#[derive(Debug, Default)]
+pub struct BinListing {
+    pub items: Vec<BinItem>,
+    /// Items left out: no readable record, or one whose origin cannot be where they came from.
+    pub skipped: usize,
 }
 
 /// What is in the Recycle Bin, on every drive (the shell's own view of it). Blocking; needs an
-/// STA (it enters one): call it off the UI thread. An item without a readable record is left
-/// out rather than shown without its origin.
-pub fn list_bin() -> Result<Vec<BinItem>, ShellError> {
+/// STA (it enters one): call it off the UI thread. An item without a readable, plausible record
+/// is left out (and counted) rather than shown without its origin.
+pub fn list_bin() -> Result<BinListing, ShellError> {
     let _com = crate::com::StaGuard::new()?;
-    let mut out = Vec::new();
+    let mut out = BinListing::default();
     // SAFETY: COM calls on this thread's STA; every item is used and released here.
     unsafe {
         let bin: IShellItem =
@@ -154,19 +208,29 @@ pub fn list_bin() -> Result<Vec<BinItem>, ShellError> {
         loop {
             let mut got = [None];
             let mut fetched = 0u32;
-            if items.Next(&mut got, Some(&raw mut fetched)).is_err() || fetched == 0 {
+            if let Err(err) = items.Next(&mut got, Some(&raw mut fetched)) {
+                // Nothing listed at all: say so rather than show an empty bin.
+                if out.items.is_empty() {
+                    return Err(ShellError::Com(err));
+                }
+                tracing::debug!(error = ?err, "recycle bin listing stopped early");
+                break;
+            }
+            if fetched == 0 {
                 break;
             }
             let Some(item) = got[0].take() else {
                 break;
             };
             let Some(slot) = file_system_path(&item) else {
+                out.skipped += 1;
                 continue;
             };
-            let Some(record) = record_of(&slot) else {
+            let Some(record) = record_of(&slot).filter(|r| plausible(&r.original, &slot)) else {
+                out.skipped += 1;
                 continue;
             };
-            out.push(BinItem {
+            out.items.push(BinItem {
                 folder: slot.is_dir(),
                 slot,
                 original: record.original,
@@ -178,18 +242,146 @@ pub fn list_bin() -> Result<Vec<BinItem>, ShellError> {
     Ok(out)
 }
 
-/// Empties the Recycle Bin of every drive, without the shell's own question or progress (the
-/// app asked first). Blocking: call it off the UI thread.
-pub fn empty_bin() -> Result<(), ShellError> {
-    // SAFETY: no window, no root path (every drive); flags only.
-    unsafe {
-        SHEmptyRecycleBinW(
-            None,
-            PCWSTR::null(),
-            SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND,
-        )
+/// A requested item's index and the bin's own shell item for it.
+type Listed = (usize, IShellItem);
+
+/// The bin's own shell items for the `(original path, slot)` items still in their slots and
+/// still recording that original, with their index in `items`; and the error that ended the
+/// enumeration early, if one did.
+fn listed_items(
+    items: &[(PathBuf, PathBuf)],
+) -> Result<(Vec<Listed>, Option<windows::core::Error>), ShellError> {
+    let key = |path: &Path| path.as_os_str().to_string_lossy().to_lowercase();
+    let wanted: std::collections::HashMap<String, usize> = items
+        .iter()
+        .enumerate()
+        .map(|(ix, (_, slot))| (key(slot), ix))
+        .collect();
+    let mut stopped_early = None;
+    // SAFETY: COM calls on this thread's STA; the items stay on this thread (the caller's) and
+    // are released when it drops them.
+    let found = unsafe {
+        let bin: IShellItem =
+            SHGetKnownFolderItem(&FOLDERID_RecycleBinFolder, KF_FLAG_DEFAULT, None)
+                .map_err(ShellError::Com)?;
+        let enumerator: IEnumShellItems = bin
+            .BindToHandler(None, &BHID_EnumItems)
+            .map_err(ShellError::Com)?;
+        let mut found = Vec::new();
+        loop {
+            let mut got = [None];
+            let mut fetched = 0u32;
+            if let Err(err) = enumerator.Next(&mut got, Some(&raw mut fetched)) {
+                stopped_early = Some(err);
+                break;
+            }
+            if fetched == 0 {
+                break;
+            }
+            let Some(item) = got[0].take() else {
+                break;
+            };
+            let Some(slot) = file_system_path(&item) else {
+                continue;
+            };
+            let Some(&ix) = wanted.get(&key(&slot)) else {
+                continue;
+            };
+            // Still the item that was listed.
+            if record_of(&slot).is_some_and(|r| same_path(&r.original, &items[ix].0)) {
+                found.push((ix, item));
+            }
+        }
+        found
+    };
+    Ok((found, stopped_early))
+}
+
+/// What a purge did, item by item.
+#[derive(Debug, Default)]
+pub struct Purged {
+    /// Indexes into the request of the items deleted for good.
+    pub done: Vec<usize>,
+    /// Why the remaining items are still in the bin (the first error).
+    pub error: Option<ShellError>,
+}
+
+/// Deletes `(original path, slot)` items from the Recycle Bin for good, as Explorer does: the
+/// shell deletes its own bin items, so their records go too, read-only items go, and every view
+/// of the bin updates. Only items still in their slot whose record still names the original are
+/// deleted (a slot emptied elsewhere and reused is left alone). No undo, no confirmation (the
+/// app asked), no error dialogs. Blocking; needs an STA on the calling thread (`StaGuard`).
+pub fn purge(items: &[(PathBuf, PathBuf)], owner: Option<isize>) -> Purged {
+    let mut out = Purged::default();
+    let (found, stopped_early) = match listed_items(items) {
+        Ok(listed) => listed,
+        Err(err) => {
+            out.error = Some(err);
+            return out;
+        }
+    };
+    if found.len() < items.len() {
+        let seen: std::collections::HashSet<usize> = found.iter().map(|(ix, _)| *ix).collect();
+        let missing = (0..items.len()).find(|ix| !seen.contains(ix));
+        out.error = match (stopped_early, missing) {
+            (Some(err), Some(_)) => Some(ShellError::Com(err)),
+            (None, Some(ix)) => Some(ShellError::NotRecycled(items[ix].0.clone())),
+            _ => None,
+        };
     }
-    .map_err(ShellError::Com)
+    if found.is_empty() {
+        return out;
+    }
+    let op = match file_operation(FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT, owner) {
+        Ok(op) => op,
+        Err(err) => {
+            out.error = Some(err);
+            return out;
+        }
+    };
+    let mut queued = Vec::with_capacity(found.len());
+    for (ix, item) in &found {
+        let (sink, report) = sink(item);
+        // SAFETY: the item, its sink and the operation live on this STA for the whole call.
+        match unsafe { op.DeleteItem(item, &sink) } {
+            Ok(()) => queued.push((*ix, report)),
+            Err(err) => {
+                out.error.get_or_insert(ShellError::Item {
+                    path: items[*ix].0.clone(),
+                    source: err,
+                });
+            }
+        }
+    }
+    let stopped = match perform(&op) {
+        Ok(stopped) => stopped,
+        Err(err) => {
+            out.error.get_or_insert(err);
+            false
+        }
+    };
+    for (ix, report) in queued {
+        let (original, slot) = &items[ix];
+        // Done only when the slot is really gone (not merely unreadable).
+        let gone = std::fs::symlink_metadata(slot)
+            .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound);
+        if gone {
+            out.done.push(ix);
+            continue;
+        }
+        let report = report.borrow_mut().take();
+        let error = match report {
+            Some(Report::Failed(code)) => ShellError::Item {
+                path: original.clone(),
+                source: code.into(),
+            },
+            _ if stopped => ShellError::Aborted,
+            // The shell said nothing failed, yet the item is still there.
+            _ => ShellError::NotRecycled(original.clone()),
+        };
+        out.error.get_or_insert(error);
+    }
+    out
 }
 
 fn file_system_path(item: &IShellItem) -> Option<PathBuf> {
@@ -531,35 +723,10 @@ pub fn recycle(paths: &[PathBuf], owner: Option<isize>) -> Recycled {
     out
 }
 
-/// The original path a `$I…` metadata file records for its `$R…` slot (format 1: Vista to 8,
-/// a fixed `MAX_PATH` field; format 2: Windows 10 and later, a counted string). `None` when
-/// it cannot be read.
+/// The original path the `$I…` record of a `$R…` slot names (read with the same bounds as a
+/// listing). `None` when it cannot be read.
 fn recorded_original(slot: &Path) -> Option<PathBuf> {
-    let name: Vec<u16> = slot.file_name()?.encode_wide().collect();
-    if name.len() < 3 || name[0] != u16::from(b'$') || name[1] != u16::from(b'R') {
-        return None;
-    }
-    let mut info = name;
-    info[1] = u16::from(b'I');
-    let bytes = std::fs::read(slot.with_file_name(OsString::from_wide(&info))).ok()?;
-    let version = u64::from_le_bytes(bytes.get(..8)?.try_into().ok()?);
-    let (start, units) = match version {
-        1 => (24, 260),
-        2 => {
-            let count = u32::from_le_bytes(bytes.get(24..28)?.try_into().ok()?);
-            (28, usize::try_from(count).ok()?)
-        }
-        _ => return None,
-    };
-    let raw = bytes.get(start..start + units * 2)?;
-    let wide: Vec<u16> = raw
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| u16::from_le_bytes(*pair))
-        .take_while(|&unit| unit != 0)
-        .collect();
-    Some(PathBuf::from(OsString::from_wide(&wide)))
+    record_of(slot).map(|record| record.original)
 }
 
 /// Whether two paths name the same item, ignoring a verbatim prefix and ASCII case.
@@ -598,6 +765,30 @@ fn free_target(original: &Path, folder: bool) -> Option<PathBuf> {
     })
 }
 
+/// Whether `slot` is a `$R…` slot in a user's folder (`S-1-…`) of the `$Recycle.Bin` folder at
+/// the root of a volume.
+fn in_bin(slot: &Path) -> bool {
+    let is_slot = slot.file_name().is_some_and(|n| {
+        let wide: Vec<u16> = n.encode_wide().collect();
+        wide.len() >= 3 && wide[0] == u16::from(b'$') && wide[1] == u16::from(b'R')
+    });
+    // The slot's folder is the user's (`S-1-…`), and that folder sits in `$Recycle.Bin`.
+    let sid = slot.parent();
+    is_slot
+        && sid
+        .and_then(Path::file_name)
+        .is_some_and(|n| n.to_string_lossy().starts_with("S-1-"))
+        && sid
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .is_some_and(|n| n.eq_ignore_ascii_case("$Recycle.Bin"))
+        // ... at the root of its volume.
+        && sid
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+            .is_some_and(|root| root.file_name().is_none())
+}
+
 /// The `$I…` file next to a `$R…` slot holds the item's original path and deletion time. The
 /// bin lists an item from it, so it goes once the item is back (as with Explorer's Restore).
 /// Only a `$I` file next to a `$R` slot inside a `$Recycle.Bin` folder is ever removed.
@@ -605,14 +796,10 @@ fn remove_metadata(slot: &Path) {
     let Some(name) = slot.file_name() else {
         return;
     };
-    let mut wide: Vec<u16> = name.encode_wide().collect();
-    let in_bin = slot.ancestors().any(|dir| {
-        dir.file_name()
-            .is_some_and(|n| n.eq_ignore_ascii_case("$Recycle.Bin"))
-    });
-    if !in_bin || wide.len() < 3 || wide[0] != u16::from(b'$') || wide[1] != u16::from(b'R') {
+    if !in_bin(slot) {
         return;
     }
+    let mut wide: Vec<u16> = name.encode_wide().collect();
     wide[1] = u16::from(b'I');
     let info = slot.with_file_name(OsString::from_wide(&wide));
     if let Err(err) = std::fs::remove_file(&info) {
@@ -708,6 +895,47 @@ pub fn restore(items: &[(PathBuf, PathBuf)]) -> Restored {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn origins_must_be_where_the_slot_is() {
+        let slot = Path::new(r"C:\$Recycle.Bin\S-1-5-21\$RAB12.txt");
+        assert!(super::plausible(Path::new(r"C:\Data\notes.txt"), slot));
+        assert!(!super::plausible(Path::new(r"D:\Data\notes.txt"), slot));
+        assert!(!super::plausible(Path::new(r"Data\notes.txt"), slot));
+        assert!(!super::plausible(Path::new(r"C:\Data\..\Windows\x"), slot));
+        assert!(!super::plausible(Path::new(r"\\host\share\x"), slot));
+        let share = Path::new(r"\\host\share\$Recycle.Bin\S-1-5-21\$RAB12.txt");
+        assert!(super::plausible(Path::new(r"\\HOST\Share\docs\x"), share));
+    }
+
+    #[test]
+    fn a_giant_record_file_is_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = dir.path().join("$Ibig");
+        std::fs::write(
+            &big,
+            vec![0u8; usize::try_from(super::MAX_RECORD).unwrap() + 1],
+        )
+        .unwrap();
+        assert_eq!(super::read_record(&big), None);
+        let fine = dir.path().join("$Ifine");
+        std::fs::write(&fine, [1u8; 40]).unwrap();
+        assert_eq!(super::read_record(&fine).map(|b| b.len()), Some(40));
+    }
+
+    #[test]
+    fn hostile_record_lengths_are_refused() {
+        let mut v2 = Vec::new();
+        v2.extend_from_slice(&2u64.to_le_bytes());
+        v2.extend_from_slice(&0u64.to_le_bytes());
+        v2.extend_from_slice(&0u64.to_le_bytes());
+        v2.extend_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(super::parse_record(&v2), None, "length beyond the data");
+        let mut empty = v2.clone();
+        empty[24..28].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(super::parse_record(&empty), None, "no path");
+        assert_eq!(super::parse_record(&v2[..20]), None, "truncated header");
+    }
+
+    #[test]
     fn bin_records_of_both_versions_are_read() {
         let path: Vec<u16> = r"C:\Data\notes.txt".encode_utf16().collect();
         // Version 2: length (with the NUL), then the path.
@@ -749,19 +977,22 @@ mod tests {
 
     #[test]
     fn metadata_is_only_removed_inside_a_bin() {
+        assert!(in_bin(Path::new(r"C:\$Recycle.Bin\S-1-5-21-1\$RABC.txt")));
+        assert!(in_bin(Path::new(r"\\?\D:\$Recycle.Bin\S-1-5-21-1\$RABC")));
+        // Not at the root of a volume, not a user's folder, or not a `$R` slot.
+        assert!(!in_bin(Path::new(
+            r"C:\Data\$Recycle.Bin\S-1-5-21-1\$RABC.txt"
+        )));
+        assert!(!in_bin(Path::new(r"C:\$Recycle.Bin\Other\$RABC.txt")));
+        assert!(!in_bin(Path::new(r"C:\$Recycle.Bin\S-1-5-21-1\ABC.txt")));
+        assert!(!in_bin(Path::new(r"C:\$RABC.txt")));
+        // A bin-like folder elsewhere is never touched.
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("$Recycle.Bin").join("S-1-5-21-1");
         std::fs::create_dir_all(&bin).unwrap();
-        for name in ["$IABC.txt", "$RABC.txt"] {
-            std::fs::write(bin.join(name), b"x").unwrap();
-        }
-        std::fs::write(dir.path().join("$IABC.txt"), b"x").unwrap();
-        // Outside a bin, or not a `$R` slot: nothing is touched.
-        remove_metadata(&dir.path().join("$RABC.txt"));
-        remove_metadata(&bin.join("ABC.txt"));
-        assert!(dir.path().join("$IABC.txt").exists() && bin.join("$IABC.txt").exists());
+        std::fs::write(bin.join("$IABC.txt"), b"x").unwrap();
         remove_metadata(&bin.join("$RABC.txt"));
-        assert!(!bin.join("$IABC.txt").exists() && bin.join("$RABC.txt").exists());
+        assert!(bin.join("$IABC.txt").exists());
     }
 
     #[test]
