@@ -82,10 +82,11 @@ impl Workspace {
             ),
             Some(Dialog::Conflict(_)) => self.conflict_body(cx),
             Some(Dialog::ConfirmPurge { items, name }) => self.confirm_body(
+                // The items are in the bin already: the bin's own wording.
                 if items.len() == 1 {
-                    t!("ops.confirm_delete_one", name = name)
+                    t!("recycle_bin.confirm_delete_one", name = name)
                 } else {
-                    t!("ops.confirm_delete_many", count = items.len())
+                    t!("recycle_bin.confirm_delete_many", count = items.len())
                 }
                 .into(),
                 t!("ops.delete_permanently").into(),
@@ -93,7 +94,12 @@ impl Workspace {
                 cx,
             ),
             Some(Dialog::ConfirmEmptyBin { items }) => self.confirm_body(
-                t!("recycle_bin.confirm_empty", count = items.len()).into(),
+                if items.len() == 1 {
+                    t!("recycle_bin.confirm_empty_one")
+                } else {
+                    t!("recycle_bin.confirm_empty", count = items.len())
+                }
+                .into(),
                 t!("recycle_bin.empty").into(),
                 true,
                 cx,

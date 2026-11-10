@@ -210,6 +210,7 @@ Desain visual di `DESIGN.md` §9.
 | `Ctrl+K`, `H` | `view.show_hidden` | toggle |
 | `Ctrl+K`, `X` | `view.show_extensions` | toggle |
 | `Ctrl+K`, `T` | `view.thumbnails` | toggle |
+| (tanpa hotkey) | Terminal "Buka di Terminal": `ops.terminal` = `windows_terminal`/`powershell`/`cmd` (tiga baris), atau kembali ke nilai sebelumnya | pilihan |
 | `Ctrl+K`, `R` | `safety.readonly_mode` | toggle |
 | `Ctrl+K`, `K` | buka panel Hot Switch | aksi |
 
@@ -345,7 +346,7 @@ Switch drag & drop dan Hot Switch ada di §5.2 dan §6.3.
 | `ops.verify_copy` | bool | false | — | Verifikasi hash setelah copy |
 | `ops.taskbar_progress` | bool | true | — | Progress di taskbar |
 | `ops.progress_popup` | enum inline/floating/both | inline | — | Tampilan progress |
-| `ops.terminal` | enum auto/windows_terminal/powershell/cmd | auto | — | Terminal untuk "Buka terminal di sini" (auto = Windows Terminal bila terpasang, kalau tidak PowerShell) |
+| `ops.terminal` | enum auto/windows_terminal/powershell/cmd | auto | pilihan di panel Hot Switch (tanpa hotkey) | Terminal untuk "Buka di Terminal" (auto = Windows Terminal bila terpasang, kalau tidak PowerShell) |
 | `safety.readonly_mode` | bool | false | `Ctrl+K, R` | Blokir semua operasi tulis |
 | `safety.protected_paths` | list<path> | [] | — | Operasi tulis di path ini butuh konfirmasi |
 | `safety.confirm_system_paths` | bool | true | — | Konfirmasi ekstra di `C:\Windows`, `Program Files` |

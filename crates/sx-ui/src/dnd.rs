@@ -646,7 +646,11 @@ impl Workspace {
         //   pins; anywhere else it is copied (or linked by another app).
         let drive = paths.iter().any(|path| path.parent().is_none());
         let from_sidebar = matches!(press.what, Pressed::Sidebar(_));
-        let known = paths.iter().any(|path| is_known_folder(path));
+        let known = {
+            // Looked up once per drag, not once per item.
+            let folders = known_folders();
+            paths.iter().any(|path| folders.contains(&key(path)))
+        };
         let allowed = Allowed {
             copy: !drive,
             moves: !drive && !known && !from_sidebar && !press.policy.readonly,
@@ -1166,16 +1170,16 @@ pub(crate) fn drop_ring(drop: Option<bool>, radius: Token, cx: &gpui_kit::App) -
     )
 }
 
-/// Whether `path` is one of the user's Windows known folders (Desktop, Documents, Downloads,
-/// Pictures, Music, Videos, the profile): moving one leaves Windows pointing at its old place.
-fn is_known_folder(path: &Path) -> bool {
+/// The keys of the user's Windows known folders (Desktop, Documents, Downloads, Pictures,
+/// Music, Videos, the profile): moving one leaves Windows pointing at its old place.
+fn known_folders() -> std::collections::HashSet<String> {
     use sx_win::known::{KnownFolder, known_folder};
-    let path = key(path);
     KnownFolder::PINNED_DEFAULTS
         .iter()
         .chain(std::iter::once(&KnownFolder::Profile))
         .filter_map(|folder| known_folder(*folder))
-        .any(|known| key(&known) == path)
+        .map(|known| key(&known))
+        .collect()
 }
 
 /// Whether the path with key `dest` is the path with key `source` or inside it.

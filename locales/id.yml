@@ -66,8 +66,13 @@ recycle_bin:
   deleted: Tanggal dihapus
   is_empty: Recycle Bin kosong.
   failed: Recycle Bin tidak bisa dibaca. Buka di File Explorer untuk memeriksanya.
+  confirm_empty_one: "Hapus permanen 1 item yang tercantum di sini? Ini tidak bisa dibatalkan."
   confirm_empty: "Hapus permanen %{count} item yang tercantum di sini? Ini tidak bisa dibatalkan."
-  skipped: "%{count} item tidak bisa dibaca dan tidak ditampilkan."
+  confirm_delete_one: "Hapus \"%{name}\" dari Recycle Bin secara permanen? Ini tidak bisa dibatalkan."
+  confirm_delete_many: "Hapus %{count} item dari Recycle Bin secara permanen? Ini tidak bisa dibatalkan."
+  unavailable: Pilih item dulu.
+  skipped_one: "1 item tidak bisa dibaca dan tidak ditampilkan. File Explorer bisa menampilkannya."
+  skipped: "%{count} item tidak bisa dibaca dan tidak ditampilkan. File Explorer bisa menampilkannya."
   title: Recycle Bin
   open: Buka di File Explorer
 drive:
@@ -199,16 +204,27 @@ flag:
     show_extensions: Ekstensi nama file
     thumbnails: Thumbnail
   ops:
-    terminal: Terminal untuk Buka terminal di sini
+    terminal: Terminal untuk Buka di Terminal
   safety:
     readonly_mode: Mode baca-saja
 preset:
   anti_drag: anti salah drag
 choice:
+  ops:
+    terminal:
+      windows_terminal: Buka di Terminal memakai Windows Terminal
+      powershell: Buka di Terminal memakai PowerShell
+      cmd: Buka di Terminal memakai Command Prompt
   dnd:
     default_action:
       ask: Tanya saat drop
 choice_effect:
+  ops:
+    terminal:
+      auto: Buka di Terminal memilih Windows Terminal, atau PowerShell.
+      windows_terminal: Buka di Terminal memakai Windows Terminal.
+      powershell: Buka di Terminal memakai PowerShell.
+      cmd: Buka di Terminal memakai Command Prompt.
   dnd:
     default_action:
       ask: Setiap drop bertanya dulu.
@@ -315,7 +331,7 @@ command:
   sidebar:
     pin: Pin atau lepas pin folder ini
 menu:
-  unlock_pins: Buka kunci folder pinned
+  unlock_pins: Buka kunci folder yang disematkan
   drop_copy: Salin di sini
   drop_move: Pindahkan ke sini
   drop_cancel: Batal
@@ -339,13 +355,17 @@ palette:
   switch_off: Switch, nonaktif
   place: Tempat
 dnd:
-  nothing_here: Item ini tidak bisa disalin atau dipindah ke sini.
+  nothing_here: "Item ini tidak bisa disalin atau dipindah ke sini: drive atau folder Windows hanya bisa dibuatkan shortcut."
   drag_failed: Item ini tidak bisa di-drag. Mungkin path-nya terlalu panjang (lebih dari 260 karakter).
   no_drop_target: "Drop ke window ini tidak berfungsi: Windows menolak drop target. Jalankan ulang Switch Explorer untuk mencoba lagi."
   confirm_move_one: "Pindahkan \"%{name}\" ke \"%{dest}\"?"
   confirm_move_many: "Pindahkan %{count} item ke \"%{dest}\"?"
   move: Pindahkan
 launch:
-  terminal_failed: Terminal tidak mau jalan. Pilih terminal lain lewat switch ops.terminal, atau pastikan terminal itu terpasang.
-  code_missing: VS Code tidak terpasang untuk user ini maupun untuk semua user.
+  terminal_name:
+    windows_terminal: Windows Terminal
+    powershell: PowerShell
+    cmd: Command Prompt
+  terminal_failed: "%{name} tidak mau jalan. Pastikan sudah terpasang, atau pilih terminal lain di panel Hot Switch (%{keys})."
+  code_missing: VS Code belum terpasang. Pasang dari code.visualstudio.com, lalu coba lagi.
   code_failed: VS Code tidak mau jalan. Coba lagi, atau buka dari menu Start.

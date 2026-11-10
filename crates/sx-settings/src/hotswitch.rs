@@ -56,6 +56,14 @@ pub const DEFAULT_BINDINGS: &[HotSwitchBinding] = &[
     bind("ctrl-k t", HotSwitchAction::Toggle("view.thumbnails")),
     bind("ctrl-k r", HotSwitchAction::Toggle("safety.readonly_mode")),
     bind("ctrl-k k", HotSwitchAction::Panel),
+    // The terminal of "Open in Terminal", without default keys (panel and palette); last, so
+    // the bindings above keep their places.
+    bind(
+        "",
+        HotSwitchAction::Choice("ops.terminal", "windows_terminal"),
+    ),
+    bind("", HotSwitchAction::Choice("ops.terminal", "powershell")),
+    bind("", HotSwitchAction::Choice("ops.terminal", "cmd")),
 ];
 
 /// A named set of switch values (`--set` syntax for the values).

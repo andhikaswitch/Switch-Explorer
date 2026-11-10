@@ -284,6 +284,7 @@ impl Workspace {
             });
         }
         this.open_start_tabs(options.locations, options.session, cx);
+        crate::launch::warm_up(cx);
         this.watch_window_place(window, cx);
         this.refresh_drives(cx);
         this.watch_appearance(window, cx);

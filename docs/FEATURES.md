@@ -191,7 +191,7 @@ Home, This PC, dan Recycle Bin.
 | ID | Fitur | P | Fase |
 |---|---|---|---|
 | F-LOC-01 | This PC: drive + gauge, folder pengguna (Desktop, Documents, Downloads, Pictures, Music, Videos) via Known Folders | P0 | F1 |
-| F-LOC-02 | Recycle Bin: daftar item terhapus, Restore, hapus permanen, kosongkan | P1 | F2 |
+| F-LOC-02 | Recycle Bin: daftar item terhapus, Restore, hapus permanen, kosongkan. Keyboard: panah/Home/End/PageUp/PageDown (+Shift memperluas, +Ctrl hanya memindah fokus), Ctrl+Space, Ctrl+A, Enter = pulihkan, Delete = hapus permanen (bertanya) | P1 | F2 |
 | F-LOC-03 | Path UNC; jelajah network (P2) | P1 | F2 |
 | F-LOC-04 | WSL: `\\wsl.localhost\<distro>` otomatis bila WSL terpasang | P2 | F2 |
 | F-LOC-05 | Perangkat portabel (MTP/ponsel) via shell namespace | P2 | F8 |

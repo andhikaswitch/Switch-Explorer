@@ -128,7 +128,13 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - Kosongkan hanya menghapus item yang tampil di daftar; item yang masuk bin sesudahnya tetap aman. Slot
     yang sudah dipakai ulang item lain dilewati.
   - Catatan `$I…` yang terlalu besar atau lokasi asalnya tidak masuk akal (relatif, `..`, beda drive)
-    tidak ditampilkan; jumlahnya disebut di bawah judul. Karakter kontrol bidi pada nama diganti.
+    tidak ditampilkan; jumlahnya disebut di bawah judul bersama tombol "Buka di File Explorer". Karakter
+    kontrol bidi pada nama diganti.
+  - Daftar Recycle Bin bisa dipakai dari keyboard (panah, Shift/Ctrl, Ctrl+Space, Ctrl+A, Enter = pulihkan,
+    Delete = hapus permanen) dengan ring fokus di baris; dialog hapus permanen memakai kalimat khusus bin
+    ("tidak bisa dibatalkan").
+- Terminal untuk "Buka di Terminal" bisa dipilih di panel Hot Switch dan palette (Windows Terminal,
+  PowerShell, Command Prompt). Pesan gagal menyebut terminal yang gagal dan cara memilih yang lain.
 - Session restore (F-WIN-05, `tabs.restore_session`): tab yang terbuka, tab aktif, dan posisi/ukuran window
   (termasuk maximized) dibuka lagi saat start tanpa argumen. Disimpan di
   `%LOCALAPPDATA%\SwitchExplorer\session.json` (atomik, di luar UI thread, dan sekali lagi saat window

@@ -66,8 +66,13 @@ recycle_bin:
   deleted: Date deleted
   is_empty: The Recycle Bin is empty.
   failed: Can't read the Recycle Bin. Open it in File Explorer to check it.
+  confirm_empty_one: "Delete the 1 item listed here permanently? This can't be undone."
   confirm_empty: "Delete the %{count} items listed here permanently? This can't be undone."
-  skipped: "%{count} items couldn't be read and aren't shown."
+  confirm_delete_one: "Permanently delete \"%{name}\" from the Recycle Bin? This can't be undone."
+  confirm_delete_many: "Permanently delete %{count} items from the Recycle Bin? This can't be undone."
+  unavailable: Select an item first.
+  skipped_one: "1 item couldn't be read and isn't shown. File Explorer can show it."
+  skipped: "%{count} items couldn't be read and aren't shown. File Explorer can show them."
   title: Recycle Bin
   open: Open in File Explorer
 drive:
@@ -199,16 +204,27 @@ flag:
     show_extensions: File name extensions
     thumbnails: Thumbnails
   ops:
-    terminal: Terminal for Open in Terminal
+    terminal: Terminal used by Open in Terminal
   safety:
     readonly_mode: Read-only mode
 preset:
   anti_drag: Anti accidental drag
 choice:
+  ops:
+    terminal:
+      windows_terminal: Open in Terminal uses Windows Terminal
+      powershell: Open in Terminal uses PowerShell
+      cmd: Open in Terminal uses Command Prompt
   dnd:
     default_action:
       ask: Ask on drop
 choice_effect:
+  ops:
+    terminal:
+      auto: Open in Terminal picks Windows Terminal, or PowerShell.
+      windows_terminal: Open in Terminal uses Windows Terminal.
+      powershell: Open in Terminal uses PowerShell.
+      cmd: Open in Terminal uses Command Prompt.
   dnd:
     default_action:
       ask: Every drop asks first.
@@ -339,13 +355,17 @@ palette:
   switch_off: Switch, off
   place: Place
 dnd:
-  nothing_here: These items can't be copied or moved here.
+  nothing_here: "These items can't be copied or moved here: a drive or a Windows folder can only be linked."
   drag_failed: These items can't be dragged. A path may be too long (over 260 characters).
   no_drop_target: "Drops into this window don't work: Windows refused the drop target. Restart Switch Explorer to try again."
   confirm_move_one: "Move \"%{name}\" to \"%{dest}\"?"
   confirm_move_many: "Move %{count} items to \"%{dest}\"?"
   move: Move
 launch:
-  terminal_failed: "The terminal didn't start. Pick another one with the ops.terminal switch, or check that it is installed."
-  code_missing: VS Code isn't installed for this user or for everyone.
+  terminal_name:
+    windows_terminal: Windows Terminal
+    powershell: PowerShell
+    cmd: Command Prompt
+  terminal_failed: "%{name} didn't start. Check that it's installed, or pick another terminal in the Hot Switch panel (%{keys})."
+  code_missing: VS Code isn't installed. Install it from code.visualstudio.com, then try again.
   code_failed: VS Code didn't start. Try again, or open it from the Start menu.

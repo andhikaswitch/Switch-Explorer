@@ -7,9 +7,9 @@ use std::collections::BTreeSet;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, ClickEvent, Context, ElementId, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _,
-    UniformListScrollHandle, div, uniform_list,
+    AnyElement, ClickEvent, Context, Div, ElementId, InteractiveElement as _, IntoElement,
+    ParentElement as _, ScrollStrategy, SharedString, Stateful, StatefulInteractiveElement as _,
+    Styled as _, UniformListScrollHandle, div, uniform_list,
 };
 use rust_i18n::t;
 use sx_core::Location;
@@ -17,6 +17,7 @@ use sx_ops::{Binned, Op};
 use sx_shell::recycle::BinItem;
 use sx_theme::Token;
 
+use crate::actions;
 use crate::focus::TabStop as _;
 use crate::ops::{Dialog, Origin};
 use crate::theme::ActiveTokens as _;
@@ -31,14 +32,71 @@ enum Listed {
     Failed,
 }
 
+/// The text of one row, ready to draw.
+#[derive(Debug, Clone)]
+struct BinRow {
+    name: SharedString,
+    folder: SharedString,
+    deleted: SharedString,
+    size: SharedString,
+    spoken: SharedString,
+}
+
+impl BinRow {
+    fn of(item: &BinItem) -> Self {
+        let name = file_name(&item.original);
+        let folder = item
+            .original
+            .parent()
+            .map(|p| shown(&p.display().to_string()))
+            .unwrap_or_default();
+        let deleted = sx_win::format::file_time(item.deleted).unwrap_or_default();
+        let size = if item.folder {
+            String::new()
+        } else {
+            sx_win::format::kb_size(item.size)
+        };
+        let spoken = format!("{name}, {folder}, {deleted}");
+        Self {
+            name: name.into(),
+            folder: folder.into(),
+            deleted: deleted.into(),
+            size: size.into(),
+            spoken: spoken.into(),
+        }
+    }
+}
+
+/// A listing ready for the page: sorted, with its row texts (made off the UI thread).
+struct Ready {
+    items: Vec<BinItem>,
+    rows: Vec<BinRow>,
+    skipped: usize,
+}
+
+fn ready(listing: sx_shell::recycle::BinListing) -> Ready {
+    let mut items = listing.items;
+    items.sort_by_key(|item| std::cmp::Reverse(item.deleted));
+    let rows = items.iter().map(BinRow::of).collect();
+    Ready {
+        items,
+        rows,
+        skipped: listing.skipped,
+    }
+}
+
 /// What the page shows.
 #[derive(Debug, Default)]
 pub(crate) struct BinView {
     /// Newest deletion first.
     items: Vec<BinItem>,
+    /// What each item shows, made once per listing (not per frame).
+    rows: Vec<BinRow>,
     /// Indexes into `items`.
     selected: BTreeSet<usize>,
     anchor: Option<usize>,
+    /// The row the keyboard is on.
+    cursor: Option<usize>,
     loading: bool,
     /// Something changed while a listing ran: list again when it ends.
     dirty: bool,
@@ -69,7 +127,7 @@ impl Workspace {
         self.bin.loading = true;
         let generation = self.bin.generation;
         cx.spawn(async move |this, cx| {
-            let listed = crate::ops::off_thread(sx_shell::recycle::list_bin).await;
+            let listed = crate::ops::off_thread(|| sx_shell::recycle::list_bin().map(ready)).await;
             let _ = this.update(cx, |this, cx| {
                 if this.bin.generation != generation {
                     return;
@@ -81,13 +139,17 @@ impl Workspace {
                     .iter()
                     .map(|item| item.slot.clone())
                     .collect();
+                let cursor = this
+                    .bin
+                    .cursor
+                    .and_then(|ix| this.bin.items.get(ix))
+                    .map(|item| item.slot.clone());
                 match listed {
                     Some(Ok(listing)) => {
-                        let mut items = listing.items;
-                        items.sort_by_key(|item| std::cmp::Reverse(item.deleted));
                         this.bin.listed = Listed::Shown;
                         this.bin.skipped = listing.skipped;
-                        this.bin.items = items;
+                        this.bin.items = listing.items;
+                        this.bin.rows = listing.rows;
                     }
                     other => {
                         if let Some(Err(err)) = other {
@@ -95,6 +157,7 @@ impl Workspace {
                         }
                         this.bin.listed = Listed::Failed;
                         this.bin.items.clear();
+                        this.bin.rows.clear();
                     }
                 }
                 this.bin.selected = this
@@ -106,6 +169,8 @@ impl Workspace {
                     .map(|(ix, _)| ix)
                     .collect();
                 this.bin.anchor = None;
+                this.bin.cursor = cursor
+                    .and_then(|slot| this.bin.items.iter().position(|item| item.slot == slot));
                 if std::mem::take(&mut this.bin.dirty) {
                     this.refresh_bin(cx);
                 }
@@ -136,7 +201,79 @@ impl Workspace {
                 bin.anchor = Some(ix);
             }
         }
+        bin.cursor = Some(ix);
         cx.notify();
+    }
+
+    /// Moves the keyboard's row by `delta` (clamped): selecting it, extending the selection
+    /// from the anchor (`extend`), or only moving (`focus_only`, Ctrl).
+    fn bin_move(&mut self, delta: isize, extend: bool, focus_only: bool, cx: &mut Context<Self>) {
+        let len = self.bin.items.len();
+        if len == 0 {
+            return;
+        }
+        let ix = match self.bin.cursor {
+            Some(at) => at.saturating_add_signed(delta).min(len - 1),
+            None if delta < 0 => len - 1,
+            None => 0,
+        };
+        if focus_only {
+            self.bin.cursor = Some(ix);
+        } else {
+            let extend = extend && self.bin.anchor.is_some();
+            self.bin_select(ix, extend, false, cx);
+        }
+        self.bin.scroll.scroll_to_item(ix, ScrollStrategy::Nearest);
+        cx.notify();
+    }
+
+    /// The bin list's keys (it shares the content area's focus and the list's bindings).
+    pub(crate) fn bin_actions(&self, el: Stateful<Div>, cx: &Context<Self>) -> Stateful<Div> {
+        const PAGE: isize = 10;
+        let step = |delta: isize, extend: bool, focus_only: bool| {
+            move |this: &mut Self, cx: &mut Context<Self>| {
+                this.bin_move(delta, extend, focus_only, cx);
+            }
+        };
+        macro_rules! key {
+            ($el:expr, $action:ty, $f:expr) => {{
+                let f = $f;
+                $el.on_action(cx.listener(move |this, _: &$action, _, cx| f(this, cx)))
+            }};
+        }
+        let el = key!(el, actions::SelectPrevious, step(-1, false, false));
+        let el = key!(el, actions::SelectNext, step(1, false, false));
+        let el = key!(el, actions::SelectFirst, step(isize::MIN / 2, false, false));
+        let el = key!(el, actions::SelectLast, step(isize::MAX / 2, false, false));
+        let el = key!(el, actions::SelectPageUp, step(-PAGE, false, false));
+        let el = key!(el, actions::SelectPageDown, step(PAGE, false, false));
+        let el = key!(el, actions::ExtendPrevious, step(-1, true, false));
+        let el = key!(el, actions::ExtendNext, step(1, true, false));
+        let el = key!(el, actions::ExtendFirst, step(isize::MIN / 2, true, false));
+        let el = key!(el, actions::ExtendLast, step(isize::MAX / 2, true, false));
+        let el = key!(el, actions::MoveFocusPrevious, step(-1, false, true));
+        let el = key!(el, actions::MoveFocusNext, step(1, false, true));
+        let el = key!(
+            el,
+            actions::ToggleFocused,
+            |this: &mut Self, cx: &mut Context<Self>| {
+                if let Some(ix) = this.bin.cursor {
+                    this.bin_select(ix, false, true, cx);
+                }
+            }
+        );
+        let el = key!(
+            el,
+            actions::SelectAll,
+            |this: &mut Self, cx: &mut Context<Self>| {
+                let len = this.bin.items.len();
+                this.bin.selected = (0..len).collect();
+                cx.notify();
+            }
+        );
+        let el = key!(el, actions::OpenSelected, Self::bin_restore);
+        let el = key!(el, actions::FileDelete, Self::bin_delete);
+        key!(el, actions::FileDeletePermanent, Self::bin_delete)
     }
 
     fn bin_chosen(&self) -> Vec<&BinItem> {
@@ -202,7 +339,7 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn render_recycle_bin(&self, cx: &Context<Self>) -> AnyElement {
+    pub(crate) fn render_recycle_bin(&self, focused: bool, cx: &Context<Self>) -> AnyElement {
         let t = cx.tokens();
         let bin = &self.bin;
         let any = !bin.selected.is_empty();
@@ -251,12 +388,19 @@ impl Workspace {
                 el.child(
                     div()
                         .text_size(t.px(Token::FontSizeCaption))
-                        .text_color(t.color(Token::FgMuted))
-                        .child(SharedString::from(t!(
-                            "recycle_bin.skipped",
-                            count = bin.skipped
-                        ))),
+                        .text_color(t.color(Token::FgSecondary))
+                        .child(SharedString::from(if bin.skipped == 1 {
+                            t!("recycle_bin.skipped_one")
+                        } else {
+                            t!("recycle_bin.skipped", count = bin.skipped)
+                        })),
                 )
+                .child(self.text_button(
+                    "bin-open-skipped",
+                    t!("recycle_bin.open").into(),
+                    cx,
+                    |this, cx| this.open_shell_folder("shell:RecycleBinFolder", cx),
+                ))
             });
         let body = if bin.listed == Listed::NotYet {
             self.bin_message(t!("details.loading").into(), cx)
@@ -277,7 +421,7 @@ impl Workspace {
         } else if bin.items.is_empty() {
             self.bin_message(t!("recycle_bin.is_empty").into(), cx)
         } else {
-            self.bin_list(cx)
+            self.bin_list(focused, cx)
         };
         div()
             .id("bin-page")
@@ -327,6 +471,10 @@ impl Workspace {
             .id(id)
             .role(gpui_kit::Role::Button)
             .aria_label(label.clone())
+            // Screen readers hear that a dimmed button does nothing now.
+            .when(!enabled, |el| {
+                el.aria_description(SharedString::from(t!("recycle_bin.unavailable")))
+            })
             .when(enabled, |el| {
                 el.tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
                     .hover(move |s| s.bg(hover).text_color(hover_fg).border_color(clear))
@@ -347,8 +495,9 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn bin_list(&self, cx: &Context<Self>) -> AnyElement {
+    fn bin_list(&self, focused: bool, cx: &Context<Self>) -> AnyElement {
         let t = cx.tokens();
+        let size_width = self.tab().columns.size_width();
         let header = |label: SharedString| {
             div()
                 .flex_1()
@@ -360,6 +509,9 @@ impl Workspace {
                 .child(label)
         };
         div()
+            .id("bin-list")
+            .role(gpui_kit::Role::ListBox)
+            .aria_label(SharedString::from(t!("recycle_bin.title")))
             .flex()
             .flex_col()
             .flex_1()
@@ -377,18 +529,16 @@ impl Workspace {
                     .child(header(t!("details.name").into()))
                     .child(header(t!("recycle_bin.original").into()))
                     .child(header(t!("recycle_bin.deleted").into()))
-                    .child(
-                        header(t!("details.size").into())
-                            .flex_none()
-                            .w(t.px(Token::SizeSearchWidth) / 2.0),
-                    ),
+                    .child(header(t!("details.size").into()).flex_none().w(size_width)),
             )
             .child(
                 uniform_list(
                     "bin-rows",
                     self.bin.items.len(),
-                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                        range.map(|ix| this.bin_row(ix, cx)).collect::<Vec<_>>()
+                    cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                        range
+                            .map(|ix| this.bin_row(ix, focused, size_width, cx))
+                            .collect::<Vec<_>>()
                     }),
                 )
                 .track_scroll(&self.bin.scroll)
@@ -397,30 +547,28 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn bin_row(&self, ix: usize, cx: &Context<Self>) -> AnyElement {
+    fn bin_row(
+        &self,
+        ix: usize,
+        focused: bool,
+        size_width: gpui_kit::Pixels,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let t = cx.tokens();
-        let Some(item) = self.bin.items.get(ix) else {
+        let (Some(item), Some(row)) = (self.bin.items.get(ix), self.bin.rows.get(ix)) else {
             return div().into_any_element();
         };
         let selected = self.bin.selected.contains(&ix);
-        let (selected_bg, selected_border, hover) = (
+        let is_focus = focused && self.bin.cursor == Some(ix);
+        let (selected_bg, selected_border, inactive_bg, hover, pressed, ring) = (
             t.color(Token::RowSelectedBg),
             t.color(Token::RowSelectedBorder),
+            t.color(Token::RowSelectedInactiveBg),
             t.color(Token::RowHoverBg),
+            t.color(Token::PressedBg),
+            t.color(Token::FocusRing),
         );
-        let name = file_name(&item.original);
-        let folder = item
-            .original
-            .parent()
-            .map(|p| shown(&p.display().to_string()))
-            .unwrap_or_default();
-        let deleted = sx_win::format::file_time(item.deleted).unwrap_or_default();
-        let size = if item.folder {
-            String::new()
-        } else {
-            sx_win::format::kb_size(item.size)
-        };
-        let cell = |text: String, color: Token| {
+        let cell = |text: SharedString, color: Token| {
             div()
                 .flex_1()
                 .min_w_0()
@@ -431,12 +579,11 @@ impl Workspace {
                 .text_color(t.color(color))
                 .child(text)
         };
-        let spoken: SharedString = format!("{name}, {folder}, {deleted}").into();
         div()
             .id(ElementId::NamedInteger("bin-row".into(), ix as u64))
             .w_full()
             .role(gpui_kit::Role::ListBoxOption)
-            .aria_label(spoken)
+            .aria_label(row.spoken.clone())
             .aria_selected(selected)
             .flex()
             .items_center()
@@ -445,10 +592,16 @@ impl Workspace {
             .rounded(t.px(Token::RadiusSm))
             .border_1()
             .border_color(gpui_kit::transparent_black())
-            .when(selected, |el| {
+            .when(selected && focused, |el| {
                 el.bg(selected_bg).border_color(selected_border)
             })
-            .when(!selected, |el| el.hover(move |s| s.bg(hover)))
+            .when(selected && !focused, |el| el.bg(inactive_bg))
+            // The keyboard's row: a ring inside the row (DESIGN.md §11).
+            .when(is_focus, |el| el.border_color(ring))
+            .when(!selected, |el| {
+                el.hover(move |s| s.bg(hover))
+                    .active(move |s| s.bg(pressed))
+            })
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                 let m = event.modifiers();
                 this.bin_select(ix, m.shift, m.control, cx);
@@ -480,15 +633,15 @@ impl Workspace {
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .child(name),
+                            .child(row.name.clone()),
                     ),
             )
-            .child(cell(folder, Token::FgSecondary))
-            .child(cell(deleted, Token::FgSecondary))
+            .child(cell(row.folder.clone(), Token::FgSecondary))
+            .child(cell(row.deleted.clone(), Token::FgSecondary))
             .child(
-                cell(size, Token::FgSecondary)
+                cell(row.size.clone(), Token::FgSecondary)
                     .flex_none()
-                    .w(t.px(Token::SizeSearchWidth) / 2.0),
+                    .w(size_width),
             )
             .into_any_element()
     }

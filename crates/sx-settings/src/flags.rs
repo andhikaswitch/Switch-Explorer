@@ -330,7 +330,8 @@ define_flags! {
     /// The terminal "Open in Terminal" starts (F-OPS-12): auto = Windows Terminal when it is
     /// installed, else PowerShell.
     ops_terminal: choice("auto", "windows_terminal", "powershell", "cmd") = "auto",
-        id = "ops.terminal", group = Ops, vis = Basic, stab = Stable, scope = Global;
+        id = "ops.terminal", group = Ops, vis = Basic, stab = Stable, scope = Global,
+        hot = true;
     /// Block every write operation.
     safety_readonly_mode: bool = false,
         id = "safety.readonly_mode", group = Safety, vis = Basic, stab = Stable, scope = Location,

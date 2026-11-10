@@ -57,6 +57,15 @@ fn start_terminal(dir: &Path, choice: &str) -> std::io::Result<()> {
         .map(|_| ())
 }
 
+/// Menus ask whether VS Code is installed: find out at start, off the UI thread.
+pub(crate) fn warm_up(cx: &gpui_kit::App) {
+    use gpui_kit::AppContext as _;
+    cx.background_spawn(async {
+        let _ = vscode();
+    })
+    .detach();
+}
+
 /// VS Code's program, when it is installed (per user or for everyone). Looked up once.
 pub(crate) fn vscode() -> Option<&'static Path> {
     static FOUND: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -117,7 +126,21 @@ impl Workspace {
             if let Some(Err(err)) = started {
                 tracing::warn!(error = %err, choice, "terminal did not start");
                 let _ = this.update(cx, |this, cx| {
-                    this.notice = Some(SharedString::from(t!("launch.terminal_failed")));
+                    // `auto` ends with PowerShell, so that is the one that failed.
+                    let failed = match choice {
+                        "windows_terminal" | "cmd" => choice,
+                        _ => "powershell",
+                    };
+                    let panel = sx_settings::hotswitch::DEFAULT_BINDINGS
+                        .iter()
+                        .find(|b| b.action == sx_settings::HotSwitchAction::Panel)
+                        .map(|b| crate::hotswitch::keys_text(b.keys))
+                        .unwrap_or_default();
+                    this.notice = Some(SharedString::from(t!(
+                        "launch.terminal_failed",
+                        name = t!(format!("launch.terminal_name.{failed}")),
+                        keys = panel
+                    )));
                     cx.notify();
                 });
             }

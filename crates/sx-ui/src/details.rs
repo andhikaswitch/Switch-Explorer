@@ -50,6 +50,13 @@ pub(crate) struct ColumnWidths {
     folder: f32,
 }
 
+impl ColumnWidths {
+    /// The Size column's width (the bin page uses it too).
+    pub(crate) fn size_width(&self) -> Pixels {
+        gpui_kit::px(self.size)
+    }
+}
+
 impl Default for ColumnWidths {
     fn default() -> Self {
         Self {
@@ -138,7 +145,9 @@ impl Workspace {
         let body: AnyElement = match (&self.tab().content, self.tab().location()) {
             (Content::Page, Location::Home) => self.render_home(cx).into_any_element(),
             (Content::Page, Location::ThisPc) => self.render_this_pc(cx).into_any_element(),
-            (Content::Page, _) => self.render_recycle_bin(cx).into_any_element(),
+            (Content::Page, _) => self
+                .render_recycle_bin(self.list_focus.is_focused(window), cx)
+                .into_any_element(),
             (Content::Loading { since }, _) => {
                 let text = (since.elapsed() >= crate::workspace::LOADING_DELAY)
                     .then(|| t!("details.loading").to_string());
@@ -195,6 +204,10 @@ impl Workspace {
                         div()
                             .id("content-focus")
                             .track_focus(&self.list_focus)
+                            // The Recycle Bin list takes the list's keys.
+                            .when(*self.tab().location() == Location::RecycleBin, |el| {
+                                self.bin_actions(el.key_context(LIST_CONTEXT), cx)
+                            })
                             // An empty or still loading folder has a menu too.
                             .when(self.tab().location().as_path().is_some(), |el| {
                                 el.on_mouse_up(
