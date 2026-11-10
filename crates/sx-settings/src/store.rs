@@ -59,6 +59,8 @@ pub struct SettingsStore {
     dirty: bool,
     /// Presets turned on by Hot Switch, with the values they replaced (for this session).
     presets: BTreeMap<&'static str, Vec<(&'static str, FlagValue)>>,
+    /// Choices turned on by Hot Switch, with the value they replaced (for this session).
+    choices: BTreeMap<&'static str, FlagValue>,
 }
 
 impl SettingsStore {
@@ -109,6 +111,7 @@ impl SettingsStore {
             session: BTreeMap::new(),
             dirty: false,
             presets: BTreeMap::new(),
+            choices: BTreeMap::new(),
         }
     }
 
@@ -204,11 +207,18 @@ impl SettingsStore {
             return Err(SettingsError::NotHotSwitchable(meta.id));
         }
         let chosen = FlagValue::Text(value.to_string());
-        let next = if self.effective(meta.id) == chosen {
-            Features::default()
-                .get(meta.id)
-                .ok_or_else(|| SettingsError::UnknownFlag(id.to_string()))?
+        let current = self.effective(meta.id);
+        let next = if current == chosen {
+            // Off: the value it replaced (a `copy` chosen for safety stays `copy`), else the
+            // default.
+            match self.choices.remove(meta.id) {
+                Some(before) => before,
+                None => Features::default()
+                    .get(meta.id)
+                    .ok_or_else(|| SettingsError::UnknownFlag(id.to_string()))?,
+            }
         } else {
+            self.choices.insert(meta.id, current);
             chosen
         };
         self.set(meta.id, next, source)
@@ -472,6 +482,17 @@ mod tests {
         assert_eq!(on[0].value, FlagValue::Text("ask".into()));
         let off = store.run_hotswitch(ask).unwrap();
         assert_eq!(off[0].value, FlagValue::Text("system".into()));
+        // Off puts back the value it replaced, not the default.
+        store
+            .set(
+                "dnd.default_action",
+                FlagValue::Text("copy".into()),
+                ChangeSource::User,
+            )
+            .unwrap();
+        store.run_hotswitch(ask).unwrap();
+        let back = store.run_hotswitch(ask).unwrap();
+        assert_eq!(back[0].value, FlagValue::Text("copy".into()));
     }
 
     #[test]

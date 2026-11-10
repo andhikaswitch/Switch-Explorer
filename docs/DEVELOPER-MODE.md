@@ -92,7 +92,7 @@ scroll dengan touchpad — sudah memulai drag. Melepasnya di atas folder lain di
 | `dnd.scroll_cooldown_ms` | u16 | 0 | — | Drag diabaikan selama ini setelah scroll terakhir |
 | `dnd.require_modifier` | enum `none`/`alt`/`ctrl`/`shift` | none | — | Drag hanya jika modifier ditahan saat mulai |
 | `dnd.right_drag_bypass` | bool | false | — | Drag tombol kanan tetap boleh walau sumbernya dimatikan (selalu memunculkan menu konfirmasi) |
-| `dnd.default_action` | enum `system`/`copy`/`move`/`ask` | system | "Menu saat drop" (`ask` ⇄ default, tanpa hotkey default) | Aksi drop tanpa modifier |
+| `dnd.default_action` | enum `system`/`copy`/`move`/`ask` | system | "Tanya saat drop" (pilihan `ask` ⇄ nilai sebelumnya, tanpa hotkey default) | Aksi drop tanpa modifier |
 | `dnd.confirm_folder_move` | bool | false | — | Konfirmasi saat memindahkan folder lewat drag |
 | `dnd.undo_toast` | bool | true | — | Toast "Urungkan" 10 detik setelah drop |
 | `dnd.blocked_hint` | bool | true | — | Beri tahu saat drag diblokir switch |
@@ -113,6 +113,10 @@ seleksi campuran (file + folder): semua item harus lolos; jika satu gagal → se
 boleh_drop(target)  = (target.sidebar ? dnd.target.sidebar : dnd.target.folders) && !safety.readonly_mode
 boleh_keluar        = dnd.external_out      boleh_masuk = dnd.external_in
 menyusun ulang pinned = dnd.enabled && !sidebar.pins_locked   (tidak memindahkan file)
+pindah item sidebar = hanya lewat "Pindahkan ke sini" di menu drop, tidak pernah lewat drag biasa, dan tidak
+                      saat sidebar.pins_locked; ke aplikasi lain item sidebar hanya bisa disalin/shortcut
+pindah known folder (Desktop, Documents, Downloads, …) = tidak pernah (Windows tetap menunjuk tempat lamanya)
+pin mengikuti foldernya saat folder itu dipindah atau di-rename (juga lewat undo)
 ```
 
 ### 5.4 State machine inisiasi drag
@@ -124,9 +128,10 @@ Pressed:
   • now − scroll_terakhir < dnd.scroll_cooldown_ms → tertahan = true (press ini tidak bisa jadi drag)
   • dnd.require_modifier != none && modifier tidak ditahan → tertahan = true
   • gerak: jarak ≥ ambang && now − t0 ≥ dnd.hold_delay_ms && !tertahan → Dragging
-  • gerak sebelum hold delay selesai → belum apa-apa; gerak pertama setelahnya (masih lewat ambang)
-    memulai drag. Lepas sebelum delay selesai tetap klik. (Dulu gerak terlalu cepat membatalkan drag
-    untuk tekan itu; terasa berat, karena hampir semua drag cepat gagal.)
+  • gerak kecil sebelum hold delay selesai → belum apa-apa; gerak pertama setelahnya (masih lewat ambang)
+    memulai drag. Lepas sebelum delay selesai tetap klik.
+  • gerak ≥ 3× ambang sebelum hold delay selesai (flick, mis. geser touchpad sambil menekan) → tertahan
+    = true
   • lepas tombol → Click
 Dragging (internal atau OLE):
   • efek = modifier (Ctrl salin, Shift pindah, Alt shortcut) atau dnd.default_action
@@ -199,7 +204,7 @@ Desain visual di `DESIGN.md` §9.
 | `Ctrl+K`, `S` | `dnd.source.sidebar` | toggle |
 | `Ctrl+K`, `E` | `dnd.external_out` + `dnd.external_in` | grup |
 | `Ctrl+K`, `G` | preset "Anti salah drag" | preset |
-| (tanpa hotkey) | "Menu saat drop": `dnd.default_action` = `ask`, atau kembali ke default | pilihan |
+| (tanpa hotkey) | "Tanya saat drop": `dnd.default_action` = `ask`, atau kembali ke nilai sebelumnya | pilihan |
 | `Ctrl+K`, `L` | `sidebar.pins_locked` | toggle |
 | `Ctrl+K`, `H` | `view.show_hidden` | toggle |
 | `Ctrl+K`, `X` | `view.show_extensions` | toggle |
@@ -209,7 +214,9 @@ Desain visual di `DESIGN.md` §9.
 
 Jenis aksi:
 - **toggle**: bool dibalik.
-- **cycle**: enum maju ke nilai berikutnya (mis. `dnd.default_action`: system → copy → move → ask).
+- **cycle**: enum maju ke nilai berikutnya (mis. `hotswitch.osd`: in_app → system → off).
+- **pilihan**: satu nilai enum ditampilkan sebagai on/off. Menyalakan menyetel nilai itu; mematikan
+  mengembalikan nilai sebelumnya (sesi ini), atau default bila tidak diketahui. Contoh: "Tanya saat drop".
 - **grup**: beberapa switch disetel ke nilai yang sama — jika ada yang aktif, semua dimatikan; jika semua
   mati, semua dinyalakan.
 - **preset**: menyalakan/mematikan preset dengan menyimpan & mengembalikan nilai sebelumnya.
@@ -269,6 +276,11 @@ keys = "ctrl-alt-f9"
 action = "switch.preset"
 args = { id = "anti_drag" }
 scope = "global"
+
+[[binding]]
+keys = "ctrl-k q"            # pilihan: "Tanya saat drop" dapat hotkey
+action = "switch.choice"
+args = { id = "dnd.default_action", value = "ask" }
 
 [[unbind]]
 keys = "ctrl-k h"

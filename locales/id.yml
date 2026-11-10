@@ -197,7 +197,14 @@ preset:
 choice:
   dnd:
     default_action:
-      ask: Menu saat drop (Salin di sini / Pindahkan ke sini)
+      ask: Tanya saat drop
+choice_effect:
+  dnd:
+    default_action:
+      ask: Setiap drop bertanya dulu.
+      system: Drop kembali seperti Explorer.
+      copy: Drop kembali menyalin.
+      move: Drop kembali memindahkan.
 preset_title:
   anti_drag: Preset anti salah drag
 hotswitch:
@@ -319,6 +326,7 @@ palette:
   switch_off: Switch, nonaktif
   place: Tempat
 dnd:
+  nothing_here: Item ini tidak bisa disalin atau dipindah ke sini.
   drag_failed: Item ini tidak bisa di-drag. Mungkin path-nya terlalu panjang (lebih dari 260 karakter).
   no_drop_target: "Drop ke window ini tidak berfungsi: Windows menolak drop target. Jalankan ulang Switch Explorer untuk mencoba lagi."
   confirm_move_one: "Pindahkan \"%{name}\" ke \"%{dest}\"?"

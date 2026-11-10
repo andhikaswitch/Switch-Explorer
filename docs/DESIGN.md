@@ -224,8 +224,9 @@ sama. Dibuka dengan `Ctrl+K`, `K` atau klik chip status (§9.2).
   keadaan tidak hanya dibedakan lewat warna.
 - **Tinggi:** semua baris tampil bila window cukup tinggi (maks 20 baris, min 4); lebih dari itu
   daftar bergulir.
-- **Pilihan:** switch enum yang ditampilkan sebagai on/off (mis. "Menu saat drop" = `dnd.default_action`
-  `ask`); mematikannya mengembalikan nilai default. Tanpa hotkey default, kolom hotkey kosong.
+- **Pilihan:** switch enum yang ditampilkan sebagai on/off (mis. "Tanya saat drop" = `dnd.default_action`
+  `ask`); mematikannya mengembalikan nilai sebelumnya. Tanpa hotkey default, kolom hotkey kosong. Ikut
+  "Tertahan" bila "Semua drag" mati.
 - **Judul kelompok:** caption `fg.muted`, tidak bisa dipilih; disembunyikan saat mencari.
   Panah dan PageUp/PageDown melompatinya (PageUp di atas berhenti di switch pertama); naik ke baris
   pertama kelompok ikut menampilkan judulnya.
@@ -376,6 +377,10 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 - Baris yang disorot atau ditekan memakai `hover.bg` / `pressed.bg`. Baris pilihan keyboard juga diberi cincin
   fokus. Baris yang tidak bisa dijalankan memakai `fg.disabled`. Centang menandai pilihan aktif
   (misalnya urutan di "Urutkan menurut ▸").
+- Pengecualian, menu drop (Salin di sini / Pindahkan ke sini / Batal): "Pindahkan" yang tidak mungkin
+  (sumber hanya mengizinkan salin, atau item sudah di folder itu) tidak ditampilkan; "Salin" selalu di baris
+  pertama (nonaktif bila tidak mungkin) agar "Pindahkan" tidak pernah berada di bawah pointer tempat "Salin"
+  biasanya. Yang diblokir switch tidak disembunyikan diam-diam: drop-nya ditolak dengan hint (§9.3).
 - Menu muncul di titik klik kanan. Bila tidak muat di bawah, menu dibuka ke atas; bila tidak muat di kanan,
   menu digeser ke dalam window. Submenu terbuka di kanan menu, atau di kiri bila ruangnya tidak cukup.
 - Isi setiap menu mengikuti FEATURES F-CTX-01/03/04. Label dan shortcut diambil dari `CommandRegistry`, sama
@@ -409,7 +414,8 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 - **Isi:** ikon 24 px dalam lingkaran (aktif: isi `osd.state_on` + ikon `osd.icon_on`; nonaktif:
   `osd.state_off` + ikon dicoret `osd.icon_off`). Baris 1 Body strong: "Drag folder dinonaktifkan" /
   "Drag folder diaktifkan". Baris 2 Caption: dampak + hotkey, mis. "Drag file tetap aktif. Balik lagi:
-  Ctrl+K, D".
+  Ctrl+K, D". Switch tanpa hotkey (pilihan dari panel) hanya menyebut dampaknya, mis. "Drop kembali seperti
+  Explorer."
 - **Kelompok & preset:** "Drag ke/dari aplikasi lain dinonaktifkan (2 switch)", "Preset anti salah drag
   aktif (9 switch diubah)".
 - **Hint diblokir (§9.3):** OSD yang sama juga membawa hint saat drag atau drop ditolak switch. Hint

@@ -281,16 +281,26 @@ fn describe(
             )
         }
         HotSwitchAction::Choice(id, value) => {
-            let on = changes
-                .first()
-                .is_some_and(|c| c.value == FlagValue::Text(value.to_string()));
+            let now = changes.first().map(|c| c.value.clone());
+            let on = now == Some(FlagValue::Text(value.to_string()));
             let name = choice_label(id, value);
             let title = if on {
                 t!("hotswitch.on", name = name)
             } else {
                 t!("hotswitch.off", name = name)
             };
-            (title.into_owned(), detail(&[again]), on)
+            // What it does now, in words: the value it went back to is never left unsaid.
+            let effect = match &now {
+                Some(FlagValue::Text(current)) => {
+                    let key = format!("choice_effect.{id}.{current}");
+                    let text = t!(&key).into_owned();
+                    (text != key).then_some(text)
+                }
+                _ => None,
+            };
+            // Without keys it is switched from the panel or the palette, where the user already
+            // is: line 2 says only what drops do now (it must fit, DESIGN.md §9.1).
+            (title.into_owned(), detail(&[effect, again]), on)
         }
         HotSwitchAction::Panel => (String::new(), String::new(), true),
     }
@@ -383,7 +393,9 @@ impl Workspace {
     /// The switch holding a binding back: one it depends on that is off.
     pub(crate) fn binding_holder(&self, index: usize) -> Option<&'static str> {
         match DEFAULT_BINDINGS.get(index).map(|b| b.action) {
-            Some(HotSwitchAction::Toggle(id)) => holder(id, &self.features),
+            Some(HotSwitchAction::Toggle(id) | HotSwitchAction::Choice(id, _)) => {
+                holder(id, &self.features)
+            }
             Some(HotSwitchAction::Group(ids)) => group_holder(ids, &self.features),
             _ => None,
         }
@@ -437,7 +449,10 @@ impl Workspace {
                 };
                 let (title, detail, on) =
                     describe(binding, &changes, &self.features, preset_active);
-                self.show_osd(title, detail, on, cx);
+                // A click on it opens the panel with this switch chosen.
+                if self.features.hotswitch_osd != "off" {
+                    self.present_osd(title, detail, on, Some(index), cx);
+                }
             }
             Err(SettingsError::NeedsDeveloperMode(id)) => {
                 let title = t!("hotswitch.needs_dev", name = label(id)).into_owned();
@@ -446,7 +461,11 @@ impl Workspace {
             }
             Err(err) => {
                 tracing::warn!(error = %err, keys = binding.keys, "hot switch failed");
-                let detail = t!("hotswitch.again", keys = keys_text(binding.keys)).into_owned();
+                let detail = if binding.keys.is_empty() {
+                    t!("hotswitch.drag_blocked_panel").into_owned()
+                } else {
+                    t!("hotswitch.again", keys = keys_text(binding.keys)).into_owned()
+                };
                 self.show_osd(t!("hotswitch.failed").into_owned(), detail, false, cx);
             }
         }
@@ -830,7 +849,10 @@ mod tests {
                 HotSwitchAction::Preset(_) | HotSwitchAction::Panel => vec![],
                 HotSwitchAction::Choice(id, value) => {
                     let key = format!("choice.{id}.{value}");
-                    assert_ne!(choice_label(id, value), key, "{key} missing in en.yml");
+                    for locale in ["en", "id"] {
+                        let text = rust_i18n::t!(&key, locale = locale);
+                        assert_ne!(text, key, "{key} missing in {locale}.yml");
+                    }
                     vec![]
                 }
             };

@@ -271,16 +271,18 @@ impl Workspace {
         // missing anyway).
         let (copy, moves) = (allowed.copy, allowed.moves && !here);
         if !copy && !moves {
+            self.notice = Some(t!("dnd.nothing_here").into());
+            cx.notify();
             return;
         }
         let mut entries = Vec::new();
-        if copy {
-            entries.push(Entry::new(
-                t!("menu.drop_copy"),
-                true,
-                Run::Drop(paths.clone(), dest.clone(), sx_ops::Mode::Copy),
-            ));
-        }
+        // Copy keeps the first row even when it cannot run, so Move never lands under the
+        // pointer where Copy usually is (DESIGN.md §8.10).
+        entries.push(Entry::new(
+            t!("menu.drop_copy"),
+            copy,
+            Run::Drop(paths.clone(), dest.clone(), sx_ops::Mode::Copy),
+        ));
         if moves {
             entries.push(Entry::new(
                 t!("menu.drop_move"),

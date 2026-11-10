@@ -107,10 +107,16 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
     tanya hanya berisi yang diizinkan sumber dan yang bisa dijalankan, drop ditolak selama dialog
     terbuka, dan sumber tidak pernah diberi tahu "dipindah" sebelum kita yang memindahkannya.
   - Drag kiri yang dilepas di folder asalnya tidak melakukan apa pun (tanpa menu).
-  - Panel Hot Switch punya baris "Menu saat drop (Salin di sini / Pindahkan ke sini)" untuk menyalakan
-    atau mematikan menu itu (`dnd.default_action` = `ask` ⇄ default). Jenis binding baru: pilihan.
-  - `dnd.hold_delay_ms`: gerak sebelum delay selesai tidak lagi membatalkan drag; drag mulai pada gerak
-    pertama setelah delay. Drag dengan preset "Anti salah drag" tidak lagi terasa berat.
+  - Panel Hot Switch punya baris "Tanya saat drop" untuk menyalakan atau mematikan menu Salin di sini /
+    Pindahkan ke sini (`dnd.default_action` = `ask`; mematikan mengembalikan nilai sebelumnya, OSD
+    menyebut aksi drop yang berlaku). Jenis binding baru: pilihan.
+  - `dnd.hold_delay_ms`: gerak kecil sebelum delay selesai tidak lagi membatalkan drag; drag mulai pada gerak
+    pertama setelah delay, sedangkan flick (≥ 3× ambang sebelum delay) tetap klik. Drag dengan preset
+    "Anti salah drag" tidak lagi terasa berat.
+  - Item sidebar hanya dipindah lewat "Pindahkan ke sini" di menu drop (tidak lewat drag biasa, tidak saat
+    pin dikunci); ke aplikasi lain hanya disalin atau dijadikan shortcut. Known folder Windows (Desktop,
+    Documents, Downloads, …) tidak pernah dipindah lewat drag. Pin mengikuti foldernya saat dipindah atau
+    di-rename, juga lewat undo.
 
 ### Changed
 - OSD Hot Switch: catatan untuk sub-switch yang tertahan kini menyebut induknya (Tertahan karena "Semua

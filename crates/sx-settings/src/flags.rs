@@ -169,7 +169,7 @@ define_flags! {
     /// Drop action without modifiers.
     dnd_default_action: choice("system", "copy", "move", "ask") = "system",
         id = "dnd.default_action", group = Dnd, vis = Basic, stab = Stable, scope = Location,
-        hot = true;
+        hot = true, deps = ["dnd.enabled"];
     /// Confirm when moving a folder by drag.
     dnd_confirm_folder_move: bool = false,
         id = "dnd.confirm_folder_move", group = Dnd, vis = Basic, stab = Stable, scope = Location;

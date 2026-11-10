@@ -106,11 +106,15 @@ pub(crate) struct ListZone {
 /// The drag our own window started, while it runs.
 #[derive(Clone, Copy, Debug)]
 struct Outgoing {
-    /// It started in the sidebar: dropping it on a sidebar item would move a pinned folder,
+    /// It started in the sidebar: dropped on a sidebar item it would move a pinned folder,
     /// which reordering pins never does (DEVELOPER-MODE.md §5.3).
     from_sidebar: bool,
     /// The switches when its button went down: they hold until it ends (§5.4).
     policy: DragPolicy,
+    /// What our own drop menu may do with these items, which can be more than OLE is told
+    /// (a pin is offered to other apps as copy or shortcut only, but "Move here" in our menu
+    /// moves it).
+    menu: Allowed,
 }
 
 /// The items of the drag over the window, with what every pointer move needs worked out once.
@@ -620,20 +624,31 @@ impl Workspace {
             return;
         }
         let right = press.button == Button::Right;
-        // A drive is offered as a shortcut only (as in Explorer): never a whole-drive copy or
-        // move. Read-only mode: nothing leaves this folder by a move. Sidebar items follow
-        // `dnd.source.sidebar` (and the anti-drag preset turns that off).
+        // What these items may become (DEVELOPER-MODE.md §5.3):
+        // - a drive: a shortcut only (as in Explorer), never a whole-drive copy or move;
+        // - read-only mode: nothing leaves this folder by a move;
+        // - a Windows known folder (Desktop, Downloads, …) is never moved: Windows would keep
+        //   its old place;
+        // - a sidebar item moves only when asked for ("Move here" in our menu), never by a
+        //   plain drag, and never while pins are locked; other apps get a copy or a shortcut.
         let drive = paths.iter().any(|path| path.parent().is_none());
         let from_sidebar = matches!(press.what, Pressed::Sidebar(_));
-        let allowed = Allowed {
+        let known = paths.iter().any(|path| is_known_folder(path));
+        let movable = !drive && !known && !press.policy.readonly;
+        let menu = Allowed {
             copy: !drive,
-            moves: !drive && !press.policy.readonly,
+            moves: movable && !(from_sidebar && press.policy.pins_locked),
             link: true,
+        };
+        let allowed = Allowed {
+            moves: movable && !from_sidebar,
+            ..menu
         };
         let leave_window = press.policy.external_out;
         let outgoing = Outgoing {
             from_sidebar,
             policy: press.policy,
+            menu,
         };
         // The release that ends a right-button drag opens no menu.
         if right {
@@ -929,6 +944,9 @@ impl Router {
             effect = DropEffect::Copy;
         }
         let shown = match effect {
+            // A plain left drag let go over the folder it came from: nothing (as Explorer). Ctrl
+            // still makes copies there.
+            DropEffect::Copy if here && !keys.right && !asked => Effect::None,
             DropEffect::Copy => Effect::Copy,
             // Moving items to where they already are does nothing.
             DropEffect::Move | DropEffect::ConfirmMove if !here => Effect::Move,
@@ -1051,6 +1069,8 @@ impl DropHandler for Router {
             (DropEffect::Ask, _) => (DropAction::Ask, DropReply::Later),
             _ => return DropReply::Refused,
         };
+        // Our own items may do more in our menu than OLE was told (see `Outgoing::menu`).
+        let allowed = self.0.outgoing.get().map_or(allowed, |own| own.menu);
         let sent = self.0.events.unbounded_send(DropEvent::Drop {
             paths,
             dest: spot.dest,
@@ -1083,6 +1103,18 @@ pub(crate) fn drop_ring(drop: Option<bool>, radius: Token, cx: &gpui_kit::App) -
                 Token::DropTargetBorder
             })),
     )
+}
+
+/// Whether `path` is one of the user's Windows known folders (Desktop, Documents, Downloads,
+/// Pictures, Music, Videos, the profile): moving one leaves Windows pointing at its old place.
+fn is_known_folder(path: &Path) -> bool {
+    use sx_win::known::{KnownFolder, known_folder};
+    let path = key(path);
+    KnownFolder::PINNED_DEFAULTS
+        .iter()
+        .chain(std::iter::once(&KnownFolder::Profile))
+        .filter_map(|folder| known_folder(*folder))
+        .any(|known| key(&known) == path)
 }
 
 /// Whether the path with key `dest` is the path with key `source` or inside it.

@@ -486,6 +486,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let done = &outcome.done;
+        self.follow_moved_pins(done, cx);
         match origin {
             Origin::User if self.features.ops_undo => self.ops.undo.record(done.clone()),
             Origin::User => {}

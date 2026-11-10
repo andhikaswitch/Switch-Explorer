@@ -9,8 +9,8 @@ pub enum HotSwitchAction {
     Group(&'static [&'static str]),
     /// Turn a preset on (remembering the previous values) or back off (restoring them).
     Preset(&'static str),
-    /// One value of an enum switch, shown as on/off: on sets it, off puts the switch back to
-    /// its default (e.g. "menu on drop" = `dnd.default_action` is `ask`).
+    /// One value of an enum switch, shown as on/off: on sets it, off puts back the value it had
+    /// (its default when that is unknown), e.g. "ask on drop" = `dnd.default_action` is `ask`.
     Choice(&'static str, &'static str),
     /// Open the Hot Switch panel.
     Panel,
@@ -46,9 +46,10 @@ pub const DEFAULT_BINDINGS: &[HotSwitchBinding] = &[
         "ctrl-k e",
         HotSwitchAction::Group(&["dnd.external_out", "dnd.external_in"]),
     ),
-    bind("ctrl-k g", HotSwitchAction::Preset("anti_drag")),
-    // No default keys: in the Hot Switch panel and the palette (DEVELOPER-MODE.md §6.2).
+    // No default keys: in the Hot Switch panel and the palette (DEVELOPER-MODE.md §6.2). Before
+    // the preset, which includes it.
     bind("", HotSwitchAction::Choice("dnd.default_action", "ask")),
+    bind("ctrl-k g", HotSwitchAction::Preset("anti_drag")),
     bind("ctrl-k l", HotSwitchAction::Toggle("sidebar.pins_locked")),
     bind("ctrl-k h", HotSwitchAction::Toggle("view.show_hidden")),
     bind("ctrl-k x", HotSwitchAction::Toggle("view.show_extensions")),

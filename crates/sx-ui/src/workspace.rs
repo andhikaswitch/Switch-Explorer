@@ -1100,6 +1100,44 @@ impl Workspace {
         }
         let mut paths: Vec<PathBuf> = self.pins.iter().map(|p| p.path.clone()).collect();
         change(&mut paths);
+        self.store_pins(paths, cx);
+    }
+
+    /// Pins whose folder was moved or renamed (also by an undo) follow it, locked or not: the
+    /// pin stays what the user pinned.
+    pub(crate) fn follow_moved_pins(&mut self, done: &sx_ops::Op, cx: &mut Context<Self>) {
+        let pairs: Vec<(&std::path::Path, &std::path::Path)> = match done {
+            sx_ops::Op::Move { pairs, .. } => pairs
+                .iter()
+                .map(|pair| (pair.from.as_path(), pair.to.as_path()))
+                .collect(),
+            sx_ops::Op::Rename { from, to } => vec![(from.as_path(), to.as_path())],
+            _ => return,
+        };
+        let mut changed = false;
+        let paths: Vec<PathBuf> = self
+            .pins
+            .iter()
+            .map(|pin| {
+                for (from, to) in &pairs {
+                    if same_path(&pin.path, from) {
+                        changed = true;
+                        return to.to_path_buf();
+                    }
+                    if let Ok(rest) = pin.path.strip_prefix(from) {
+                        changed = true;
+                        return to.join(rest);
+                    }
+                }
+                pin.path.clone()
+            })
+            .collect();
+        if changed {
+            self.store_pins(paths, cx);
+        }
+    }
+
+    fn store_pins(&mut self, mut paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let mut seen = HashSet::new();
         paths.retain(|p| seen.insert(p.to_string_lossy().to_lowercase()));
         self.pins = paths.iter().cloned().map(Pin::new).collect();

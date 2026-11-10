@@ -242,6 +242,10 @@ impl DragPolicy {
     }
 }
 
+/// Before `dnd.hold_delay_ms` has passed, a move this many thresholds long is a flick (a swipe),
+/// not the start of a drag.
+const FLICK_THRESHOLDS: f32 = 3.0;
+
 /// What a pointer event means for the press under way.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -360,11 +364,20 @@ impl DragGuard {
         if held {
             return Step::Wait;
         }
-        // Not yet: the button has not been held long enough. The press stays a press, so the
-        // first move after the delay starts the drag. (Cancelling it here made every quick
-        // drag fail and feel heavy; a flick that is released within the delay is still a
-        // click.)
+        // Not yet: the button has not been held long enough. A small early move waits, so the
+        // first move after the delay starts the drag; a flick (a long way before the delay
+        // ends, as a touchpad swipe with the button down) is never a drag.
         if now_ms.saturating_sub(at_ms) < policy.hold_delay_ms {
+            if (x - x0).hypot(y - y0) >= policy.threshold() * FLICK_THRESHOLDS {
+                self.state = State::Pressed {
+                    at_ms,
+                    x: x0,
+                    y: y0,
+                    allowed,
+                    held: true,
+                    hinted,
+                };
+            }
             return Step::Wait;
         }
         self.state = State::Dragging;
@@ -586,13 +599,18 @@ mod tests {
             hold_delay_ms: 150,
             ..DragPolicy::default()
         };
-        // Moving before the delay waits; the first move after it starts the drag.
+        // A small move before the delay waits; the first move after it starts the drag.
         let mut g = guard(&hold, None, NONE);
-        assert_eq!(g.moved(1_050, 40.0, 10.0), Step::Wait);
+        assert_eq!(g.moved(1_050, 18.0, 10.0), Step::Wait);
         assert_eq!(g.moved(1_160, 45.0, 10.0), Step::StartDrag);
         // A flick released within the delay stays a click.
         let mut g = guard(&hold, None, NONE);
         assert_eq!(g.moved(1_050, 40.0, 10.0), Step::Wait);
+        assert_eq!(g.release(), Step::Click);
+        // A flick (3 thresholds and more before the delay) never becomes a drag.
+        let mut g = guard(&hold, None, NONE);
+        assert_eq!(g.moved(1_050, 40.0, 10.0), Step::Wait);
+        assert_eq!(g.moved(1_400, 60.0, 10.0), Step::Wait);
         assert_eq!(g.release(), Step::Click);
         // Holding still first, then moving: a drag at once.
         let mut g = guard(&hold, None, NONE);

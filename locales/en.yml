@@ -197,7 +197,14 @@ preset:
 choice:
   dnd:
     default_action:
-      ask: Menu on drop (Copy here / Move here)
+      ask: Ask on drop
+choice_effect:
+  dnd:
+    default_action:
+      ask: Every drop asks first.
+      system: Drops work like File Explorer again.
+      copy: Drops copy again.
+      move: Drops move again.
 preset_title:
   anti_drag: Anti accidental drag preset
 hotswitch:
@@ -319,6 +326,7 @@ palette:
   switch_off: Switch, off
   place: Place
 dnd:
+  nothing_here: These items can't be copied or moved here.
   drag_failed: These items can't be dragged. A path may be too long (over 260 characters).
   no_drop_target: "Drops into this window don't work: Windows refused the drop target. Restart Switch Explorer to try again."
   confirm_move_one: "Move \"%{name}\" to \"%{dest}\"?"
