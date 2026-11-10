@@ -6174,6 +6174,7 @@ dependencies = [
  "image",
  "raw-window-handle",
  "rust-i18n",
+ "serde",
  "serde_json",
  "sx-core",
  "sx-fs",

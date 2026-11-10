@@ -67,6 +67,10 @@ pub struct WorkspaceOptions {
     pub journal_dir: Option<PathBuf>,
     /// `%APPDATA%\SwitchExplorer\pins.json`; `None` keeps pins for this session only.
     pub pins_file: Option<PathBuf>,
+    /// `%LOCALAPPDATA%\SwitchExplorer\session.json`; `None` writes no session (`--safe-mode`).
+    pub session_file: Option<PathBuf>,
+    /// The last session's tabs, opened when `locations` is empty (`tabs.restore_session`).
+    pub session: Option<crate::session::Session>,
 }
 
 /// A pinned sidebar item.
@@ -83,7 +87,7 @@ pub struct Pin {
 pub struct Workspace {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active: usize,
-    next_tab_id: u64,
+    pub(crate) next_tab_id: u64,
     pub(crate) list_focus: FocusHandle,
     pub(crate) address: gpui_kit::Entity<InputState>,
     pub(crate) editing_address: bool,
@@ -155,6 +159,14 @@ pub struct Workspace {
     changes: mpsc::UnboundedSender<u64>,
     pending_refresh: HashSet<u64>,
     _subscriptions: Vec<Subscription>,
+    /// Follows the window's place for the session.
+    pub(crate) window_watch: Option<Subscription>,
+    /// Where the session is written (F-WIN-05).
+    pub(crate) session_file: Option<PathBuf>,
+    /// The newest session write asked for; an older timer writes nothing.
+    pub(crate) session_ticket: u64,
+    /// The window's normal place, for the session.
+    pub(crate) window_place: Option<crate::session::SavedWindow>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -256,6 +268,10 @@ impl Workspace {
             changes,
             pending_refresh: HashSet::new(),
             _subscriptions: subscriptions,
+            session_file: options.session_file,
+            session_ticket: 0,
+            window_place: None,
+            window_watch: None,
         };
         if this.features.ops_taskbar_progress {
             this.ops.taskbar = this.hwnd.and_then(|hwnd| {
@@ -264,15 +280,8 @@ impl Workspace {
                     .ok()
             });
         }
-        let locations = if options.locations.is_empty() {
-            vec![Location::Home]
-        } else {
-            options.locations
-        };
-        for location in locations {
-            this.open_tab(location, cx);
-        }
-        this.active = 0;
+        this.open_start_tabs(options.locations, options.session, cx);
+        this.watch_window_place(window, cx);
         this.refresh_drives(cx);
         this.watch_appearance(window, cx);
         this.install_drop_target(window, cx);
@@ -423,6 +432,10 @@ impl Workspace {
         if ix < self.tabs.len() {
             self.active = ix;
             self.leave_address(window, cx);
+            if std::mem::take(&mut self.tabs[ix].unloaded) {
+                self.load(cx);
+            }
+            self.session_changed(cx);
             cx.notify();
         }
     }
@@ -432,6 +445,7 @@ impl Workspace {
             return;
         }
         if self.tabs.len() == 1 {
+            self.save_session_now();
             window.remove_window();
             return;
         }
@@ -440,6 +454,10 @@ impl Workspace {
         if self.active >= self.tabs.len() || self.active > ix {
             self.active = self.active.saturating_sub(1);
         }
+        if std::mem::take(&mut self.tabs[self.active].unloaded) {
+            self.load(cx);
+        }
+        self.session_changed(cx);
         cx.notify();
     }
 
@@ -471,6 +489,7 @@ impl Workspace {
     pub(crate) fn load(&mut self, cx: &mut Context<Self>) {
         let id = self.tab().id;
         self.load_tab(id, false, cx);
+        self.session_changed(cx);
     }
 
     /// Loads a tab's location. A `refresh` keeps the current listing on screen until the new

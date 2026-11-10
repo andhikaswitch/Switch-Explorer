@@ -55,6 +55,8 @@ pub struct SearchState {
 #[derive(Debug)]
 pub struct Tab {
     pub id: u64,
+    /// Restored from the last session and not shown yet: it is listed when first shown.
+    pub unloaded: bool,
     pub history: History,
     pub content: Content,
     pub selection: Selection,
@@ -99,6 +101,7 @@ impl Tab {
     pub fn new(id: u64, location: Location) -> Self {
         Self {
             id,
+            unloaded: false,
             history: History::new(location),
             content: Content::Page,
             selection: Selection::default(),

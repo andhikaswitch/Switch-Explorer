@@ -119,6 +119,11 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
     saat folder itu dipindah atau di-rename, juga lewat undo.
   - Pin terkunci: menu klik kanan pin menawarkan "Buka kunci folder pinned" (`Ctrl+K`, `L`).
 - Toast tanpa tombol ("Diurungkan.") hilang setelah 3 detik; toast dengan Urungkan tetap 8 detik.
+- Session restore (F-WIN-05, `tabs.restore_session`): tab yang terbuka, tab aktif, dan posisi/ukuran window
+  (termasuk maximized) dibuka lagi saat start tanpa argumen. Disimpan di
+  `%LOCALAPPDATA%\SwitchExplorer\session.json` (atomik, di luar UI thread, dan sekali lagi saat window
+  ditutup). Hanya tab aktif yang dienumerasi saat start; window yang monitornya sudah tidak ada dibuka di
+  tengah. `--safe-mode` tidak membaca atau menulis sesi.
 - "Buka di Terminal" dan "Buka di VS Code" (F-OPS-12) di menu folder, menu latar, dan palette. Switch baru
   `ops.terminal` (auto = Windows Terminal bila terpasang, kalau tidak PowerShell; atau PowerShell, cmd).
   Folder diberikan sebagai working directory, tidak pernah di dalam baris perintah.

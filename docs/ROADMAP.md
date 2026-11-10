@@ -112,6 +112,9 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
       - Hasil bisa dibuka, di-rename, dihapus, dan disalin.
       Belum: Everything.
 - [ ] Split view, session restore, mode tampilan per folder, checkbox seleksi, floating action bar.
+      Progres: session restore (`tabs.restore_session`): tab, tab aktif, posisi & ukuran window di
+      `session.json`; hanya tab aktif yang dienumerasi saat start. Belum: split & ukuran pane (menunggu split
+      view), dan sisanya.
 - [ ] Home dashboard (gauge, kategori pintar, pinned, terbaru, aktivitas); halaman Aktivitas; Recycle Bin view.
 - [ ] Properties (`Alt+Enter`), copy path, buka terminal/VS Code, mode baca-saja, elevasi via `IFileOperation`.
       Progres: Properties, copy path, mode baca-saja, "Buka di Terminal" (`ops.terminal`: Windows Terminal,

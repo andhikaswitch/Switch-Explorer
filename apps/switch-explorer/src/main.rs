@@ -145,6 +145,13 @@ fn open_main_window(
         Ok(controller) => controller.install(mode, solid, cx),
         Err(err) => tracing::error!(error = %err, "built-in theme failed to parse"),
     }
+    let session_file = (!args.safe_mode)
+        .then(|| data_dir("LOCALAPPDATA").map(|d| d.join("session.json")))
+        .flatten();
+    let session = session_file
+        .as_deref()
+        .filter(|_| settings.snapshot().tabs_restore_session)
+        .and_then(sx_ui::session::load);
     let options = WorkspaceOptions {
         locations: start_locations(args),
         settings,
@@ -159,12 +166,19 @@ fn open_main_window(
         journal_dir: (!args.safe_mode)
             .then(|| data_dir("LOCALAPPDATA").map(|d| d.join("journal")))
             .flatten(),
+        session_file: session_file.clone(),
+        session: session.clone(),
     };
+    // The last window's place, when it still shows on a display; centered otherwise.
+    let displays: Vec<_> = cx.displays().iter().map(|d| d.bounds()).collect();
+    let restored_bounds = session
+        .as_ref()
+        .and_then(|s| s.window)
+        .and_then(|w| w.bounds(&displays, WINDOW_MIN));
     let window_options = WindowOptions {
-        window_bounds: Some(WindowBounds::centered(
-            size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)),
-            cx,
-        )),
+        window_bounds: Some(restored_bounds.unwrap_or_else(|| {
+            WindowBounds::centered(size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx)
+        })),
         window_min_size: Some(size(px(WINDOW_MIN.0), px(WINDOW_MIN.1))),
         window_background: if solid {
             WindowBackgroundAppearance::Opaque
@@ -174,11 +188,15 @@ fn open_main_window(
         ..TitleBar::window_options()
     };
     let opened = gpui_kit::open_window(window_options, cx, |window, cx| {
-        window.on_window_should_close(cx, |_, cx| {
+        let workspace = cx.new(|cx| Workspace::new(options, window, cx));
+        let weak = workspace.downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            // A change from the last moment would otherwise not be written yet.
+            let _ = weak.update(cx, |workspace, _| workspace.save_session_now());
             cx.quit();
             true
         });
-        cx.new(|cx| Workspace::new(options, window, cx))
+        workspace
     });
     match opened {
         Ok(_) => tracing::info!(
@@ -211,7 +229,8 @@ fn start_locations(args: &Args) -> Vec<Location> {
     {
         out.push(Location::Path(parent));
     }
-    if args.home || out.is_empty() {
+    // Nothing asked for: the last session, or Home (the workspace decides).
+    if args.home {
         out.insert(0, Location::Home);
     }
     out

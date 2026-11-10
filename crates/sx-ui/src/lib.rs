@@ -24,6 +24,7 @@ mod pages;
 mod palette;
 mod pins;
 mod search;
+pub mod session;
 mod sidebar;
 mod slash;
 mod status;
