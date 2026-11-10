@@ -47,6 +47,10 @@ enum Run {
     Drop(Vec<PathBuf>, PathBuf, sx_ops::Mode),
     /// Closes the menu and does nothing else.
     Close,
+    /// A terminal in this folder (F-OPS-12).
+    Terminal(PathBuf),
+    /// This item or folder in VS Code.
+    Code(PathBuf),
     /// A Hot Switch binding, by index in `DEFAULT_BINDINGS` (as from the panel).
     Switch(usize),
     Submenu(Vec<Entry>),
@@ -427,6 +431,21 @@ impl Workspace {
             true,
             Box::new(actions::FileCopyPath),
         ));
+        // Elsewhere: a terminal in the folder, the item in VS Code (when installed).
+        if let Some(folder) = &single_folder {
+            entries.push(Entry::command(
+                "file.open_terminal",
+                true,
+                Run::Terminal(folder.clone()),
+            ));
+        }
+        if let ([only], Some(_)) = (paths.as_slice(), crate::launch::vscode()) {
+            entries.push(Entry::command(
+                "file.open_vscode",
+                true,
+                Run::Code(only.clone()),
+            ));
+        }
         if let Some(folder) = single_folder {
             let locked = self.features.sidebar_pins_locked;
             entries.push(if self.is_pinned(&folder) {
@@ -500,6 +519,14 @@ impl Workspace {
                     Run::Pin(dir.clone())
                 },
             ),
+            Entry::command("file.open_terminal", true, Run::Terminal(dir.clone())),
+        ]
+        .into_iter()
+        .chain(
+            crate::launch::vscode()
+                .map(|_| Entry::command("file.open_vscode", true, Run::Code(dir.clone()))),
+        )
+        .chain([
             Entry::separator(),
             Entry::command(
                 "file.properties",
@@ -511,7 +538,8 @@ impl Workspace {
                 true,
                 Run::Native(MenuTarget::Background(dir)),
             ),
-        ]
+        ])
+        .collect()
     }
 
     /// The menu of a sidebar item (F-CTX-04). Its entries have no shortcuts: those act on the
@@ -686,6 +714,8 @@ impl Workspace {
                 cx,
             ),
             Run::Switch(binding) => self.run_switch_binding(binding, cx),
+            Run::Terminal(dir) => self.open_terminal(dir, cx),
+            Run::Code(path) => self.open_in_code(path, cx),
             Run::Close | Run::Submenu(_) => {}
         }
         cx.notify();

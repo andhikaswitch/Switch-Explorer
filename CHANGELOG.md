@@ -119,6 +119,9 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
     saat folder itu dipindah atau di-rename, juga lewat undo.
   - Pin terkunci: menu klik kanan pin menawarkan "Buka kunci folder pinned" (`Ctrl+K`, `L`).
 - Toast tanpa tombol ("Diurungkan.") hilang setelah 3 detik; toast dengan Urungkan tetap 8 detik.
+- "Buka di Terminal" dan "Buka di VS Code" (F-OPS-12) di menu folder, menu latar, dan palette. Switch baru
+  `ops.terminal` (auto = Windows Terminal bila terpasang, kalau tidak PowerShell; atau PowerShell, cmd).
+  Folder diberikan sebagai working directory, tidak pernah di dalam baris perintah.
 
 ### Changed
 - OSD Hot Switch: catatan untuk sub-switch yang tertahan kini menyebut induknya (Tertahan karena "Semua

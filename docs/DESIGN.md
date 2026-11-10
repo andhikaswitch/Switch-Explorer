@@ -377,6 +377,8 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 - Baris yang disorot atau ditekan memakai `hover.bg` / `pressed.bg`. Baris pilihan keyboard juga diberi cincin
   fokus. Baris yang tidak bisa dijalankan memakai `fg.disabled`. Centang menandai pilihan aktif
   (misalnya urutan di "Urutkan menurut ▸").
+- Menu item folder dan menu latar juga berisi "Buka di Terminal" dan "Buka di VS Code" (yang terakhir hanya
+  bila VS Code terpasang), sesudah Salin path / Pin.
 - Pengecualian, menu drop (Salin di sini / Pindahkan ke sini / Batal): "Pindahkan" yang tidak mungkin
   (sumber hanya mengizinkan salin, atau item sudah di folder itu) tidak ditampilkan; "Salin" selalu di baris
   pertama (nonaktif bila tidak mungkin) agar "Pindahkan" tidak pernah berada di bawah pointer tempat "Salin"

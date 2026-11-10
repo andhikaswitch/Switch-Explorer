@@ -190,6 +190,8 @@ flag:
     show_hidden: Hidden items
     show_extensions: File name extensions
     thumbnails: Thumbnails
+  ops:
+    terminal: Terminal for Open in Terminal
   safety:
     readonly_mode: Read-only mode
 preset:
@@ -278,6 +280,8 @@ command:
     filter: Filter this folder
     find: Search this folder and subfolders
   file:
+    open_terminal: Open in Terminal
+    open_vscode: Open in VS Code
     open: Open
     open_new_tab: Open in new tab
     properties: Properties
@@ -333,3 +337,7 @@ dnd:
   confirm_move_one: "Move \"%{name}\" to \"%{dest}\"?"
   confirm_move_many: "Move %{count} items to \"%{dest}\"?"
   move: Move
+launch:
+  terminal_failed: "The terminal didn't start. Pick another one with the ops.terminal switch, or check that it is installed."
+  code_missing: VS Code isn't installed for this user or for everyone.
+  code_failed: VS Code didn't start. Try again, or open it from the Start menu.

@@ -1385,6 +1385,16 @@ impl Workspace {
         .on_action(cx.listener(|this, _: &actions::FileCut, _, cx| this.copy_selection(true, cx)))
         .on_action(cx.listener(|this, _: &actions::FilePaste, _, cx| this.paste(cx)))
         .on_action(cx.listener(|this, _: &actions::FileCopyPath, _, cx| this.copy_paths(cx)))
+        .on_action(cx.listener(|this, _: &actions::OpenTerminal, _, cx| {
+            if let Some(dir) = this.terminal_target() {
+                this.open_terminal(dir, cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &actions::OpenInCode, _, cx| {
+            if let Some(path) = this.code_target() {
+                this.open_in_code(path, cx);
+            }
+        }))
         .on_action(cx.listener(|this, _: &actions::EditUndo, _, cx| this.undo(cx)))
         .on_action(cx.listener(|this, _: &actions::EditRedo, _, cx| this.redo(cx)))
         .on_action(cx.listener(|this, _: &actions::SidebarPin, _, cx| this.toggle_pin(cx)))

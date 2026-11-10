@@ -143,6 +143,9 @@ pub const BUILTIN: &[CommandSpec] = &[
     cmd("file.open_new_tab", List, &["ctrl-enter"], true, true),
     cmd("file.rename", List, &["f2"], true, true),
     cmd("file.properties", Workspace, &["alt-enter"], true, true),
+    // No default shortcut, like Explorer's "Open in Terminal" (F-OPS-12).
+    cmd("file.open_terminal", Workspace, &[], true, true),
+    cmd("file.open_vscode", Workspace, &[], true, true),
     cmd("file.new_folder", Workspace, &["ctrl-shift-n"], true, true),
     cmd("file.delete", List, &["delete", "ctrl-d"], true, true),
     cmd(
@@ -209,7 +212,7 @@ mod tests {
     #[test]
     fn builtin_ids_are_unique_and_dotted() {
         // Commands Explorer has no shortcut for either; reached from the UI and the palette.
-        const UNBOUND: &[&str] = &["sidebar.pin"];
+        const UNBOUND: &[&str] = &["sidebar.pin", "file.open_terminal", "file.open_vscode"];
         let registry = CommandRegistry::builtin().expect("built-in commands are unique");
         assert_eq!(registry.len(), BUILTIN.len());
         for spec in registry.iter() {

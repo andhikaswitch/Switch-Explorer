@@ -398,8 +398,9 @@ impl Workspace {
             "nav.up" => tab.location().parent().is_some(),
             "tab.next" | "tab.previous" => self.tabs.len() > 1,
             "search.filter" | "search.find" | "file.new_folder" | "sidebar.pin"
-            | "file.open_new_tab" | "file.properties" => folder,
+            | "file.open_new_tab" | "file.properties" | "file.open_terminal" => folder,
             "file.paste" => folder && sx_shell::clipboard::has_files(),
+            "file.open_vscode" => folder && crate::launch::vscode().is_some(),
             "file.rename"
             | "file.delete"
             | "file.delete_permanent"

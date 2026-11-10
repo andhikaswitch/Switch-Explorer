@@ -190,6 +190,8 @@ flag:
     show_hidden: Item tersembunyi
     show_extensions: Ekstensi nama file
     thumbnails: Thumbnail
+  ops:
+    terminal: Terminal untuk Buka terminal di sini
   safety:
     readonly_mode: Mode baca-saja
 preset:
@@ -278,6 +280,8 @@ command:
     filter: Filter folder ini
     find: Cari di folder ini dan subfoldernya
   file:
+    open_terminal: Buka di Terminal
+    open_vscode: Buka di VS Code
     open: Buka
     open_new_tab: Buka di tab baru
     properties: Properti
@@ -333,3 +337,7 @@ dnd:
   confirm_move_one: "Pindahkan \"%{name}\" ke \"%{dest}\"?"
   confirm_move_many: "Pindahkan %{count} item ke \"%{dest}\"?"
   move: Pindahkan
+launch:
+  terminal_failed: Terminal tidak mau jalan. Pilih terminal lain lewat switch ops.terminal, atau pastikan terminal itu terpasang.
+  code_missing: VS Code tidak terpasang untuk user ini maupun untuk semua user.
+  code_failed: VS Code tidak mau jalan. Coba lagi, atau buka dari menu Start.

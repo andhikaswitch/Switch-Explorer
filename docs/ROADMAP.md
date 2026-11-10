@@ -114,6 +114,9 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
 - [ ] Split view, session restore, mode tampilan per folder, checkbox seleksi, floating action bar.
 - [ ] Home dashboard (gauge, kategori pintar, pinned, terbaru, aktivitas); halaman Aktivitas; Recycle Bin view.
 - [ ] Properties (`Alt+Enter`), copy path, buka terminal/VS Code, mode baca-saja, elevasi via `IFileOperation`.
+      Progres: Properties, copy path, mode baca-saja, "Buka di Terminal" (`ops.terminal`: Windows Terminal,
+      PowerShell, cmd) dan "Buka di VS Code" (bila terpasang) di menu item folder, menu latar, dan palette.
+      Belum: elevasi via `IFileOperation`.
 - [ ] Semua shortcut di FEATURES.md bekerja.
 
 ## Fase 3 — Personalisasi & Developer Mode
