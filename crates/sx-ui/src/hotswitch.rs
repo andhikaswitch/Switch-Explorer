@@ -299,7 +299,7 @@ fn describe(
                 _ => None,
             };
             // Without keys it is switched from the panel or the palette, where the user already
-            // is: line 2 says only what drops do now (it must fit, DESIGN.md §9.1).
+            // is: line 2 says only what the switch does now (it must fit, DESIGN.md §9.1).
             (title.into_owned(), detail(&[effect, again]), on)
         }
         HotSwitchAction::Panel => (String::new(), String::new(), true),

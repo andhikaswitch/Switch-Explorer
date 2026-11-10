@@ -212,9 +212,9 @@ preset:
 choice:
   ops:
     terminal:
-      windows_terminal: Open in Terminal uses Windows Terminal
-      powershell: Open in Terminal uses PowerShell
-      cmd: Open in Terminal uses Command Prompt
+      windows_terminal: Windows Terminal for Open in Terminal
+      powershell: PowerShell for Open in Terminal
+      cmd: Command Prompt for Open in Terminal
   dnd:
     default_action:
       ask: Ask on drop
@@ -222,9 +222,9 @@ choice_effect:
   ops:
     terminal:
       auto: Open in Terminal picks Windows Terminal, or PowerShell.
-      windows_terminal: Open in Terminal uses Windows Terminal.
-      powershell: Open in Terminal uses PowerShell.
-      cmd: Open in Terminal uses Command Prompt.
+      windows_terminal: Windows Terminal for Open in Terminal
+      powershell: PowerShell for Open in Terminal
+      cmd: Command Prompt for Open in Terminal
   dnd:
     default_action:
       ask: Every drop asks first.
@@ -247,6 +247,7 @@ hotswitch:
   panel_blocked: On hold
   section_drag: Drag and drop
   section_view: View and safety
+  section_apps: Apps
   state_on: "On"
   state_off: "Off"
   impact:
@@ -355,7 +356,7 @@ palette:
   switch_off: Switch, off
   place: Place
 dnd:
-  nothing_here: "These items can't be copied or moved here: a drive or a Windows folder can only be linked."
+  nothing_here: "A whole drive can't be copied or moved. Drop it on the desktop or in File Explorer to make a shortcut."
   drag_failed: These items can't be dragged. A path may be too long (over 260 characters).
   no_drop_target: "Drops into this window don't work: Windows refused the drop target. Restart Switch Explorer to try again."
   confirm_move_one: "Move \"%{name}\" to \"%{dest}\"?"

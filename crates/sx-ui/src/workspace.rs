@@ -858,11 +858,7 @@ impl Workspace {
             return;
         }
         let focus = self.tab().selection.focus().map(|f| f as isize);
-        let target = match focus {
-            Some(f) => (f + delta).clamp(0, len as isize - 1),
-            None if delta < 0 => len as isize - 1,
-            None => 0,
-        } as usize;
+        let target = step_from(focus, delta, len);
         if focus_only {
             let tab = self.tab_mut();
             tab.selection.move_focus(target as u32);
@@ -1441,5 +1437,30 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.on_list_key_down(event, window, cx);
+    }
+}
+
+/// The row a key moves to, `delta` rows from `from` (clamped to the list). Without a row yet,
+/// it counts from just outside the list: Up/Home/PageUp from below the end, so Home lands on
+/// the first row; Down/End/PageDown from above the start.
+pub(crate) fn step_from(from: Option<isize>, delta: isize, len: usize) -> usize {
+    let last = len.saturating_sub(1) as isize;
+    let base = from.unwrap_or(if delta < 0 { last + 1 } else { -1 });
+    base.saturating_add(delta).clamp(0, last) as usize
+}
+
+#[cfg(test)]
+mod step_tests {
+    use super::step_from;
+
+    #[test]
+    fn keys_without_a_row_start_at_the_right_end() {
+        assert_eq!(step_from(None, isize::MIN / 2, 5), 0, "Home");
+        assert_eq!(step_from(None, isize::MAX / 2, 5), 4, "End");
+        assert_eq!(step_from(None, -1, 5), 4, "Up");
+        assert_eq!(step_from(None, 1, 5), 0, "Down");
+        assert_eq!(step_from(None, -10, 5), 0, "PageUp");
+        assert_eq!(step_from(Some(2), 1, 5), 3);
+        assert_eq!(step_from(Some(4), 10, 5), 4);
     }
 }

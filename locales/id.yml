@@ -198,7 +198,7 @@ flag:
       folders: Drop ke folder
       sidebar: Drop ke sidebar
   sidebar:
-    pins_locked: Kunci folder pinned
+    pins_locked: Kunci folder yang disematkan
   view:
     show_hidden: Item tersembunyi
     show_extensions: Ekstensi nama file
@@ -212,9 +212,9 @@ preset:
 choice:
   ops:
     terminal:
-      windows_terminal: Buka di Terminal memakai Windows Terminal
-      powershell: Buka di Terminal memakai PowerShell
-      cmd: Buka di Terminal memakai Command Prompt
+      windows_terminal: Windows Terminal untuk Buka di Terminal
+      powershell: PowerShell untuk Buka di Terminal
+      cmd: Command Prompt untuk Buka di Terminal
   dnd:
     default_action:
       ask: Tanya saat drop
@@ -222,9 +222,9 @@ choice_effect:
   ops:
     terminal:
       auto: Buka di Terminal memilih Windows Terminal, atau PowerShell.
-      windows_terminal: Buka di Terminal memakai Windows Terminal.
-      powershell: Buka di Terminal memakai PowerShell.
-      cmd: Buka di Terminal memakai Command Prompt.
+      windows_terminal: Windows Terminal untuk Buka di Terminal
+      powershell: PowerShell untuk Buka di Terminal
+      cmd: Command Prompt untuk Buka di Terminal
   dnd:
     default_action:
       ask: Setiap drop bertanya dulu.
@@ -247,6 +247,7 @@ hotswitch:
   panel_blocked: Tertahan
   section_drag: Drag & drop
   section_view: Tampilan & keselamatan
+  section_apps: Aplikasi
   state_on: Aktif
   state_off: Nonaktif
   impact:
@@ -261,8 +262,8 @@ hotswitch:
     extensions_off: Nama file tanpa ekstensi.
     readonly_on: File tidak bisa diubah di sini.
     readonly_off: File bisa diubah lagi.
-    pins_locked_on: Folder pinned tidak bisa diubah.
-    pins_locked_off: Folder pinned bisa diubah lagi.
+    pins_locked_on: Folder yang disematkan tidak bisa diubah.
+    pins_locked_off: Folder yang disematkan bisa diubah lagi.
     external_off: Drag di dalam Switch Explorer tetap bisa.
   restored: Nilai sebelumnya dikembalikan.
   "on": "%{name} diaktifkan"
@@ -355,7 +356,7 @@ palette:
   switch_off: Switch, nonaktif
   place: Tempat
 dnd:
-  nothing_here: "Item ini tidak bisa disalin atau dipindah ke sini: drive atau folder Windows hanya bisa dibuatkan shortcut."
+  nothing_here: "Satu drive utuh tidak bisa disalin atau dipindah. Lepaskan di desktop atau di File Explorer untuk membuat shortcut."
   drag_failed: Item ini tidak bisa di-drag. Mungkin path-nya terlalu panjang (lebih dari 260 karakter).
   no_drop_target: "Drop ke window ini tidak berfungsi: Windows menolak drop target. Jalankan ulang Switch Explorer untuk mencoba lagi."
   confirm_move_one: "Pindahkan \"%{name}\" ke \"%{dest}\"?"

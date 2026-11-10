@@ -364,8 +364,13 @@ impl Workspace {
             HotSwitchAction::Preset(_) => true,
             HotSwitchAction::Panel => false,
         };
+        let is_app = |action: &HotSwitchAction| {
+            matches!(action, HotSwitchAction::Toggle(id) | HotSwitchAction::Choice(id, _)
+                if id.starts_with("ops."))
+        };
         let mut drag = vec![header(t!("hotswitch.section_drag").into())];
         let mut other = vec![header(t!("hotswitch.section_view").into())];
+        let mut apps = vec![header(t!("hotswitch.section_apps").into())];
         for (binding, spec) in DEFAULT_BINDINGS.iter().enumerate() {
             let Some(name) = Self::binding_name(binding) else {
                 continue;
@@ -379,11 +384,16 @@ impl Workspace {
             };
             if is_drag(&spec.action) {
                 drag.push(item);
+            } else if is_app(&spec.action) {
+                apps.push(item);
             } else {
                 other.push(item);
             }
         }
         drag.extend(other);
+        if apps.len() > 1 {
+            drag.extend(apps);
+        }
         drag
     }
 

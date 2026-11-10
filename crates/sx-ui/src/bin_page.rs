@@ -97,6 +97,8 @@ pub(crate) struct BinView {
     anchor: Option<usize>,
     /// The row the keyboard is on.
     cursor: Option<usize>,
+    /// Rows the list shows at once (PageUp/PageDown), as last drawn.
+    page_rows: std::cell::Cell<usize>,
     loading: bool,
     /// Something changed while a listing ran: list again when it ends.
     dirty: bool,
@@ -139,9 +141,8 @@ impl Workspace {
                     .iter()
                     .map(|item| item.slot.clone())
                     .collect();
-                let cursor = this
-                    .bin
-                    .cursor
+                let old_cursor = this.bin.cursor;
+                let cursor = old_cursor
                     .and_then(|ix| this.bin.items.get(ix))
                     .map(|item| item.slot.clone());
                 match listed {
@@ -168,9 +169,13 @@ impl Workspace {
                     .filter(|(_, item)| chosen.contains(&item.slot))
                     .map(|(ix, _)| ix)
                     .collect();
-                this.bin.anchor = None;
+                // The keyboard's row stays with its item; when that item left (restored), the
+                // row at its place takes over. Shift extends from there.
+                let len = this.bin.items.len();
                 this.bin.cursor = cursor
-                    .and_then(|slot| this.bin.items.iter().position(|item| item.slot == slot));
+                    .and_then(|slot| this.bin.items.iter().position(|item| item.slot == slot))
+                    .or_else(|| old_cursor.filter(|_| len > 0).map(|ix| ix.min(len - 1)));
+                this.bin.anchor = this.bin.cursor;
                 if std::mem::take(&mut this.bin.dirty) {
                     this.refresh_bin(cx);
                 }
@@ -212,11 +217,7 @@ impl Workspace {
         if len == 0 {
             return;
         }
-        let ix = match self.bin.cursor {
-            Some(at) => at.saturating_add_signed(delta).min(len - 1),
-            None if delta < 0 => len - 1,
-            None => 0,
-        };
+        let ix = crate::workspace::step_from(self.bin.cursor.map(|c| c as isize), delta, len);
         if focus_only {
             self.bin.cursor = Some(ix);
         } else {
@@ -229,7 +230,6 @@ impl Workspace {
 
     /// The bin list's keys (it shares the content area's focus and the list's bindings).
     pub(crate) fn bin_actions(&self, el: Stateful<Div>, cx: &Context<Self>) -> Stateful<Div> {
-        const PAGE: isize = 10;
         let step = |delta: isize, extend: bool, focus_only: bool| {
             move |this: &mut Self, cx: &mut Context<Self>| {
                 this.bin_move(delta, extend, focus_only, cx);
@@ -245,8 +245,9 @@ impl Workspace {
         let el = key!(el, actions::SelectNext, step(1, false, false));
         let el = key!(el, actions::SelectFirst, step(isize::MIN / 2, false, false));
         let el = key!(el, actions::SelectLast, step(isize::MAX / 2, false, false));
-        let el = key!(el, actions::SelectPageUp, step(-PAGE, false, false));
-        let el = key!(el, actions::SelectPageDown, step(PAGE, false, false));
+        let page = self.bin.page_rows.get().max(1) as isize;
+        let el = key!(el, actions::SelectPageUp, step(-page, false, false));
+        let el = key!(el, actions::SelectPageDown, step(page, false, false));
         let el = key!(el, actions::ExtendPrevious, step(-1, true, false));
         let el = key!(el, actions::ExtendNext, step(1, true, false));
         let el = key!(el, actions::ExtendFirst, step(isize::MIN / 2, true, false));
@@ -339,7 +340,7 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn render_recycle_bin(&self, focused: bool, cx: &Context<Self>) -> AnyElement {
+    fn bin_toolbar(&self, cx: &Context<Self>) -> gpui_kit::Div {
         let t = cx.tokens();
         let bin = &self.bin;
         let any = !bin.selected.is_empty();
@@ -348,7 +349,7 @@ impl Workspace {
         } else {
             crate::format::item_count(bin.items.len())
         };
-        let toolbar = div()
+        div()
             .flex()
             .flex_wrap()
             .items_center()
@@ -357,6 +358,7 @@ impl Workspace {
                 "bin-restore",
                 t!("recycle_bin.restore").into(),
                 any,
+                t!("recycle_bin.unavailable").into(),
                 cx,
                 |this, cx| {
                     this.bin_restore(cx);
@@ -366,6 +368,7 @@ impl Workspace {
                 "bin-delete",
                 t!("recycle_bin.delete").into(),
                 any,
+                t!("recycle_bin.unavailable").into(),
                 cx,
                 |this, cx| {
                     this.bin_delete(cx);
@@ -375,6 +378,7 @@ impl Workspace {
                 "bin-empty",
                 t!("recycle_bin.empty").into(),
                 !bin.items.is_empty(),
+                t!("recycle_bin.is_empty").into(),
                 cx,
                 Self::bin_empty,
             ))
@@ -401,7 +405,13 @@ impl Workspace {
                     cx,
                     |this, cx| this.open_shell_folder("shell:RecycleBinFolder", cx),
                 ))
-            });
+            })
+    }
+
+    pub(crate) fn render_recycle_bin(&self, focused: bool, cx: &Context<Self>) -> AnyElement {
+        let t = cx.tokens();
+        let bin = &self.bin;
+        let toolbar = self.bin_toolbar(cx);
         let body = if bin.listed == Listed::NotYet {
             self.bin_message(t!("details.loading").into(), cx)
         } else if bin.listed == Listed::Failed {
@@ -456,6 +466,7 @@ impl Workspace {
         id: &'static str,
         label: SharedString,
         enabled: bool,
+        why_not: SharedString,
         cx: &Context<Self>,
         on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> AnyElement {
@@ -471,10 +482,8 @@ impl Workspace {
             .id(id)
             .role(gpui_kit::Role::Button)
             .aria_label(label.clone())
-            // Screen readers hear that a dimmed button does nothing now.
-            .when(!enabled, |el| {
-                el.aria_description(SharedString::from(t!("recycle_bin.unavailable")))
-            })
+            // Screen readers hear why a dimmed button does nothing now.
+            .when(!enabled, |el| el.aria_description(why_not))
             .when(enabled, |el| {
                 el.tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
                     .hover(move |s| s.bg(hover).text_color(hover_fg).border_color(clear))
@@ -536,6 +545,7 @@ impl Workspace {
                     "bin-rows",
                     self.bin.items.len(),
                     cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                        this.bin.page_rows.set(range.len());
                         range
                             .map(|ix| this.bin_row(ix, focused, size_width, cx))
                             .collect::<Vec<_>>()
