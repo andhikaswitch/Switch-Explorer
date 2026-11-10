@@ -82,7 +82,7 @@ Setiap fitur punya ID `F-AREA-nn`, prioritas (P0/P1/P2), dan fase (F0–F8). Fla
 | ID | Fitur | P | Fase |
 |---|---|---|---|
 | F-CTX-01 | Menu bertema: Buka, Buka di tab baru, Buka dengan ▸, Potong, Salin, Tempel, Ganti nama, Hapus, Salin path, Upload ke Drive ▸ (tujuan favorit + Pilih…), Pindahkan ke Drive…, Kompres, Pin ke sidebar, Properties, **Tampilkan opsi lain** | P0 | F2 |
-| F-CTX-02 | "Tampilkan opsi lain" / `Shift+F10` / `Shift`+klik kanan = menu native (`IContextMenu`), termasuk entri pihak ketiga (7-Zip, VS Code) | P0 | F2 |
+| F-CTX-02 | "Tampilkan opsi lain" / `Shift+F10` / `Shift`+klik kanan = menu native (`IContextMenu`), termasuk entri pihak ketiga (7-Zip, VS Code). Rename, Hapus, dan Tempel dari menu itu dijalankan Switch Explorer sendiri (journal, undo) pada item tempat menu dibuka. Klik kanan biasa dan tombol Menu membuka menu bertema (DESIGN §8.10). Tanpa seleksi, menu yang muncul adalah menu latar folder (Baru ▸, Properties). | P0 | F2 |
 | F-CTX-03 | Menu area kosong: Tampilan ▸, Urutkan ▸, Baru ▸, Tempel, Buka terminal di sini, Properties | P0 | F2 |
 | F-CTX-04 | Menu item sidebar: Buka, Buka di tab baru, Unpin, Naik/Turun, Properties | P0 | F2 |
 | F-CTX-05 | Setiap item menu adalah command dari `CommandRegistry` (label & shortcut sama dengan palette) | P0 | F2 |
@@ -97,7 +97,7 @@ Setiap fitur punya ID `F-AREA-nn`, prioritas (P0/P1/P2), dan fase (F0–F8). Fla
 | F-DND-04 | Efek: `Ctrl` = salin, `Shift` = pindah, `Alt` = shortcut; tanpa modifier → `dnd.default_action` (system: pindah di volume sama, salin beda volume; atau copy/move/ask) | P0 | F2 |
 | F-DND-05 | Drag tombol kanan selalu menampilkan menu saat drop (paritas Explorer) | P0 | F2 |
 | F-DND-06 | **Drag Guard**: switch per sumber/target, cooldown setelah scroll, ambang jarak, tahan-dulu, modifier wajib, konfirmasi pindah folder (DEVELOPER-MODE.md §5) | P0 | F2 |
-| F-DND-07 | Hint saat drag diblokir switch + tombol Aktifkan (`dnd.blocked_hint`, DESIGN.md §9.3) | P0 | F2 |
+| F-DND-07 | Hint saat drag diblokir switch; klik membuka panel Hot Switch untuk menyalakannya (`dnd.blocked_hint`, DESIGN.md §9.3) | P0 | F2 |
 | F-DND-08 | Spring-loaded folder: hover saat drag membuka folder (`dnd.spring_open`, `dnd.spring_delay_ms`) | P1 | F2 |
 | F-DND-09 | Toast "Urungkan" 10 detik setelah drop (`dnd.undo_toast`) | P0 | F2 |
 
@@ -122,8 +122,53 @@ Setiap fitur punya ID `F-AREA-nn`, prioritas (P0/P1/P2), dan fase (F0–F8). Fla
 | F-SRCH-01 | Filter instan di folder aktif (`Ctrl+F` atau mengetik di kotak cari), highlight kecocokan, ≤ 16 ms per ketikan untuk 10k item | P0 | F2 |
 | F-SRCH-02 | Pencarian rekursif (Enter di kotak cari, `Ctrl+E`, `F3`): hasil streaming + kolom Path; operator `ext:pdf`, `size:>10mb`, `modified:7d`, `kind:folder`, wildcard `*`/`?`; dibatalkan saat query berubah | P1 | F2 |
 | F-SRCH-03 | Integrasi Everything (`search.everything`): bila Everything berjalan, pakai IPC-nya untuk hasil instan seluruh disk | P1 | F2 |
-| F-SRCH-04 | Fuzzy (palette & quick open) via nucleo (`search.fuzzy`) | P1 | F2 |
+| F-SRCH-04 | Fuzzy (palette & quick open) dengan matcher sendiri (ADR-023, `search.fuzzy`) | P1 | F2 |
 | F-SRCH-05 | Cari isi file teks/kode (`search.content`, beta) | P2 | F7 |
+
+Kotak cari (F-SRCH-01) ada di ujung kanan command bar untuk folder ("Cari di Received"), tidak untuk
+Home, This PC, dan Recycle Bin.
+
+- Mengetik memfilter folder aktif per ketikan: substring nama, tanpa membedakan huruf besar/kecil. Bagian nama
+  yang cocok ditulis tebal dengan `match.fg`.
+- Seleksi dan fokus tetap pada item yang masih tampil. Status bar menulis "3 dari 6 item".
+- Bila tidak ada yang cocok, daftar diganti pesan beserta tombol "Kosongkan pencarian". Tombol × di kotak
+  (24 px, tooltip menyebut `Esc`) melakukan hal yang sama.
+- `Esc` mengosongkan filter dan kembali ke daftar. `↓` atau `Enter` pindah ke daftar dan memilih baris
+  pertama bila belum ada yang dipilih.
+- Filter milik tab: pindah tab menampilkan filter tab itu, dan pindah folder (termasuk back/forward)
+  mengosongkannya. Refresh dan watcher mempertahankannya.
+- Folder baru (`Ctrl+Shift+N`) mengosongkan filter dulu, supaya folder itu terlihat untuk di-rename.
+- Yang diketik selama folder masih dimuat tetap berlaku begitu daftarnya datang.
+- `Enter` di kotak cari menjalankan pencarian rekursif (F-SRCH-02) di folder ini dan semua subfoldernya.
+  `Ctrl+E` / `F3` memfokuskan kotak dalam mode rekursif, dan placeholder-nya menjadi "Cari di X dan
+  subfoldernya". Dengan `search.recursive_default`, mode rekursif berlaku sejak awal.
+- Hasil pencarian mengalir per folder saat penelusuran berjalan:
+  - Hasil menggantikan daftar, dengan kolom Folder: path dari folder asal, diawali nama folder itu
+    ("Received\docs"). Tooltip-nya berisi path lengkap.
+  - Kata pertama query ditebalkan di nama.
+  - Status bar menulis "Mencari… 12 hasil", lalu "12 hasil", ditambah jumlah folder yang tidak bisa dibaca.
+  - Saat selesai, hasil diurutkan sesuai sort tab. Klik header selama pencarian berjalan hanya mencatat
+    urutan, yang diterapkan saat pencarian selesai.
+- Selama hasil tampil, mengetik menghentikan pencarian yang berjalan saat itu juga. Pencarian baru mulai
+  setelah jeda ketik 300 ms, juga di tab yang sudah tidak aktif.
+- Mengosongkan kotak dengan mengetik mengembalikan daftar folder, tapi mode rekursif tetap aktif. Hanya
+  `Esc`, tombol ×, dan pindah folder yang mengakhiri mode itu.
+- Batas 100.000 hasil. Bila tercapai, status bar menyarankan mempersempit query.
+- Nilai operator yang salah (`size:banyak`) memunculkan pesan yang menyebut nilainya dan contoh yang benar,
+  dan pencarian tidak dijalankan.
+- Hasil bisa dibuka, dipilih, di-rename, dihapus, dan disalin seperti item biasa. Membuka folder dari hasil
+  berarti pindah ke folder itu, dan pencarian berakhir. Back (`Alt+←`) selagi hasil tampil kembali ke daftar
+  folder.
+- Operasi yang mengubah sesuatu menjalankan ulang pencarian di tab asal operasinya. `F5` dan switch `view.*`
+  juga menjalankannya ulang.
+  - Hasil lama tetap tampil sampai hasil baru lengkap, lalu ditukar sekaligus dengan seleksi dipertahankan
+    per path.
+  - Pesan error operasi tidak hilang.
+- Watcher tidak mengganti hasil yang tampil: daftar folder dimuat ulang begitu pencarian berakhir.
+- Hidden dan system mengikuti aturan daftar folder (`view.show_hidden`, `view.show_system`).
+- `Esc`, tombol ×, atau mengosongkan kotak mengakhiri pencarian, dan daftar folder kembali tanpa filter.
+- Di window lebih sempit dari 720 px kotak cari menjadi ikon. Ikon itu atau `Ctrl+F` membukanya, dan kotak
+  terlipat lagi saat fokus keluar dalam keadaan kosong.
 
 ## F-PREV — Preview
 
@@ -183,7 +228,7 @@ Setiap fitur punya ID `F-AREA-nn`, prioritas (P0/P1/P2), dan fase (F0–F8). Fla
 
 | ID | Fitur | P | Fase |
 |---|---|---|---|
-| F-CMD-01 | Command palette (`Ctrl+Shift+P`, `F1`): semua command, switch, dan navigasi; fuzzy; menampilkan shortcut | P1 | F2 |
+| F-CMD-01 | Command palette (`Ctrl+Shift+P`, `F1`): semua command, switch, dan navigasi; fuzzy; menampilkan shortcut (DESIGN §8.9). Isinya command yang sudah diimplementasi, switch Hot Switch dengan statusnya (dijalankan lewat Hot Switch, jadi OSD tetap muncul), serta Home, This PC, drive, folder pinned, dan Recycle Bin. Tempat juga bisa dicari lewat path-nya. | P1 | F2 |
 | F-SET-01 | Settings: Umum, Tampilan, Keyboard, Drag & drop, File & operasi, Integrasi (onboarding + status + perbaiki), Akun, Tools, Performa, Developer (saat dev mode), Tentang | P0 | F1–F3 |
 | F-NOTIF-01 | Toast in-app (kanan bawah, maks 3, hilang 4 s kecuali error), OSD Hot Switch (tengah bawah), panel Transfer, notifikasi Windows opsional saat operasi panjang selesai di background | P0 | F1–F2 |
 | F-I18N-01 | Bahasa mengikuti bahasa tampilan Windows (id → Indonesia, lainnya → Inggris), bisa diganti; format tanggal/angka mengikuti locale Windows | P0 | F1 |

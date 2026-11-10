@@ -6,6 +6,14 @@ use std::rc::Rc;
 
 use gpui_kit::{Action, App, KeyBinding, KeyBindingContextPredicate, actions};
 use sx_core::{CommandContext, CommandRegistry};
+use sx_settings::{DEFAULT_BINDINGS, HotSwitchAction};
+
+/// Runs a Hot Switch binding: its index in `sx_settings::DEFAULT_BINDINGS`.
+#[derive(Clone, Debug, PartialEq, Action)]
+#[action(namespace = sx, no_json)]
+pub struct HotSwitch {
+    pub binding: usize,
+}
 
 actions!(
     sx,
@@ -15,6 +23,14 @@ actions!(
         NavUp,
         NavRefresh,
         FocusAddress,
+        SearchFilter,
+        SearchFind,
+        CommandPalette,
+        QuickOpen,
+        NativeMenu,
+        ContextMenuKey,
+        FileProperties,
+        HotSwitchPanel,
         TabNew,
         TabClose,
         TabNext,
@@ -44,6 +60,8 @@ actions!(
         FileCut,
         FilePaste,
         FileCopyPath,
+        OpenTerminal,
+        OpenInCode,
         EditUndo,
         EditRedo,
         TransferPanel,
@@ -67,6 +85,15 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "nav.up" => Box::new(NavUp),
         "nav.refresh" => Box::new(NavRefresh),
         "nav.focus_address" => Box::new(FocusAddress),
+        "search.filter" => Box::new(SearchFilter),
+        "search.find" => Box::new(SearchFind),
+        "app.command_palette" => Box::new(CommandPalette),
+        "app.quick_open" => Box::new(QuickOpen),
+        "menu.more_options" => Box::new(NativeMenu),
+        "menu.context" => Box::new(ContextMenuKey),
+        "file.open_new_tab" => Box::new(OpenInNewTab),
+        "file.properties" => Box::new(FileProperties),
+        "hotswitch.panel" => Box::new(HotSwitchPanel),
         "tab.new" => Box::new(TabNew),
         "tab.close" => Box::new(TabClose),
         "tab.next" => Box::new(TabNext),
@@ -83,6 +110,8 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
         "file.cut" => Box::new(FileCut),
         "file.paste" => Box::new(FilePaste),
         "file.copy_path" => Box::new(FileCopyPath),
+        "file.open_terminal" => Box::new(OpenTerminal),
+        "file.open_vscode" => Box::new(OpenInCode),
         "edit.undo" => Box::new(EditUndo),
         "edit.redo" => Box::new(EditRedo),
         "app.transfer_panel" => Box::new(TransferPanel),
@@ -93,8 +122,23 @@ fn action_for(id: &str) -> Option<Box<dyn Action>> {
     })
 }
 
+/// The commands the palette offers (shown there and implemented here).
+pub(crate) fn palette_commands() -> Vec<(&'static sx_core::CommandSpec, Box<dyn Action>)> {
+    sx_core::command::BUILTIN
+        .iter()
+        .filter(|spec| spec.in_palette)
+        .filter_map(|spec| action_for(spec.id).map(|action| (spec, action)))
+        .collect()
+}
+
 /// Commands that also work while typing: moving between areas leaves a text input.
 const IN_INPUTS: &[&str] = &["view.next_area", "view.previous_area"];
+
+/// The palette's modes: their shortcuts also work in its field, to switch mode (DESIGN.md §8.9).
+const IN_PALETTE: &[&str] = &["app.command_palette", "app.quick_open", "hotswitch.panel"];
+
+/// The key context of the open palette.
+pub(crate) const PALETTE_CONTEXT: &str = "Palette";
 
 /// Shortcuts never fire while typing in a text input (ADR-014), except [`IN_INPUTS`].
 fn predicate(id: &str, context: CommandContext) -> Option<Rc<KeyBindingContextPredicate>> {
@@ -104,8 +148,8 @@ fn predicate(id: &str, context: CommandContext) -> Option<Rc<KeyBindingContextPr
             .map(Rc::new);
     }
     let source = match context {
-        CommandContext::Workspace => "Workspace && !Input",
-        CommandContext::List => "List && !Input",
+        CommandContext::Workspace => "Workspace && !Input && !ContextMenu",
+        CommandContext::List => "List && !Input && !ContextMenu",
         CommandContext::Input => "Input",
         CommandContext::Dialog => "Dialog",
     };
@@ -118,21 +162,29 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
         let Some(action) = action_for(spec.id) else {
             continue;
         };
+        let in_palette = IN_PALETTE
+            .contains(&spec.id)
+            .then(|| {
+                KeyBindingContextPredicate::parse(PALETTE_CONTEXT)
+                    .ok()
+                    .map(Rc::new)
+            })
+            .flatten();
         for keys in spec.bindings {
-            match KeyBinding::load(
-                keys,
-                action.boxed_clone(),
-                predicate(spec.id, spec.context),
-                false,
-                None,
-                cx,
-            ) {
-                Ok(binding) => bindings.push(binding),
-                Err(err) => tracing::warn!(command = spec.id, keys, error = ?err, "bad binding"),
+            for context in [predicate(spec.id, spec.context), in_palette.clone()] {
+                if context.is_none() {
+                    continue;
+                }
+                match KeyBinding::load(keys, action.boxed_clone(), context, false, None, cx) {
+                    Ok(binding) => bindings.push(binding),
+                    Err(err) => {
+                        tracing::warn!(command = spec.id, keys, error = ?err, "bad binding");
+                    }
+                }
             }
         }
     }
-    let list = Some("List && !Input");
+    let list = Some("List && !Input && !ContextMenu");
     bindings.extend([
         KeyBinding::new("up", SelectPrevious, list),
         KeyBinding::new("down", SelectNext, list),
@@ -151,5 +203,34 @@ pub fn bind(registry: &CommandRegistry, cx: &mut App) {
         KeyBinding::new("tab", FocusNextStop, Some(WORKSPACE_CONTEXT)),
         KeyBinding::new("shift-tab", FocusPreviousStop, Some(WORKSPACE_CONTEXT)),
     ]);
+    bind_hot_switches(&mut bindings, cx);
     cx.bind_keys(bindings);
+}
+
+/// The Hot Switch bindings (DEVELOPER-MODE.md §6.2). Chords (`Ctrl+K`, then a letter) are off
+/// in text inputs, where they would eat what is typed; single combinations work anywhere.
+fn bind_hot_switches(bindings: &mut Vec<KeyBinding>, cx: &App) {
+    for (binding, spec) in DEFAULT_BINDINGS.iter().enumerate() {
+        // The panel is a command of the registry (`hotswitch.panel`), bound with the others;
+        // a binding without keys lives in the panel and the palette only.
+        if matches!(spec.action, HotSwitchAction::Panel) || spec.keys.is_empty() {
+            continue;
+        }
+        let context = if spec.keys.contains(' ') {
+            "Workspace && !Input && !ContextMenu"
+        } else {
+            WORKSPACE_CONTEXT
+        };
+        match KeyBinding::load(
+            spec.keys,
+            Box::new(HotSwitch { binding }),
+            KeyBindingContextPredicate::parse(context).ok().map(Rc::new),
+            false,
+            None,
+            cx,
+        ) {
+            Ok(key) => bindings.push(key),
+            Err(err) => tracing::warn!(keys = spec.keys, error = ?err, "bad hot switch binding"),
+        }
+    }
 }

@@ -28,6 +28,7 @@ nav:
   shell_unsupported: "Nama shell: bisa dibuka di versi berikutnya. Ketik path lengkap dulu."
   invalid_address: Tidak bisa membuka "%{input}". Ketik path lengkap, misalnya C:\Users.
 details:
+  folder: Folder
   name: Nama
   modified: Diubah
   type: Tipe
@@ -58,8 +59,16 @@ this_pc:
   free_of: "%{free} kosong dari %{total}"
   no_media: Tidak ada media
 recycle_bin:
+  restore: Pulihkan
+  delete: Hapus permanen
+  empty: Kosongkan Recycle Bin
+  original: Lokasi asal
+  deleted: Tanggal dihapus
+  is_empty: Recycle Bin kosong.
+  failed: Recycle Bin tidak bisa dibaca. Buka di File Explorer untuk memeriksanya.
+  confirm_empty: "Hapus permanen %{count} item yang tercantum di sini? Ini tidak bisa dibatalkan."
+  skipped: "%{count} item tidak bisa dibaca dan tidak ditampilkan."
   title: Recycle Bin
-  body: Untuk sekarang, Recycle Bin dibuka di File Explorer.
   open: Buka di File Explorer
 drive:
   local: Disk Lokal
@@ -74,9 +83,31 @@ status:
   selected_one: 1 dipilih
   selected: "%{count} dipilih"
   free: "%{drive} sisa %{free}"
+  filtered: "%{shown} dari %{total} item"
+  filtered_one: "%{shown} dari 1 item"
+search:
+  label: Cari di folder ini
+  placeholder: "Cari di %{folder}"
+  no_match: "Tidak ada yang cocok dengan \"%{query}\" di folder ini. Periksa ejaannya, atau kosongkan pencarian."
+  clear: Kosongkan pencarian
+  clear_tip: Kosongkan pencarian (Esc)
+  placeholder_recursive: "Cari di %{folder} dan subfoldernya"
+  searching: Mencari…
+  status_running: "Mencari… %{found}"
+  found_one: 1 hasil
+  found: "%{count} hasil"
+  no_results: "Tidak ada yang cocok dengan \"%{query}\" di %{folder} dan subfoldernya. Periksa ejaannya, atau kosongkan pencarian."
+  skipped_one: "1 folder tidak bisa dibaca"
+  skipped: "%{count} folder tidak bisa dibaca"
+  capped: "Berhenti di %{count} hasil. Tambah kata untuk mempersempit pencarian."
+  bad_size: "\"%{value}\" bukan ukuran. Pakai angka dengan satuan, misalnya size:>10mb atau size:<500kb."
+  bad_age: "\"%{value}\" bukan rentang waktu. Pakai angka dengan h, d, w, m, atau y, misalnya modified:7d."
+  bad_kind: "\"%{value}\" bukan jenis. Pakai kind:folder atau kind:file."
+  failed: Pencarian tidak bisa dimulai. Tutup beberapa window lalu coba lagi.
 size:
   bytes: "%{n} byte"
 ops:
+  busy_dialog: Selesaikan dialog yang terbuka dulu, lalu coba lagi.
   working_one: Memproses
   undoing_one: Mengurungkan
   copying_one: "Menyalin 1 item"
@@ -148,3 +179,173 @@ conflict:
   keep_both: Simpan keduanya
   replace_newer: Ganti jika lebih baru
   apply_all: "Lakukan ini untuk semua (%{count} item)"
+flag:
+  dnd:
+    enabled: Semua drag
+    external: Drag ke/dari aplikasi lain
+    external_out: Drag ke aplikasi lain
+    external_in: Drag dari aplikasi lain
+    source:
+      files: Drag file
+      folders: Drag folder
+      sidebar: Drag dari sidebar
+    target:
+      folders: Drop ke folder
+      sidebar: Drop ke sidebar
+  sidebar:
+    pins_locked: Kunci folder pinned
+  view:
+    show_hidden: Item tersembunyi
+    show_extensions: Ekstensi nama file
+    thumbnails: Thumbnail
+  ops:
+    terminal: Terminal untuk Buka terminal di sini
+  safety:
+    readonly_mode: Mode baca-saja
+preset:
+  anti_drag: anti salah drag
+choice:
+  dnd:
+    default_action:
+      ask: Tanya saat drop
+choice_effect:
+  dnd:
+    default_action:
+      ask: Setiap drop bertanya dulu.
+      system: Drop kembali seperti Explorer.
+      copy: Drop kembali menyalin.
+      move: Drop kembali memindahkan.
+preset_title:
+  anti_drag: Preset anti salah drag
+hotswitch:
+  drag_blocked_on: "%{name} sedang aktif"
+  drag_blocked_keys_off: "Matikan dengan %{keys}."
+  drag_blocked_mixed: Tidak ada item terpilih yang di-drag.
+  drag_needs_key: "Tahan %{key} untuk drag"
+  drag_needs_key_why: Switch drag meminta tombol ini (dnd.require_modifier).
+  drag_blocked: "%{name} sedang nonaktif"
+  drag_blocked_keys: "Nyalakan dengan %{keys}."
+  drag_blocked_panel: Klik untuk membuka panel Hot Switch.
+  panel_title: Hot Switch
+  panel_hint: Enter atau Spasi menyalakan atau mematikan switch yang dipilih; panel tetap terbuka. Esc menutupnya.
+  panel_blocked: Tertahan
+  section_drag: Drag & drop
+  section_view: Tampilan & keselamatan
+  state_on: Aktif
+  state_off: Nonaktif
+  impact:
+    files_still_on: Drag file tetap aktif.
+    folders_still_on: Drag folder tetap aktif.
+    sidebar_off: Item sidebar tidak bisa di-drag keluar.
+    dnd_off: Tidak ada yang bisa di-drag atau di-drop.
+    dnd_on: Drag kembali mengikuti switch-nya.
+    hidden_on: Item tersembunyi ditampilkan.
+    hidden_off: Item tersembunyi tidak ditampilkan.
+    extensions_on: Nama file menampilkan ekstensinya.
+    extensions_off: Nama file tanpa ekstensi.
+    readonly_on: File tidak bisa diubah di sini.
+    readonly_off: File bisa diubah lagi.
+    pins_locked_on: Folder pinned tidak bisa diubah.
+    pins_locked_off: Folder pinned bisa diubah lagi.
+    external_off: Drag di dalam Switch Explorer tetap bisa.
+  restored: Nilai sebelumnya dikembalikan.
+  "on": "%{name} diaktifkan"
+  "off": "%{name} dinonaktifkan"
+  set: "%{name}: %{value}"
+  group_on: "%{name} diaktifkan (%{count} switch)"
+  group_off: "%{name} dinonaktifkan (%{count} switch)"
+  preset_on: "Preset %{name} aktif (%{count} switch diubah)"
+  preset_off: "Preset %{name} dimatikan"
+  again: "Balik lagi: %{keys}"
+  held: "Tertahan karena \"%{name}\" mati."
+  held_hint: "Tertahan karena \"%{name}\" mati. Nyalakan dengan %{keys}."
+  held_hint_nokeys: "Tertahan karena \"%{name}\" mati. Nyalakan dulu switch itu."
+  needs_dev: "%{name} butuh Developer Mode"
+  needs_dev_hint: Aktifkan Developer Mode di Pengaturan dulu.
+  failed: "Switch ini tidak bisa diubah sekarang. Buka ulang Switch Explorer lalu coba lagi."
+  chip_on: "Drag: aktif"
+  chip_partial: "Drag: sebagian"
+  chip_off: "Drag: mati"
+  chip_hint: "Membuka panel Hot Switch (%{keys})"
+  tip_on: aktif
+  tip_off: mati
+  badge: Drag mati
+command:
+  menu:
+    more_options: Tampilkan opsi lainnya
+  tab:
+    new: Tab baru
+    close: Tutup tab
+    next: Tab berikutnya
+    previous: Tab sebelumnya
+  nav:
+    back: Kembali
+    forward: Maju
+    up: Naik satu level
+    refresh: Muat ulang
+    focus_address: Ubah alamat
+  search:
+    filter: Filter folder ini
+    find: Cari di folder ini dan subfoldernya
+  file:
+    open_terminal: Buka di Terminal
+    open_vscode: Buka di VS Code
+    open: Buka
+    open_new_tab: Buka di tab baru
+    properties: Properti
+    rename: Ganti nama
+    new_folder: Folder baru
+    delete: Hapus ke Recycle Bin
+    delete_permanent: Hapus permanen
+    copy: Salin
+    cut: Potong
+    paste: Tempel
+    copy_path: Salin path
+  edit:
+    undo: Urungkan
+    redo: Ulangi
+    select_all: Pilih semua
+  view:
+    toggle_sidebar: Tampilkan atau sembunyikan sidebar
+  app:
+    transfer_panel: Tampilkan panel transfer
+    quick_open: Buka folder
+  hotswitch:
+    panel: Buka panel Hot Switch
+  sidebar:
+    pin: Pin atau lepas pin folder ini
+menu:
+  unlock_pins: Buka kunci folder pinned
+  drop_copy: Salin di sini
+  drop_move: Pindahkan ke sini
+  drop_cancel: Batal
+  label: Menu konteks
+  sort_by: Urutkan menurut
+  paste_into: Tempel ke folder ini
+  move_up: Naikkan
+  move_down: Turunkan
+  properties_failed: Windows tidak bisa menampilkan properti. Coba lagi; bila terus gagal, pakai Tampilkan opsi lainnya.
+  failed: Windows tidak bisa menampilkan menunya di sini. Coba lagi; bila terus gagal, mulai ulang Switch Explorer.
+palette:
+  label: Command palette
+  label_folders: Buka cepat
+  placeholder: Ketik command, switch, atau tempat
+  placeholder_folders: Ketik nama folder yang terbuka, di-pin, atau baru dibuka
+  placeholder_switches: Cari switch
+  open_tab: Sudah terbuka
+  empty: "Tidak ada yang cocok dengan \"%{query}\". Coba lebih sedikit huruf."
+  empty_folders: "Tidak ada folder terbuka, di-pin, atau baru dibuka yang cocok dengan \"%{query}\". Untuk folder lain, ketik path-nya di address bar (Ctrl+L)."
+  switch_on: Switch, aktif
+  switch_off: Switch, nonaktif
+  place: Tempat
+dnd:
+  nothing_here: Item ini tidak bisa disalin atau dipindah ke sini.
+  drag_failed: Item ini tidak bisa di-drag. Mungkin path-nya terlalu panjang (lebih dari 260 karakter).
+  no_drop_target: "Drop ke window ini tidak berfungsi: Windows menolak drop target. Jalankan ulang Switch Explorer untuk mencoba lagi."
+  confirm_move_one: "Pindahkan \"%{name}\" ke \"%{dest}\"?"
+  confirm_move_many: "Pindahkan %{count} item ke \"%{dest}\"?"
+  move: Pindahkan
+launch:
+  terminal_failed: Terminal tidak mau jalan. Pilih terminal lain lewat switch ops.terminal, atau pastikan terminal itu terpasang.
+  code_missing: VS Code tidak terpasang untuk user ini maupun untuk semua user.
+  code_failed: VS Code tidak mau jalan. Coba lagi, atau buka dari menu Start.

@@ -92,7 +92,7 @@ scroll dengan touchpad — sudah memulai drag. Melepasnya di atas folder lain di
 | `dnd.scroll_cooldown_ms` | u16 | 0 | — | Drag diabaikan selama ini setelah scroll terakhir |
 | `dnd.require_modifier` | enum `none`/`alt`/`ctrl`/`shift` | none | — | Drag hanya jika modifier ditahan saat mulai |
 | `dnd.right_drag_bypass` | bool | false | — | Drag tombol kanan tetap boleh walau sumbernya dimatikan (selalu memunculkan menu konfirmasi) |
-| `dnd.default_action` | enum `system`/`copy`/`move`/`ask` | system | cycle (tanpa hotkey default) | Aksi drop tanpa modifier |
+| `dnd.default_action` | enum `system`/`copy`/`move`/`ask` | system | "Tanya saat drop" (pilihan `ask` ⇄ nilai sebelumnya, tanpa hotkey default) | Aksi drop tanpa modifier |
 | `dnd.confirm_folder_move` | bool | false | — | Konfirmasi saat memindahkan folder lewat drag |
 | `dnd.undo_toast` | bool | true | — | Toast "Urungkan" 10 detik setelah drop |
 | `dnd.blocked_hint` | bool | true | — | Beri tahu saat drag diblokir switch |
@@ -113,6 +113,10 @@ seleksi campuran (file + folder): semua item harus lolos; jika satu gagal → se
 boleh_drop(target)  = (target.sidebar ? dnd.target.sidebar : dnd.target.folders) && !safety.readonly_mode
 boleh_keluar        = dnd.external_out      boleh_masuk = dnd.external_in
 menyusun ulang pinned = dnd.enabled && !sidebar.pins_locked   (tidak memindahkan file)
+drag item sidebar   = tidak pernah memindahkan foldernya; di pin lain = mengurutkan ulang pin (efek link,
+                      seperti Quick access), di tempat lain = salin, ke aplikasi lain = salin/shortcut
+pindah known folder (Desktop, Documents, Downloads, …) = tidak pernah (Windows tetap menunjuk tempat lamanya)
+pin mengikuti foldernya saat folder itu dipindah atau di-rename (juga lewat undo)
 ```
 
 ### 5.4 State machine inisiasi drag
@@ -124,7 +128,10 @@ Pressed:
   • now − scroll_terakhir < dnd.scroll_cooldown_ms → tertahan = true (press ini tidak bisa jadi drag)
   • dnd.require_modifier != none && modifier tidak ditahan → tertahan = true
   • gerak: jarak ≥ ambang && now − t0 ≥ dnd.hold_delay_ms && !tertahan → Dragging
-  • gerak melewati ambang sebelum hold delay selesai → tertahan = true
+  • gerak kecil sebelum hold delay selesai → belum apa-apa; gerak pertama setelahnya (masih lewat ambang)
+    memulai drag. Lepas sebelum delay selesai tetap klik.
+  • gerak ≥ 3× ambang sebelum hold delay selesai (flick, mis. geser touchpad sambil menekan) → tertahan
+    = true
   • lepas tombol → Click
 Dragging (internal atau OLE):
   • efek = modifier (Ctrl salin, Shift pindah, Alt shortcut) atau dnd.default_action
@@ -135,6 +142,34 @@ Dragging (internal atau OLE):
 ```
 
 `scroll_terakhir` dicatat dari semua event scroll (wheel, touchpad pan, scrollbar) di window mana pun.
+
+Implementasi: `sx_core::drag` (logika murni, waktu dan posisi diberikan pemanggil). `DragPolicy` diisi dari
+snapshot switch; `DragPolicy::may_start`/`may_drop`/`effect` = aturan §5.3; `DragGuard` = state machine di
+atas. Policy saat tombol ditekan berlaku sampai drag selesai, jadi Hot Switch tidak memutus drag yang
+sedang berjalan.
+
+Sambungan (`sx_ui::dnd`):
+- Tekan tombol di baris daftar atau item sidebar (pin & drive) memanggil `DragGuard::press`. Gerak dan lepas
+  dibaca listener tingkat window (capture), jadi tetap sampai walau kursor sudah keluar dari item. Scroll di
+  mana pun mencatat `scroll_terakhir`.
+- `StartDrag` menjalankan OLE drag lewat modal host (ADR-015). Drop ke window ini sendiri juga lewat drop
+  target OLE milik kita (ADR-016), jadi aturan drop sama untuk drag internal maupun dari aplikasi lain.
+- Drop target menjawab seketika dari zona frame terakhir (baris folder, area folder terbuka, item sidebar)
+  dan `DragPolicy`. Pindah ke folder asal tidak melakukan apa pun. Masuk ke dirinya sendiri atau subfolder-nya
+  ditolak. Sumber yang tidak mengizinkan pindah mendapat salin (kecuali modifier meminta pindah).
+- `Ask` membuka menu bertema (Salin di sini / Pindahkan ke sini / Batal), hanya dengan efek yang diizinkan
+  sumber; memilih di menu sudah menjadi konfirmasi. `ConfirmMove` membuka dialog bila ada folder di
+  antara item.
+- Drag milik kita memakai switch saat tombol ditekan sampai selesai. Pin yang di-drag ke pin lain
+  mengambil tempat pin itu (`menyusun ulang pinned`); saat `sidebar.pins_locked` ditolak dengan hint, dan
+  menu klik kanan pin menawarkan "Buka kunci folder pinned".
+  Drive atau share utuh tidak pernah disalin/dipindah. Selama dialog, palette, menu, atau rename terbuka,
+  drop ditolak.
+- Drag kiri yang dilepas di folder asalnya tidak melakukan apa pun, juga dengan `ask` (seperti Explorer);
+  drag kanan di sana tetap memunculkan menu dengan "Salin di sini". Menu hanya berisi pilihan yang bisa
+  dijalankan.
+- Belum: shortcut (`Alt`, `Ctrl+Shift`) ditolak dulu, spring-open, drop ke breadcrumb/tab, pin baru lewat
+  drag folder ke sidebar, dan virtual files.
 
 ### 5.5 Preset "Anti salah drag"
 
@@ -170,6 +205,7 @@ Desain visual di `DESIGN.md` §9.
 | `Ctrl+K`, `S` | `dnd.source.sidebar` | toggle |
 | `Ctrl+K`, `E` | `dnd.external_out` + `dnd.external_in` | grup |
 | `Ctrl+K`, `G` | preset "Anti salah drag" | preset |
+| (tanpa hotkey) | "Tanya saat drop": `dnd.default_action` = `ask`, atau kembali ke nilai sebelumnya | pilihan |
 | `Ctrl+K`, `L` | `sidebar.pins_locked` | toggle |
 | `Ctrl+K`, `H` | `view.show_hidden` | toggle |
 | `Ctrl+K`, `X` | `view.show_extensions` | toggle |
@@ -179,7 +215,9 @@ Desain visual di `DESIGN.md` §9.
 
 Jenis aksi:
 - **toggle**: bool dibalik.
-- **cycle**: enum maju ke nilai berikutnya (mis. `dnd.default_action`: system → copy → move → ask).
+- **cycle**: enum maju ke nilai berikutnya (mis. `hotswitch.osd`: in_app → system → off).
+- **pilihan**: satu nilai enum ditampilkan sebagai on/off. Menyalakan menyetel nilai itu; mematikan
+  mengembalikan nilai sebelumnya (sesi ini), atau default bila tidak diketahui. Contoh: "Tanya saat drop".
 - **grup**: beberapa switch disetel ke nilai yang sama — jika ada yang aktif, semua dimatikan; jika semua
   mati, semua dinyalakan.
 - **preset**: menyalakan/mematikan preset dengan menyimpan & mengembalikan nilai sebelumnya.
@@ -197,12 +235,19 @@ Jenis aksi:
 | `hotswitch.titlebar_badge` | bool | true | Badge "Drag mati" di title bar saat master mati |
 | `hotswitch.chord_timeout_ms` | u16 | 1500 | Batas waktu tombol kedua setelah `Ctrl+K` |
 
+Implementasi: `sx_ui::hotswitch`. Binding dibaca dari `sx_settings::DEFAULT_BINDINGS` (keymap.toml menyusul);
+setiap perubahan lewat `SettingsStore::run_hotswitch` menghasilkan `Change` yang memperbarui snapshot, chip,
+badge, dan OSD; `settings.toml` ditulis di thread `sx-settings`, berurutan.
+
 ### 6.4 Aturan perilaku
 - Chord `Ctrl+K` hanya aktif saat fokus **tidak** di input teks (kotak cari, rename, address bar), agar
   tidak memakan karakter. Kombinasi tunggal seperti `Ctrl+Shift+D` tetap aktif di mana pun.
+  Pengecualian: di kotak cari command palette, `Ctrl+K`, `K` membuka panel Hot Switch (pindah mode,
+  DESIGN §8.9); chord lain tidak cocok di sana, sehingga ketikan diteruskan ke kotak cari.
 - Drag yang sedang berlangsung tidak diputus; switch baru berlaku untuk drag berikutnya.
-- Switch yang `depends_on` master: bila master mati, OSD sub-switch menyebut "(tidak berlaku: semua drag
-  sedang mati)".
+- Switch yang `depends_on` master: bila master mati, menyalakan sub-switch memunculkan OSD dengan catatan
+  Tertahan karena "Semua drag" mati. (nama induk diambil dari `depends_on`). Mematikannya tidak memberi
+  catatan. Panel Hot Switch menandai sub-switch yang menyala tapi tertahan dengan "Tertahan".
 - Hotkey yang mengubah switch eksperimental ditolak bila Developer Mode mati (OSD menjelaskan).
 
 ### 6.5 Scope global
@@ -232,6 +277,11 @@ keys = "ctrl-alt-f9"
 action = "switch.preset"
 args = { id = "anti_drag" }
 scope = "global"
+
+[[binding]]
+keys = "ctrl-k q"            # pilihan: "Tanya saat drop" dapat hotkey
+action = "switch.choice"
+args = { id = "dnd.default_action", value = "ask" }
 
 [[unbind]]
 keys = "ctrl-k h"
@@ -295,6 +345,7 @@ Switch drag & drop dan Hot Switch ada di §5.2 dan §6.3.
 | `ops.verify_copy` | bool | false | — | Verifikasi hash setelah copy |
 | `ops.taskbar_progress` | bool | true | — | Progress di taskbar |
 | `ops.progress_popup` | enum inline/floating/both | inline | — | Tampilan progress |
+| `ops.terminal` | enum auto/windows_terminal/powershell/cmd | auto | — | Terminal untuk "Buka terminal di sini" (auto = Windows Terminal bila terpasang, kalau tidak PowerShell) |
 | `safety.readonly_mode` | bool | false | `Ctrl+K, R` | Blokir semua operasi tulis |
 | `safety.protected_paths` | list<path> | [] | — | Operasi tulis di path ini butuh konfirmasi |
 | `safety.confirm_system_paths` | bool | true | — | Konfirmasi ekstra di `C:\Windows`, `Program Files` |

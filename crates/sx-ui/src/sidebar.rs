@@ -6,15 +6,16 @@ use std::path::Path;
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    ClickEvent, Context, Div, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
-    SharedString, StatefulInteractiveElement as _, Styled as _, div, relative,
+    ClickEvent, Context, Div, ElementId, FocusHandle, InteractiveElement as _, IntoElement,
+    MouseButton, MouseUpEvent, ParentElement as _, SharedString, StatefulInteractiveElement as _,
+    Styled as _, div, relative,
 };
 use rust_i18n::t;
 use sx_core::Location;
 use sx_theme::Token;
 use sx_win::Drive;
 
-use crate::focus::{self, Ring, TabStop as _};
+use crate::focus::{self, TabStop as _};
 use crate::format;
 use crate::slash;
 use crate::theme::ActiveTokens as _;
@@ -191,6 +192,7 @@ impl Workspace {
             t.color(Token::NavItemHoverFg),
         );
         let lit = !active && self.hovered.as_ref() == Some(&element_id);
+        let drop = self.sidebar_drop(&to);
         let gauge = drive.and_then(|d| self.drive_gauge(d, active || lit, cx));
         let detail = drive.map(format::drive_space);
         let control = t.px(Token::SizeControl);
@@ -205,7 +207,7 @@ impl Workspace {
         let focus = self.focus_stop(&focus_key, cx);
         div()
             .id(element_id.clone())
-            .tab_stop_ring(&focus, Ring::plain().highlighted(active || lit), cx)
+            .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
             .flex()
             .items_center()
             .gap(t.px(Token::SpaceMd))
@@ -216,14 +218,12 @@ impl Workspace {
             .relative()
             .when(active, |el| {
                 el.text_color(active_fg)
+                    // No-op hover/active styles keep GPUI tracking the pointer here; else the
+                    // item comes back from active with stale hover text (dark on the sidebar).
+                    .hover(std::convert::identity)
+                    .active(std::convert::identity)
                     .shadow(glow)
-                    .child(slash::tide_slash(slash::Slash {
-                        fill: t.resolved().paint(Token::NavItemActiveBg).clone(),
-                        edge: t.resolved().color(Token::NavItemActiveEdge),
-                        angle_deg: t.number(Token::SlashAngleDeg),
-                        radius: t.number(Token::RadiusSm),
-                        edge_width: t.number(Token::SlashEdgeWidth),
-                    }))
+                    .child(active_slash(cx))
             })
             .when(!active, |el| {
                 el.text_color(if lit { hover_fg } else { fg })
@@ -231,13 +231,17 @@ impl Workspace {
                     .hover(move |s| s.bg(hover).text_color(hover_fg))
                     .active(move |s| s.bg(pressed).text_color(hover_fg))
             })
+            // A drag over the item: it takes the drop, or a switch refuses it there. The ring is
+            // drawn over the item, so it takes no room.
+            .when(drop == Some(false), |el| {
+                el.bg(t.color(Token::DropTargetBg))
+            })
+            .children(crate::dnd::drop_ring(drop, Token::RadiusSm, cx))
             .on_hover(cx.listener({
                 let id = element_id.clone();
                 move |this, hovered: &bool, _, cx| this.set_hovered(&id, *hovered, cx)
             }))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.navigate(to.clone(), cx);
-            }))
+            .map(|el| self.sidebar_pointer(el, to, matches!(id, Item::Pin(_)), &focus, cx))
             .child(
                 div()
                     .flex_none()
@@ -280,6 +284,105 @@ impl Workspace {
     }
 }
 
+/// A sidebar item drawn this frame (see `Workspace::sidebar_targets`).
+#[derive(Debug)]
+pub(crate) struct SidebarTarget {
+    pub(crate) focus: FocusHandle,
+    pub(crate) location: Location,
+    /// A pinned folder (dropping a pin on it reorders the pins).
+    pub(crate) pin: bool,
+    pub(crate) bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
+}
+
+impl Workspace {
+    /// The sidebar item with keyboard focus: its place, and where a menu for it goes (below
+    /// its start).
+    pub(crate) fn focused_sidebar_item(
+        &self,
+        window: &gpui_kit::Window,
+    ) -> Option<(Location, Option<gpui_kit::Point<gpui_kit::Pixels>>)> {
+        let targets = self.sidebar_targets.borrow();
+        let target = targets.iter().find(|t| t.focus.is_focused(window))?;
+        let at = target.bounds.get().map(|b| b.bottom_left());
+        Some((target.location.clone(), at))
+    }
+
+    /// A click on a sidebar item goes there; a right-click opens its menu (with `Shift`,
+    /// Windows' own menu for its folder).
+    fn sidebar_pointer(
+        &self,
+        el: gpui_kit::Stateful<Div>,
+        to: Location,
+        pin: bool,
+        focus: &FocusHandle,
+        cx: &Context<Self>,
+    ) -> gpui_kit::Stateful<Div> {
+        let bounds = std::rc::Rc::new(std::cell::Cell::new(None));
+        self.sidebar_targets.borrow_mut().push(SidebarTarget {
+            focus: focus.clone(),
+            location: to.clone(),
+            pin,
+            bounds: bounds.clone(),
+        });
+        let menu_for = to.clone();
+        let (press_left, press_right) = (to.clone(), to.clone());
+        el.child(
+            // Only the part that shows: the sidebar scrolls, and an item scrolled out of view
+            // must take no drop (over the bars above or below it).
+            gpui_kit::canvas(
+                move |area, window, _| {
+                    let shown = area.intersect(&window.content_mask().bounds);
+                    let visible = shown.size.width > gpui_kit::px(0.0)
+                        && shown.size.height > gpui_kit::px(0.0);
+                    bounds.set(visible.then_some(shown));
+                },
+                |_, (), _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        )
+        // A press may become a drag (the Drag Guard decides, DEVELOPER-MODE.md §5).
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, event: &gpui_kit::MouseDownEvent, _, _| {
+                this.press_sidebar(&press_left, event, sx_core::drag::Button::Left);
+            }),
+        )
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &gpui_kit::MouseDownEvent, _, _| {
+                this.swallow_right_up = false;
+                this.press_sidebar(&press_right, event, sx_core::drag::Button::Right);
+            }),
+        )
+        .on_mouse_up(
+            MouseButton::Right,
+            cx.listener(move |this, event: &MouseUpEvent, window, cx| {
+                if std::mem::take(&mut this.swallow_right_up) {
+                    return;
+                }
+                match menu_for.as_path().map(Path::to_path_buf) {
+                    Some(path) if event.modifiers.shift => this.open_native_menu_for(
+                        sx_shell::menu::MenuTarget::Items(vec![path]),
+                        Some(event.position),
+                        true,
+                        window,
+                        cx,
+                    ),
+                    _ => this.open_sidebar_menu(&menu_for, event.position, false, window, cx),
+                }
+            }),
+        )
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            // The release that ends a drag is not a click.
+            if std::mem::take(&mut this.drag.dragged) {
+                return;
+            }
+            this.navigate(to.clone(), cx);
+        }))
+    }
+}
+
 fn drive_letter(path: &Path) -> Option<char> {
     match path.components().next()? {
         std::path::Component::Prefix(prefix) => match prefix.kind() {
@@ -302,6 +405,18 @@ impl Item {
             Self::RecycleBin => ElementId::Name("side-bin".into()),
         }
     }
+}
+
+/// The Tide Slash behind the active item (DESIGN.md §7).
+fn active_slash(cx: &gpui_kit::App) -> impl IntoElement {
+    let t = cx.tokens();
+    slash::tide_slash(slash::Slash {
+        fill: t.resolved().paint(Token::NavItemActiveBg).clone(),
+        edge: t.resolved().color(Token::NavItemActiveEdge),
+        angle_deg: t.number(Token::SlashAngleDeg),
+        radius: t.number(Token::RadiusSm),
+        edge_width: t.number(Token::SlashEdgeWidth),
+    })
 }
 
 /// The glow under the active item's Tide Slash (`shadow.glow` in `nav.item.active.glow`).

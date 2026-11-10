@@ -59,6 +59,8 @@ pub struct SettingsStore {
     dirty: bool,
     /// Presets turned on by Hot Switch, with the values they replaced (for this session).
     presets: BTreeMap<&'static str, Vec<(&'static str, FlagValue)>>,
+    /// Choices turned on by Hot Switch, with the value they replaced (for this session).
+    choices: BTreeMap<&'static str, FlagValue>,
 }
 
 impl SettingsStore {
@@ -109,6 +111,7 @@ impl SettingsStore {
             session: BTreeMap::new(),
             dirty: false,
             presets: BTreeMap::new(),
+            choices: BTreeMap::new(),
         }
     }
 
@@ -188,6 +191,39 @@ impl SettingsStore {
         self.set(meta.id, next, source)
     }
 
+    /// Hot Switch choice: an enum switch takes `value`, or goes back to its default when it
+    /// already has it.
+    pub fn choose(
+        &mut self,
+        id: &str,
+        value: &str,
+        source: ChangeSource,
+    ) -> Result<Change, SettingsError> {
+        let meta = meta(id).ok_or_else(|| SettingsError::UnknownFlag(id.to_string()))?;
+        let FlagKind::Enum(variants) = meta.kind else {
+            return Err(SettingsError::NotHotSwitchable(meta.id));
+        };
+        if !variants.contains(&value) {
+            return Err(SettingsError::NotHotSwitchable(meta.id));
+        }
+        let chosen = FlagValue::Text(value.to_string());
+        let current = self.effective(meta.id);
+        let next = if current == chosen {
+            // Off: the value it replaced (a `copy` chosen for safety stays `copy`), else the
+            // default.
+            match self.choices.remove(meta.id) {
+                Some(before) => before,
+                None => Features::default()
+                    .get(meta.id)
+                    .ok_or_else(|| SettingsError::UnknownFlag(id.to_string()))?,
+            }
+        } else {
+            self.choices.insert(meta.id, current);
+            chosen
+        };
+        self.set(meta.id, next, source)
+    }
+
     /// Hot Switch group: if any member is on, all go off; if all are off, all go on.
     pub fn toggle_group(
         &mut self,
@@ -250,6 +286,7 @@ impl SettingsStore {
             HotSwitchAction::Toggle(id) => Ok(vec![self.toggle(id, source)?]),
             HotSwitchAction::Group(ids) => self.toggle_group(ids, source),
             HotSwitchAction::Preset(id) => self.toggle_preset(id, source),
+            HotSwitchAction::Choice(id, value) => Ok(vec![self.choose(id, value, source)?]),
             HotSwitchAction::Panel => Ok(Vec::new()),
         }
     }
@@ -439,6 +476,23 @@ mod tests {
             .unwrap();
         assert!(group.iter().all(|c| c.value == FlagValue::Bool(false)));
         assert_eq!(store.run_hotswitch(HotSwitchAction::Panel).unwrap(), vec![]);
+        // A choice: on sets the value, off goes back to the default (not to the next value).
+        let ask = HotSwitchAction::Choice("dnd.default_action", "ask");
+        let on = store.run_hotswitch(ask).unwrap();
+        assert_eq!(on[0].value, FlagValue::Text("ask".into()));
+        let off = store.run_hotswitch(ask).unwrap();
+        assert_eq!(off[0].value, FlagValue::Text("system".into()));
+        // Off puts back the value it replaced, not the default.
+        store
+            .set(
+                "dnd.default_action",
+                FlagValue::Text("copy".into()),
+                ChangeSource::User,
+            )
+            .unwrap();
+        store.run_hotswitch(ask).unwrap();
+        let back = store.run_hotswitch(ask).unwrap();
+        assert_eq!(back[0].value, FlagValue::Text("copy".into()));
     }
 
     #[test]

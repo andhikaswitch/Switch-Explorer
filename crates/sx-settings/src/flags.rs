@@ -169,7 +169,7 @@ define_flags! {
     /// Drop action without modifiers.
     dnd_default_action: choice("system", "copy", "move", "ask") = "system",
         id = "dnd.default_action", group = Dnd, vis = Basic, stab = Stable, scope = Location,
-        hot = true;
+        hot = true, deps = ["dnd.enabled"];
     /// Confirm when moving a folder by drag.
     dnd_confirm_folder_move: bool = false,
         id = "dnd.confirm_folder_move", group = Dnd, vis = Basic, stab = Stable, scope = Location;
@@ -327,6 +327,10 @@ define_flags! {
     /// Progress display.
     ops_progress_popup: choice("inline", "floating", "both") = "inline",
         id = "ops.progress_popup", group = Ops, vis = Basic, stab = Stable, scope = Global;
+    /// The terminal "Open in Terminal" starts (F-OPS-12): auto = Windows Terminal when it is
+    /// installed, else PowerShell.
+    ops_terminal: choice("auto", "windows_terminal", "powershell", "cmd") = "auto",
+        id = "ops.terminal", group = Ops, vis = Basic, stab = Stable, scope = Global;
     /// Block every write operation.
     safety_readonly_mode: bool = false,
         id = "safety.readonly_mode", group = Safety, vis = Basic, stab = Stable, scope = Location,

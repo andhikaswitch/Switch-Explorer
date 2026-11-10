@@ -6,10 +6,13 @@
 pub mod appearance;
 pub mod clipboard;
 pub mod com;
+pub mod dnd;
 pub mod dwm;
 pub mod error;
 pub mod exec;
 pub mod icons;
+pub mod menu;
+pub mod modal;
 pub mod names;
 pub mod recycle;
 pub mod taskbar;

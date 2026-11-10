@@ -22,7 +22,8 @@
   spesifik menang).
 - Drag Guard: tabel kasus untuk setiap kombinasi switch, cooldown scroll (dengan `Clock` palsu), hold delay,
   ambang, modifier, seleksi campuran, bypass tombol kanan.
-- Hot Switch: toggle/cycle/grup/preset (simpan & kembalikan nilai), persisten vs sesi, dependensi master.
+- Hot Switch: toggle/cycle/grup/preset/pilihan (simpan & kembalikan nilai), persisten vs sesi, dependensi
+  master.
 - Keymap: parse `keymap.toml`, unbind, deteksi konflik, aturan AltGr.
 
 ## 3. Integrasi

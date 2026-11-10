@@ -26,7 +26,7 @@ Settings di elementary OS), BlueSwitch, Swytch.
 | Executable | `switch-explorer.exe` |
 | Prefix crate | `sx-` (`sx-core`, `sx-ui`, …) / modul Rust `sx_core`, `sx_ui` |
 | Data roaming | `%APPDATA%\SwitchExplorer\` |
-| Data lokal | `%LOCALAPPDATA%\SwitchExplorer\` |
+| Data lokal | `%LOCALAPPDATA%\SwitchExplorer\` (`journal\`, `logs\`, `session.json`) |
 | Portable | `portable.flag` → `.\data\` |
 | Named pipe | `\\.\pipe\switch-explorer.<SID>.<session>[.admin].v1` |
 | Mutex single instance | `Local\SwitchExplorer.SingleInstance.v1` |

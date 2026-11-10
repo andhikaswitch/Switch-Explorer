@@ -25,7 +25,10 @@ use sx_shell::clipboard::{self, ClipboardFiles};
 use crate::workspace::Workspace;
 
 /// How long the "Done · Undo" toast stays.
+/// How long a toast with Undo stays (time to reach the button).
 const TOAST_FOR: Duration = Duration::from_secs(8);
+/// How long a toast with nothing to press stays ("Undone.").
+const TOAST_PLAIN_FOR: Duration = Duration::from_secs(3);
 
 /// Why a job runs: user work is recorded for undo; undo and redo runs report back to the
 /// history they came from (its generation, see `UndoStack`).
@@ -57,6 +60,8 @@ pub(crate) struct PendingPaste {
     pub apply_all: bool,
     /// For a cut: the clipboard sequence when it was read, to clear it after the move.
     pub clipboard_sequence: Option<u32>,
+    /// No toast when it succeeds (a drop with `dnd.undo_toast` off; errors still say so).
+    pub quiet: bool,
 }
 
 #[derive(Debug)]
@@ -64,6 +69,21 @@ pub(crate) enum Dialog {
     ConfirmRecycle(Vec<PathBuf>),
     ConfirmDelete(Vec<PathBuf>),
     Conflict(PendingPaste),
+    /// Items deleted for good from the Recycle Bin, named by the first one.
+    ConfirmPurge {
+        items: Vec<sx_ops::Binned>,
+        name: String,
+    },
+    /// Every item the bin page lists, deleted for good (exactly those: not what came later).
+    ConfirmEmptyBin {
+        items: Vec<sx_ops::Binned>,
+    },
+    /// A drag moves folders and `dnd.confirm_folder_move` asks first.
+    ConfirmMove {
+        sources: Vec<PathBuf>,
+        dest: PathBuf,
+        quiet: bool,
+    },
 }
 
 /// The message after an operation, with Undo when it can be undone.
@@ -72,6 +92,8 @@ pub(crate) struct Toast {
     pub id: u64,
     pub text: SharedString,
     pub undo: bool,
+    /// The pointer is on it: it stays (DESIGN.md §11).
+    pub hovered: bool,
 }
 
 #[derive(Debug)]
@@ -99,11 +121,15 @@ pub(crate) struct OpsState {
     pub interrupted: Vec<(u64, Op)>,
     /// Cut-paste jobs and the clipboard sequence to clear once they have moved everything.
     clear_clipboard_after: HashMap<u64, u32>,
+    /// Jobs that end without a toast when they succeed (see [`PendingPaste::quiet`]).
+    quiet: std::collections::HashSet<u64>,
     /// The clipboard thread: clipboard calls run there in order (a paste right after a copy
     /// sees that copy), off the UI thread.
     clipboard: Option<sx_shell::StaWorker>,
     /// Progress on the taskbar button (`ops.taskbar_progress`); `None` when it is off.
     pub taskbar: Option<sx_shell::taskbar::Taskbar>,
+    /// The toast has keyboard focus (updated every frame): it stays.
+    pub toast_focused: bool,
 }
 
 impl OpsState {
@@ -209,6 +235,28 @@ impl sx_ops::Trash for ShellTrash {
             error: restored.error.map(trash_error),
         }
     }
+
+    fn purge(&self, items: &[Binned]) -> sx_ops::Purged {
+        self.purge_items(items)
+    }
+}
+
+impl ShellTrash {
+    fn purge_items(&self, items: &[Binned]) -> sx_ops::Purged {
+        let request: Vec<(PathBuf, PathBuf)> = items
+            .iter()
+            .map(|b| (b.original.clone(), b.slot.clone()))
+            .collect();
+        let purged = sx_shell::recycle::purge(&request, self.owner);
+        sx_ops::Purged {
+            done: purged
+                .done
+                .into_iter()
+                .filter_map(|ix| items.get(ix).cloned())
+                .collect(),
+            error: purged.error.map(trash_error),
+        }
+    }
 }
 
 /// Shell failures as the engine's errors, keeping the item and the Win32 code for the message.
@@ -245,7 +293,7 @@ fn job_label(op: &Op, origin: Origin) -> SharedString {
         (_, Op::Move { .. }) => "ops.moving",
         (_, Op::Recycle { .. }) => "ops.recycling",
         (_, Op::Restore { .. }) => "ops.restoring",
-        (_, Op::Delete { .. }) => "ops.deleting",
+        (_, Op::Delete { .. } | Op::Purge { .. }) => "ops.deleting",
         (_, Op::Rename { .. } | Op::NewFolder { .. } | Op::Batch { .. }) => "ops.working",
     };
     if count == 1 {
@@ -258,7 +306,7 @@ fn job_label(op: &Op, origin: Origin) -> SharedString {
 /// Runs blocking work on its own thread and resolves with its result (`None` if it panicked or
 /// the thread could not start). For the clipboard, which can wait on another app, and for file
 /// system checks, which can take seconds on a network folder: never on the UI thread.
-fn off_thread<T: Send + 'static>(
+pub(crate) fn off_thread<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> impl Future<Output = Option<T>> {
     let (tx, rx) = futures::channel::oneshot::channel();
@@ -297,7 +345,7 @@ fn done_text(op: &Op, origin: Origin) -> SharedString {
         (_, Op::Move { .. }) => plural("ops.done_move"),
         (_, Op::Recycle { .. }) => plural("ops.done_recycle"),
         (_, Op::Restore { .. }) => plural("ops.done_restore"),
-        (_, Op::Delete { .. }) => plural("ops.done_delete"),
+        (_, Op::Delete { .. } | Op::Purge { .. }) => plural("ops.done_delete"),
         (_, Op::Rename { to, .. }) => t!("ops.done_rename", name = file_name(to)),
         (_, Op::NewFolder { .. } | Op::Batch { .. }) => t!("ops.done"),
     }
@@ -326,7 +374,8 @@ pub(crate) fn name_error(err: &NameError) -> SharedString {
 }
 
 fn ops_error(err: &OpsError) -> SharedString {
-    let name = err.path().map(file_name).unwrap_or_default();
+    // Names can come from Recycle Bin records: bidi controls are not shown.
+    let name = crate::bin_page::shown(&err.path().map(file_name).unwrap_or_default());
     match err {
         OpsError::Exists(_) => t!("ops.exists", name = name),
         OpsError::IntoItself(_) => t!("ops.into_itself", name = name),
@@ -409,6 +458,7 @@ impl Workspace {
         let (tx, mut rx) = mpsc::unbounded::<JobEvent>();
         let owner = self.hwnd;
         let planned = op;
+        let from_tab = self.tab().id;
         let spawned = std::thread::Builder::new()
             .name("sx-op".into())
             .spawn(move || {
@@ -448,6 +498,7 @@ impl Workspace {
                     }
                     JobEvent::Finished(outcome) => {
                         this.on_job_finished(id, journal_id, origin, &outcome, cx);
+                        this.search_after_job(from_tab, &outcome, cx);
                     }
                 });
                 if alive.is_err() {
@@ -470,6 +521,9 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let done = &outcome.done;
+        self.follow_moved_pins(done, cx);
+        // Recycling, restoring and deleting change what the bin page lists.
+        self.refresh_bin(cx);
         match origin {
             Origin::User if self.features.ops_undo => self.ops.undo.record(done.clone()),
             Origin::User => {}
@@ -525,29 +579,68 @@ impl Workspace {
             })
             .detach();
         }
+        let quiet = self.ops.quiet.remove(&id) && outcome.error.is_none() && !outcome.cancelled;
         if outcome.error.is_some() && done.is_noop() {
             self.notice = Some(message);
-        } else {
+        } else if !quiet {
             // Also after an error when part of the job was done: that part can be undone.
             self.show_toast(message, undo, cx);
         }
-        // Without a watcher (perf.watcher off) the folder would not update by itself.
-        if !self.features.perf_watcher {
+        // Without a watcher (perf.watcher off) the folder would not update by itself. (Search
+        // results are refreshed by `search_after_job`.)
+        if !self.features.perf_watcher && self.tab().search.is_none() {
             let tab_id = self.tab().id;
             self.load_tab(tab_id, true, cx);
         }
         cx.notify();
     }
 
+    /// Search results never follow changes by themselves (the items can be in any subfolder):
+    /// the tab an operation came from searches again when the operation changed something. The
+    /// results on screen stay until the new ones are in, and so does the operation's message.
+    fn search_after_job(&mut self, tab_id: u64, outcome: &Outcome, cx: &mut Context<Self>) {
+        let changed = !outcome.done.is_noop() || !outcome.deleted.is_empty();
+        if changed
+            && let Some(tab) = self.tab_by_id_mut(tab_id)
+            && tab.search.is_some()
+        {
+            let text = tab.filter.clone();
+            self.start_search(tab_id, &text, true, cx);
+        }
+    }
+
     fn show_toast(&mut self, text: SharedString, undo: bool, cx: &mut Context<Self>) {
         let id = self.ops.next_job;
         self.ops.next_job += 1;
-        self.ops.toast = Some(Toast { id, text, undo });
-        let timer = cx.background_executor().timer(TOAST_FOR);
+        self.ops.toast = Some(Toast {
+            id,
+            text,
+            undo,
+            hovered: false,
+        });
+        self.hide_toast_later(id, cx);
+    }
+
+    fn toast_for(&self, id: u64) -> Duration {
+        match &self.ops.toast {
+            Some(toast) if toast.id == id && toast.undo => TOAST_FOR,
+            _ => TOAST_PLAIN_FOR,
+        }
+    }
+
+    /// Hides the toast after `TOAST_FOR` (with Undo) or `TOAST_PLAIN_FOR`; while the pointer or
+    /// the keyboard focus is on it, it waits another round.
+    fn hide_toast_later(&mut self, id: u64, cx: &mut Context<Self>) {
+        let timer = cx.background_executor().timer(self.toast_for(id));
         cx.spawn(async move |this, cx| {
             timer.await;
             let _ = this.update(cx, |this, cx| {
-                if this.ops.toast.as_ref().is_some_and(|t| t.id == id) {
+                let Some(toast) = this.ops.toast.as_ref().filter(|t| t.id == id) else {
+                    return;
+                };
+                if toast.hovered || this.ops.toast_focused {
+                    this.hide_toast_later(id, cx);
+                } else {
                     this.ops.toast = None;
                     cx.notify();
                 }
@@ -560,6 +653,16 @@ impl Workspace {
 
     pub(crate) fn delete_selection(&mut self, permanent: bool, cx: &mut Context<Self>) {
         let paths = self.selected_paths();
+        self.delete_paths(paths, permanent, cx);
+    }
+
+    /// Deletes these items (to the Recycle Bin unless `permanent`), with the usual confirmation.
+    pub(crate) fn delete_paths(
+        &mut self,
+        paths: Vec<PathBuf>,
+        permanent: bool,
+        cx: &mut Context<Self>,
+    ) {
         if paths.is_empty() || !self.writable(cx) {
             return;
         }
@@ -632,9 +735,13 @@ impl Workspace {
     /// Reads the clipboard and checks the destination off the UI thread, then pastes or asks
     /// about conflicts.
     pub(crate) fn paste(&mut self, cx: &mut Context<Self>) {
-        let Some(dest) = self.tab().location().as_path().map(Path::to_path_buf) else {
-            return;
-        };
+        if let Some(dest) = self.tab().location().as_path().map(Path::to_path_buf) {
+            self.paste_into(dest, cx);
+        }
+    }
+
+    /// Pastes the clipboard's files into `dest`, with conflict decisions, journal and undo.
+    pub(crate) fn paste_into(&mut self, dest: PathBuf, cx: &mut Context<Self>) {
         if !self.writable(cx) {
             return;
         }
@@ -682,16 +789,69 @@ impl Workspace {
             }
         };
         let mode = if files.cut { Mode::Move } else { Mode::Copy };
-        let pending = PendingPaste {
-            sources: files.paths,
-            dest,
-            mode,
-            conflicts,
-            index: 0,
-            decisions: HashMap::new(),
-            apply_all: false,
-            clipboard_sequence: files.cut.then_some(sequence),
-        };
+        self.plan_transfer(
+            PendingPaste {
+                sources: files.paths,
+                dest,
+                mode,
+                conflicts,
+                index: 0,
+                decisions: HashMap::new(),
+                apply_all: false,
+                clipboard_sequence: files.cut.then_some(sequence),
+                quiet: false,
+            },
+            cx,
+        );
+    }
+
+    /// Copies or moves `sources` into `dest` as a paste does (conflict decisions, journal,
+    /// undo): what a drop runs.
+    pub(crate) fn transfer(
+        &mut self,
+        sources: Vec<PathBuf>,
+        dest: PathBuf,
+        mode: Mode,
+        quiet: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if sources.is_empty() || !self.writable(cx) {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            // The destination checks can take seconds on a network folder.
+            let (list, target) = (sources.clone(), dest.clone());
+            let conflicts = off_thread(move || sx_ops::plan::conflicts(&list, &target))
+                .await
+                .unwrap_or_default();
+            let _ = this.update(cx, |this, cx| {
+                this.plan_transfer(
+                    PendingPaste {
+                        sources,
+                        dest,
+                        mode,
+                        conflicts,
+                        index: 0,
+                        decisions: HashMap::new(),
+                        apply_all: false,
+                        clipboard_sequence: None,
+                        quiet,
+                    },
+                    cx,
+                );
+            });
+        })
+        .detach();
+    }
+
+    /// Runs a paste or a drop, after asking about its conflicts when there are any.
+    fn plan_transfer(&mut self, pending: PendingPaste, cx: &mut Context<Self>) {
+        // Never in place of a dialog already open: its question would be lost.
+        if self.ops.dialog.is_some() {
+            self.notice = Some(t!("ops.busy_dialog").into());
+            cx.notify();
+            return;
+        }
         if pending.conflicts.is_empty() {
             self.finish_paste(pending, cx);
         } else {
@@ -733,6 +893,7 @@ impl Workspace {
     /// and runs it.
     fn finish_paste(&mut self, pending: PendingPaste, cx: &mut Context<Self>) {
         let sequence = pending.clipboard_sequence;
+        let quiet = pending.quiet;
         cx.spawn(async move |this, cx| {
             let planned = off_thread(move || {
                 let decisions = pending.decisions;
@@ -748,8 +909,12 @@ impl Workspace {
                 let Some(Some(op)) = planned else {
                     return;
                 };
-                if let (Some(id), Some(sequence)) = (this.run_op(op, Origin::User, cx), sequence) {
+                let id = this.run_op(op, Origin::User, cx);
+                if let (Some(id), Some(sequence)) = (id, sequence) {
                     this.ops.clear_clipboard_after.insert(id, sequence);
+                }
+                if let (Some(id), true) = (id, quiet) {
+                    this.ops.quiet.insert(id);
                 }
             });
         })
@@ -770,6 +935,15 @@ impl Workspace {
             }
             Some(Dialog::ConfirmDelete(paths)) => {
                 self.run_op(Op::Delete { paths }, Origin::User, cx);
+            }
+            Some(Dialog::ConfirmMove {
+                sources,
+                dest,
+                quiet,
+            }) => self.transfer(sources, dest, Mode::Move, quiet, cx),
+            // Through the operation engine: read-only mode, the journal and progress apply.
+            Some(Dialog::ConfirmPurge { items, .. } | Dialog::ConfirmEmptyBin { items }) => {
+                self.run_op(Op::Purge { items }, Origin::User, cx);
             }
             Some(conflict @ Dialog::Conflict(_)) => self.ops.dialog = Some(conflict),
             None => {}
@@ -818,6 +992,8 @@ impl Workspace {
         if !self.writable(cx) {
             return;
         }
+        // The new folder is selected for renaming once listed; a filter could hide it.
+        self.set_filter("", cx);
         let tab_id = self.tab().id;
         let base = t!("ops.new_folder_name").into_owned();
         cx.spawn(async move |this, cx| {
@@ -967,7 +1143,8 @@ impl Workspace {
             Op::Restore { items, .. } => items
                 .first()
                 .and_then(|b| b.original.parent().map(Path::to_path_buf)),
-            Op::Batch { .. } => None,
+            // The bin's own folders are no place to show.
+            Op::Batch { .. } | Op::Purge { .. } => None,
         };
         if let Some(path) = path {
             self.open_tab(Location::Path(path), cx);

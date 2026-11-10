@@ -28,6 +28,7 @@ nav:
   shell_unsupported: "shell: names open in a later version. Type a full path instead."
   invalid_address: Can't open "%{input}". Type a full path, like C:\Users.
 details:
+  folder: Folder
   name: Name
   modified: Date modified
   type: Type
@@ -58,8 +59,16 @@ this_pc:
   free_of: "%{free} free of %{total}"
   no_media: No media
 recycle_bin:
+  restore: Restore
+  delete: Delete permanently
+  empty: Empty Recycle Bin
+  original: Original location
+  deleted: Date deleted
+  is_empty: The Recycle Bin is empty.
+  failed: Can't read the Recycle Bin. Open it in File Explorer to check it.
+  confirm_empty: "Delete the %{count} items listed here permanently? This can't be undone."
+  skipped: "%{count} items couldn't be read and aren't shown."
   title: Recycle Bin
-  body: The Recycle Bin opens in File Explorer for now.
   open: Open in File Explorer
 drive:
   local: Local Disk
@@ -74,9 +83,31 @@ status:
   selected_one: 1 selected
   selected: "%{count} selected"
   free: "%{drive} %{free} free"
+  filtered: "%{shown} of %{total} items"
+  filtered_one: "%{shown} of 1 item"
+search:
+  label: Search this folder
+  placeholder: "Search %{folder}"
+  no_match: "Nothing in this folder matches \"%{query}\". Check the spelling, or clear the search."
+  clear: Clear search
+  clear_tip: Clear search (Esc)
+  placeholder_recursive: "Search %{folder} and subfolders"
+  searching: Searching…
+  status_running: "Searching… %{found}"
+  found_one: 1 result
+  found: "%{count} results"
+  no_results: "Nothing in %{folder} or its subfolders matches \"%{query}\". Check the spelling, or clear the search."
+  skipped_one: "1 folder could not be read"
+  skipped: "%{count} folders could not be read"
+  capped: "Stopped at %{count} results. Add words to narrow the search."
+  bad_size: "\"%{value}\" is not a size. Use a number with a unit, like size:>10mb or size:<500kb."
+  bad_age: "\"%{value}\" is not an age. Use a number with h, d, w, m or y, like modified:7d."
+  bad_kind: "\"%{value}\" is not a kind. Use kind:folder or kind:file."
+  failed: Search could not start. Close some windows and try again.
 size:
   bytes: "%{n} bytes"
 ops:
+  busy_dialog: Finish the open dialog first, then try again.
   working_one: Working
   undoing_one: Undoing
   copying_one: "Copying 1 item"
@@ -148,3 +179,173 @@ conflict:
   keep_both: Keep both
   replace_newer: Replace if newer
   apply_all: "Do this for all %{count} items"
+flag:
+  dnd:
+    enabled: All dragging
+    external: Dragging with other apps
+    external_out: Dragging out to other apps
+    external_in: Dragging in from other apps
+    source:
+      files: File dragging
+      folders: Folder dragging
+      sidebar: Dragging from the sidebar
+    target:
+      folders: Dropping on folders
+      sidebar: Dropping on the sidebar
+  sidebar:
+    pins_locked: Pinned folder lock
+  view:
+    show_hidden: Hidden items
+    show_extensions: File name extensions
+    thumbnails: Thumbnails
+  ops:
+    terminal: Terminal for Open in Terminal
+  safety:
+    readonly_mode: Read-only mode
+preset:
+  anti_drag: Anti accidental drag
+choice:
+  dnd:
+    default_action:
+      ask: Ask on drop
+choice_effect:
+  dnd:
+    default_action:
+      ask: Every drop asks first.
+      system: Drops work like File Explorer again.
+      copy: Drops copy again.
+      move: Drops move again.
+preset_title:
+  anti_drag: Anti accidental drag preset
+hotswitch:
+  drag_blocked_on: "%{name} is on"
+  drag_blocked_keys_off: "Turn it off with %{keys}."
+  drag_blocked_mixed: Nothing in the selection was dragged.
+  drag_needs_key: "Hold %{key} to drag"
+  drag_needs_key_why: A drag switch asks for this key (dnd.require_modifier).
+  drag_blocked: "%{name} is off"
+  drag_blocked_keys: "Turn it on with %{keys}."
+  drag_blocked_panel: Click to open the Hot Switch panel.
+  panel_title: Hot Switch
+  panel_hint: Enter or Space turns the selected switch on or off; the panel stays open. Esc closes it.
+  panel_blocked: On hold
+  section_drag: Drag and drop
+  section_view: View and safety
+  state_on: "On"
+  state_off: "Off"
+  impact:
+    files_still_on: File dragging is still on.
+    folders_still_on: Folder dragging is still on.
+    sidebar_off: Sidebar items stay put.
+    dnd_off: Nothing can be dragged or dropped.
+    dnd_on: Dragging follows its switches again.
+    hidden_on: Hidden items are listed.
+    hidden_off: Hidden items are not listed.
+    extensions_on: Names show their extensions.
+    extensions_off: Names hide their extensions.
+    readonly_on: Files can't be changed here.
+    readonly_off: Files can be changed again.
+    pins_locked_on: Pinned folders can't be changed.
+    pins_locked_off: Pinned folders can be changed again.
+    external_off: Dragging inside Switch Explorer still works.
+  restored: Previous values are back.
+  "on": "%{name} turned on"
+  "off": "%{name} turned off"
+  set: "%{name}: %{value}"
+  group_on: "%{name} turned on (%{count} switches)"
+  group_off: "%{name} turned off (%{count} switches)"
+  preset_on: "%{name} preset on (%{count} switches changed)"
+  preset_off: "%{name} preset off"
+  again: "Toggle: %{keys}"
+  held: "On hold while \"%{name}\" is off."
+  held_hint: "On hold while \"%{name}\" is off. Turn it on with %{keys}."
+  held_hint_nokeys: "On hold while \"%{name}\" is off. Turn it on first."
+  needs_dev: "%{name} needs Developer Mode"
+  needs_dev_hint: Turn on Developer Mode in Settings first.
+  failed: "This switch can't change right now. Restart Switch Explorer and try again."
+  chip_on: "Drag: on"
+  chip_partial: "Drag: partly on"
+  chip_off: "Drag: off"
+  chip_hint: "Opens the Hot Switch panel (%{keys})"
+  tip_on: "on"
+  tip_off: "off"
+  badge: Drag off
+command:
+  menu:
+    more_options: Show more options
+  tab:
+    new: New tab
+    close: Close tab
+    next: Next tab
+    previous: Previous tab
+  nav:
+    back: Back
+    forward: Forward
+    up: Up one level
+    refresh: Refresh
+    focus_address: Edit the address
+  search:
+    filter: Filter this folder
+    find: Search this folder and subfolders
+  file:
+    open_terminal: Open in Terminal
+    open_vscode: Open in VS Code
+    open: Open
+    open_new_tab: Open in new tab
+    properties: Properties
+    rename: Rename
+    new_folder: New folder
+    delete: Delete to the Recycle Bin
+    delete_permanent: Delete permanently
+    copy: Copy
+    cut: Cut
+    paste: Paste
+    copy_path: Copy path
+  edit:
+    undo: Undo
+    redo: Redo
+    select_all: Select all
+  view:
+    toggle_sidebar: Show or hide the sidebar
+  app:
+    transfer_panel: Show the transfer panel
+    quick_open: Go to a folder
+  hotswitch:
+    panel: Open the Hot Switch panel
+  sidebar:
+    pin: Pin or unpin this folder
+menu:
+  unlock_pins: Unlock pinned folders
+  drop_copy: Copy here
+  drop_move: Move here
+  drop_cancel: Cancel
+  label: Context menu
+  sort_by: Sort by
+  paste_into: Paste into this folder
+  move_up: Move up
+  move_down: Move down
+  properties_failed: Windows could not show the properties. Try again; if it keeps failing, use Show more options.
+  failed: Windows could not show its menu here. Try again; if it keeps failing, restart Switch Explorer.
+palette:
+  label: Command palette
+  label_folders: Quick open
+  placeholder: Type a command, a switch or a place
+  placeholder_folders: Type the name of an open, pinned or recent folder
+  placeholder_switches: Search switches
+  open_tab: Already open
+  empty: "Nothing matches \"%{query}\". Try fewer letters."
+  empty_folders: "No open, pinned or recent folder matches \"%{query}\". To go to any folder, type its path in the address bar (Ctrl+L)."
+  switch_on: Switch, on
+  switch_off: Switch, off
+  place: Place
+dnd:
+  nothing_here: These items can't be copied or moved here.
+  drag_failed: These items can't be dragged. A path may be too long (over 260 characters).
+  no_drop_target: "Drops into this window don't work: Windows refused the drop target. Restart Switch Explorer to try again."
+  confirm_move_one: "Move \"%{name}\" to \"%{dest}\"?"
+  confirm_move_many: "Move %{count} items to \"%{dest}\"?"
+  move: Move
+launch:
+  terminal_failed: "The terminal didn't start. Pick another one with the ops.terminal switch, or check that it is installed."
+  code_missing: VS Code isn't installed for this user or for everyone.
+  code_failed: VS Code didn't start. Try again, or open it from the Start menu.

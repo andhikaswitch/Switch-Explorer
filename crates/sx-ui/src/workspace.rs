@@ -20,7 +20,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use rust_i18n::t;
 use sx_core::{EntryKind, Location};
 use sx_fs::{Address, Column, LoadError, SortSpec, ViewOptions};
-use sx_settings::Features;
+use sx_settings::{Features, SettingsStore};
 use sx_shell::OsAppearance;
 use sx_theme::{Mode, Token};
 use sx_win::Drive;
@@ -52,7 +52,8 @@ pub struct OpenRequest {
 pub struct WorkspaceOptions {
     /// One tab per location; Home when empty.
     pub locations: Vec<Location>,
-    pub features: Arc<Features>,
+    /// The switches: their values, Hot Switch, `settings.toml`.
+    pub settings: SettingsStore,
     /// The OS supports system backdrops (Windows 11 22H2+).
     pub backdrop_supported: bool,
     pub appearance: OsAppearance,
@@ -66,6 +67,10 @@ pub struct WorkspaceOptions {
     pub journal_dir: Option<PathBuf>,
     /// `%APPDATA%\SwitchExplorer\pins.json`; `None` keeps pins for this session only.
     pub pins_file: Option<PathBuf>,
+    /// `%LOCALAPPDATA%\SwitchExplorer\session.json`; `None` writes no session (`--safe-mode`).
+    pub session_file: Option<PathBuf>,
+    /// The last session's tabs, opened when `locations` is empty (`tabs.restore_session`).
+    pub session: Option<crate::session::Session>,
 }
 
 /// A pinned sidebar item.
@@ -82,10 +87,22 @@ pub struct Pin {
 pub struct Workspace {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active: usize,
-    next_tab_id: u64,
+    pub(crate) next_tab_id: u64,
     pub(crate) list_focus: FocusHandle,
     pub(crate) address: gpui_kit::Entity<InputState>,
     pub(crate) editing_address: bool,
+    /// The search box (F-SRCH-01); it shows the active tab's filter.
+    pub(crate) search: gpui_kit::Entity<InputState>,
+    /// What the search box was last given (tab id, text) and the place its placeholder names;
+    /// see `sync_search`.
+    pub(crate) search_shown: Option<(u64, String)>,
+    pub(crate) search_place: Option<(u64, Location, bool)>,
+    /// Generation of the last recursive search started.
+    pub(crate) next_search: u64,
+    /// `notice` is about a bad search query (cleared with the search box).
+    pub(crate) query_notice: bool,
+    /// The search box is open although the window is narrow (it folds into an icon there).
+    pub(crate) search_open: bool,
     pub(crate) drives: Vec<Drive>,
     pub(crate) pins: Vec<Pin>,
     pins_file: Option<PathBuf>,
@@ -94,6 +111,28 @@ pub struct Workspace {
     /// the highlight colours from this; GPUI group hover is not known yet when text is laid out.
     pub(crate) hovered: Option<gpui_kit::ElementId>,
     pub(crate) features: Arc<Features>,
+    /// Where `features` comes from; Hot Switch changes it (and writes `settings.toml`).
+    pub(crate) settings: SettingsStore,
+    pub(crate) settings_writer: crate::hotswitch::SettingsWriter,
+    /// The Hot Switch OSD, while it shows.
+    pub(crate) osd: Option<crate::hotswitch::Osd>,
+    /// The command palette, while it is open.
+    pub(crate) palette: Option<crate::palette::Palette>,
+    /// The themed context menu, while it is open.
+    pub(crate) context_menu: Option<crate::context_menu::ContextMenu>,
+    pub(crate) menu_openings: u64,
+    /// A right-click outside the menu closed it: its release opens nothing.
+    pub(crate) swallow_right_up: bool,
+    /// The sidebar items drawn this frame: their focus, place and bounds (the keyboard opens
+    /// their menu and properties).
+    pub(crate) sidebar_targets: std::rc::Rc<std::cell::RefCell<Vec<crate::sidebar::SidebarTarget>>>,
+    /// Drag and drop: the Drag Guard, our drop target, the drop highlight.
+    pub(crate) drag: crate::dnd::DragState,
+    /// Folders opened this session, most recent first (quick open; never written to disk).
+    pub(crate) recent_folders: Vec<PathBuf>,
+    /// The newest shell menu asked for; an older one does not open.
+    pub(crate) menu_ticket: std::rc::Rc<std::cell::Cell<u64>>,
+    pub(crate) next_osd: u64,
     /// One-line message about the last failed action (cause + fix, DESIGN.md §10).
     pub(crate) notice: Option<SharedString>,
     pub(crate) hwnd: Option<isize>,
@@ -105,6 +144,8 @@ pub struct Workspace {
     pub(crate) sidebar_area: FocusHandle,
     pub(crate) toast_area: FocusHandle,
     pub(crate) focus_stops: crate::focus::FocusStops,
+    /// What has focus in the frame being drawn (rings are drawn from it).
+    pub(crate) focused_now: Option<FocusHandle>,
     /// Start renaming the selected item on the next render (it needs the window).
     pub(crate) rename_pending: bool,
     /// The details column border being dragged.
@@ -118,6 +159,16 @@ pub struct Workspace {
     changes: mpsc::UnboundedSender<u64>,
     pending_refresh: HashSet<u64>,
     _subscriptions: Vec<Subscription>,
+    /// Follows the window's place for the session.
+    pub(crate) window_watch: Option<Subscription>,
+    /// The Recycle Bin page (F-LOC-02).
+    pub(crate) bin: crate::bin_page::BinView,
+    /// Where the session is written (F-WIN-05).
+    pub(crate) session_file: Option<PathBuf>,
+    /// The newest session write asked for; an older timer writes nothing.
+    pub(crate) session_ticket: u64,
+    /// The window's normal place, for the session.
+    pub(crate) window_place: Option<crate::session::SavedWindow>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -149,17 +200,22 @@ impl Workspace {
         let address = cx.new(|cx| {
             InputState::new(window, cx).placeholder(t!("nav.address_placeholder").to_string())
         });
+        let search = cx.new(|cx| InputState::new(window, cx));
         let subscriptions = vec![
             cx.subscribe_in(&address, window, Self::on_address_event),
+            cx.subscribe_in(&search, window, Self::on_search_event),
             cx.on_focus_lost(window, Self::restore_focus),
         ];
         let list_focus = cx.focus_handle().tab_stop(true);
         window.focus(&list_focus, cx);
-        let undo_depth = options.features.ops_undo_depth;
+        let features = options.settings.snapshot();
+        let undo_depth = features.ops_undo_depth;
         let (icons, loaded_icons) =
-            crate::icons::IconCache::start(usize::from(options.features.perf_icon_cache_entries));
+            crate::icons::IconCache::start(usize::from(features.perf_icon_cache_entries));
         let (changes, changed_tabs) = mpsc::unbounded();
 
+        let sidebar_targets: std::rc::Rc<std::cell::RefCell<Vec<crate::sidebar::SidebarTarget>>> =
+            std::rc::Rc::default();
         let mut this = Self {
             tabs: Vec::new(),
             active: 0,
@@ -167,6 +223,12 @@ impl Workspace {
             list_focus,
             address,
             editing_address: false,
+            search,
+            search_shown: None,
+            search_place: None,
+            next_search: 0,
+            query_notice: false,
+            search_open: false,
             drives: Vec::new(),
             pins: crate::pins::load(options.pins_file.as_deref())
                 .into_iter()
@@ -175,7 +237,19 @@ impl Workspace {
             pins_file: options.pins_file.clone(),
             sidebar_visible: true,
             hovered: None,
-            features: options.features,
+            features,
+            settings: options.settings,
+            settings_writer: crate::hotswitch::SettingsWriter::start(),
+            osd: None,
+            palette: None,
+            context_menu: None,
+            menu_openings: 0,
+            swallow_right_up: false,
+            sidebar_targets: sidebar_targets.clone(),
+            drag: crate::dnd::DragState::new(sidebar_targets),
+            recent_folders: Vec::new(),
+            menu_ticket: std::rc::Rc::default(),
+            next_osd: 0,
             notice: None,
             hwnd: hwnd(window),
             ops: crate::ops::OpsState::new(options.journal_dir.as_deref(), usize::from(undo_depth)),
@@ -184,6 +258,7 @@ impl Workspace {
             sidebar_area: cx.focus_handle(),
             toast_area: cx.focus_handle(),
             focus_stops: crate::focus::FocusStops::default(),
+            focused_now: None,
             icons,
             rename_pending: false,
             column_resize: None,
@@ -195,6 +270,11 @@ impl Workspace {
             changes,
             pending_refresh: HashSet::new(),
             _subscriptions: subscriptions,
+            session_file: options.session_file,
+            session_ticket: 0,
+            window_place: None,
+            window_watch: None,
+            bin: crate::bin_page::BinView::default(),
         };
         if this.features.ops_taskbar_progress {
             this.ops.taskbar = this.hwnd.and_then(|hwnd| {
@@ -203,17 +283,11 @@ impl Workspace {
                     .ok()
             });
         }
-        let locations = if options.locations.is_empty() {
-            vec![Location::Home]
-        } else {
-            options.locations
-        };
-        for location in locations {
-            this.open_tab(location, cx);
-        }
-        this.active = 0;
+        this.open_start_tabs(options.locations, options.session, cx);
+        this.watch_window_place(window, cx);
         this.refresh_drives(cx);
         this.watch_appearance(window, cx);
+        this.install_drop_target(window, cx);
         this.watch_changes(changed_tabs, cx);
         this.receive_icons(loaded_icons, cx);
         if let Some(requests) = options.requests {
@@ -248,6 +322,10 @@ impl Workspace {
 
     pub(crate) fn tab_mut(&mut self) -> &mut Tab {
         &mut self.tabs[self.active]
+    }
+
+    pub(crate) fn tab_by_id_mut(&mut self, id: u64) -> Option<&mut Tab> {
+        self.tabs.iter_mut().find(|t| t.id == id)
     }
 
     // ---- Appearance ---------------------------------------------------------------------
@@ -357,6 +435,10 @@ impl Workspace {
         if ix < self.tabs.len() {
             self.active = ix;
             self.leave_address(window, cx);
+            if std::mem::take(&mut self.tabs[ix].unloaded) {
+                self.load(cx);
+            }
+            self.session_changed(cx);
             cx.notify();
         }
     }
@@ -366,6 +448,7 @@ impl Workspace {
             return;
         }
         if self.tabs.len() == 1 {
+            self.save_session_now();
             window.remove_window();
             return;
         }
@@ -374,6 +457,10 @@ impl Workspace {
         if self.active >= self.tabs.len() || self.active > ix {
             self.active = self.active.saturating_sub(1);
         }
+        if std::mem::take(&mut self.tabs[self.active].unloaded) {
+            self.load(cx);
+        }
+        self.session_changed(cx);
         cx.notify();
     }
 
@@ -405,6 +492,7 @@ impl Workspace {
     pub(crate) fn load(&mut self, cx: &mut Context<Self>) {
         let id = self.tab().id;
         self.load_tab(id, false, cx);
+        self.session_changed(cx);
     }
 
     /// Loads a tab's location. A `refresh` keeps the current listing on screen until the new
@@ -415,14 +503,37 @@ impl Workspace {
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
             return;
         };
+        // Refreshing search results (F5, a finished operation, a view switch) searches again,
+        // with the view switches in effect; the listing behind them is reloaded afterwards.
+        if refresh && tab.search.is_some() {
+            tab.sort = SortSpec {
+                folders_first: features.view_folders_first,
+                natural: features.view_natural_sort,
+                ..tab.sort
+            };
+            if let Some(search) = &mut tab.search {
+                search.listing_stale = true;
+            }
+            let text = tab.filter.clone();
+            self.start_search(tab_id, &text, true, cx);
+            return;
+        }
         let refresh = refresh && matches!(tab.content, Content::Folder(_));
         if !refresh {
             tab.watcher = None;
+            // Another folder: the filter and the search were for the old one.
+            tab.filter.clear();
+            tab.recursive = false;
+            tab.take_search();
         }
         let cancel = tab.begin_load();
         let Location::Path(path) = tab.location().clone() else {
+            let bin = *tab.location() == Location::RecycleBin;
             tab.content = Content::Page;
             tab.selection.clear();
+            if bin {
+                self.refresh_bin(cx);
+            }
             cx.notify();
             return;
         };
@@ -440,7 +551,9 @@ impl Workspace {
         let view = ViewOptions {
             show_hidden: features.view_show_hidden,
             show_system: features.view_show_system,
-            filter: String::new(),
+            filter: tab
+                .listing_filter(features.search_recursive_default)
+                .to_string(),
         };
         cx.notify();
         let started = Instant::now();
@@ -481,8 +594,24 @@ impl Workspace {
         if tab.location().as_path() != Some(path) {
             return;
         }
+        // A listing that arrives while results are shown waits behind them. (It may be older
+        // than a change the watcher saw, so the listing stays stale if it was.)
+        if let Some(search) = &mut tab.search {
+            if let Ok(snapshot) = result {
+                search.listing = Some(Arc::new(snapshot));
+            }
+            return;
+        }
         match result {
-            Ok(snapshot) => {
+            Ok(mut snapshot) => {
+                let filter = tab.listing_filter(self.features.search_recursive_default);
+                if snapshot.view().filter != sx_fs::fold_case(filter) {
+                    let view = ViewOptions {
+                        filter: filter.to_string(),
+                        ..snapshot.view().clone()
+                    };
+                    snapshot.set_view(view);
+                }
                 tracing::debug!(
                     entries = snapshot.len(),
                     ms = started.elapsed().as_secs_f64() * 1000.0,
@@ -497,23 +626,17 @@ impl Workspace {
                     let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
                         return;
                     };
-                    if watch
-                        && !tab
-                            .watcher
-                            .as_ref()
-                            .is_some_and(sx_win::DirWatcher::is_running)
-                    {
-                        tab.watcher =
-                            sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
-                                .map_err(
-                                    |err| tracing::debug!(error = %err, "folder watch unavailable"),
-                                )
-                                .ok();
+                    if watch {
+                        keep_watching(tab, path, changes);
                     }
                     cx.notify();
                     return;
                 }
                 let reveal = tab.reveal.take();
+                self.remember_folder(path);
+                let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
+                    return;
+                };
                 let row = reveal.and_then(|name| {
                     (0..snapshot.visible_len())
                         .find(|&r| snapshot.row(r).is_some_and(|e| e.name == name))
@@ -526,18 +649,8 @@ impl Workspace {
                 } else {
                     tab.scroll.scroll_to_item(0, ScrollStrategy::Top);
                 }
-                if watch
-                    && !tab
-                        .watcher
-                        .as_ref()
-                        .is_some_and(sx_win::DirWatcher::is_running)
-                {
-                    tab.watcher =
-                        sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
-                            .map_err(
-                                |err| tracing::debug!(error = %err, "folder watch unavailable"),
-                            )
-                            .ok();
+                if watch {
+                    keep_watching(tab, path, changes);
                 }
                 if let Some(process) = self.bench_started.take() {
                     self.finish_bench(process, started, entries, cx);
@@ -558,6 +671,13 @@ impl Workspace {
             }
         }
         cx.notify();
+    }
+
+    /// Quick open remembers folders opened this session, most recent first.
+    fn remember_folder(&mut self, path: &std::path::Path) {
+        self.recent_folders.retain(|p| p != path);
+        self.recent_folders.insert(0, path.to_path_buf());
+        self.recent_folders.truncate(crate::palette::RECENT_FOLDERS);
     }
 
     /// `--bench-open`: the report is printed once the frame showing the listing is drawn
@@ -617,7 +737,13 @@ impl Workspace {
                     timer.await;
                     let _ = this.update(cx, |this, cx| {
                         this.pending_refresh.remove(&tab_id);
-                        this.load_tab(tab_id, true, cx);
+                        let tab = this.tabs.iter_mut().find(|t| t.id == tab_id);
+                        if let Some(search) = tab.and_then(|t| t.search.as_mut()) {
+                            // A change in the folder must not replace the results on screen.
+                            search.listing_stale = true;
+                        } else {
+                            this.load_tab(tab_id, true, cx);
+                        }
                     });
                 })
                 .detach();
@@ -809,17 +935,32 @@ impl Workspace {
     /// folder runs on a background executor (`DirSnapshot::sorted_order`); the selection is kept.
     pub(crate) fn sort_by(&mut self, column: Column, cx: &mut Context<Self>) {
         let tab = self.tab_mut();
-        let spec = SortSpec {
+        tab.sort = SortSpec {
             column,
             descending: tab.sort.column == column && !tab.sort.descending,
             ..tab.sort
         };
-        tab.sort = spec;
+        // Results still coming in are sorted once the walk ends, in this order.
+        if tab.search.as_ref().is_some_and(|s| s.running) {
+            cx.notify();
+            return;
+        }
+        let tab_id = tab.id;
+        self.resort(tab_id, cx);
+    }
+
+    /// Sorts a tab's listing by its sort spec on a background executor; the selection is kept.
+    pub(crate) fn resort(&mut self, tab_id: u64, cx: &mut Context<Self>) {
+        let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) else {
+            return;
+        };
+        let spec = tab.sort;
         let Some(snapshot) = tab.snapshot().cloned() else {
             cx.notify();
             return;
         };
-        let tab_id = tab.id;
+        // The order is for this very listing; one that replaced it meanwhile is left alone.
+        let sorted_listing = Arc::as_ptr(&snapshot) as usize;
         let task = cx
             .background_executor()
             .spawn(async move { snapshot.sorted_order(spec) });
@@ -829,27 +970,10 @@ impl Workspace {
                 let Some(tab) = this.tabs.iter_mut().find(|t| t.id == tab_id) else {
                     return;
                 };
-                let Content::Folder(snapshot) = &mut tab.content else {
+                if tab.snapshot().map(|s| Arc::as_ptr(s) as usize) != Some(sorted_listing) {
                     return;
-                };
-                let selected: HashSet<u32> = tab
-                    .selection
-                    .iter()
-                    .filter_map(|row| snapshot.row(row as usize).map(|e| e.index))
-                    .collect();
-                let focus = tab
-                    .selection
-                    .focus()
-                    .and_then(|row| snapshot.row(row as usize).map(|e| e.index));
-                Arc::make_mut(snapshot).apply_order(spec, order);
-                let rows = (0..snapshot.visible_len() as u32).filter(|&r| {
-                    snapshot
-                        .row(r as usize)
-                        .is_some_and(|e| selected.contains(&e.index))
-                });
-                let focus_row = focus.and_then(|ix| snapshot.row_of(ix)).map(|r| r as u32);
-                let rows: Vec<u32> = rows.collect();
-                tab.selection.restore(rows, focus_row);
+                }
+                let focus_row = tab.change_listing(|snapshot| snapshot.apply_order(spec, order));
                 tab.clear_row_cache();
                 if let Some(row) = focus_row {
                     tab.scroll
@@ -887,6 +1011,21 @@ impl Workspace {
     pub(crate) fn row_kind(&self, row: usize) -> Option<EntryKind> {
         self.tab().snapshot()?.row(row).map(|e| e.kind)
     }
+}
+
+/// Watches a tab's folder unless a watcher is already running there (`perf.watcher`).
+fn keep_watching(tab: &mut Tab, path: &std::path::Path, changes: mpsc::UnboundedSender<u64>) {
+    if tab
+        .watcher
+        .as_ref()
+        .is_some_and(sx_win::DirWatcher::is_running)
+    {
+        return;
+    }
+    let tab_id = tab.id;
+    tab.watcher = sx_win::watch(path, move || changes.unbounded_send(tab_id).is_ok())
+        .map_err(|err| tracing::debug!(error = %err, "folder watch unavailable"))
+        .ok();
 }
 
 /// After a refresh: selects an item that was just renamed or created. Returns `true` when the
@@ -958,7 +1097,7 @@ impl Pin {
 
 impl Workspace {
     pub(crate) fn is_pinned(&self, path: &std::path::Path) -> bool {
-        self.pins.iter().any(|p| p.path == path)
+        self.pins.iter().any(|p| same_path(&p.path, path))
     }
 
     /// Pins or unpins the current folder (F-SIDE-02), unless `sidebar.pins_locked`.
@@ -966,24 +1105,81 @@ impl Workspace {
         let Some(path) = self.tab().location().as_path().map(PathBuf::from) else {
             return;
         };
+        if self.is_pinned(&path) {
+            self.edit_pins(|pins| pins.retain(|p| *p != path), cx);
+        } else {
+            self.edit_pins(|pins| pins.push(path), cx);
+        }
+    }
+
+    /// Changes the pinned folders (add, remove, reorder) and saves them, unless
+    /// `sidebar.pins_locked`.
+    pub(crate) fn edit_pins(
+        &mut self,
+        change: impl FnOnce(&mut Vec<PathBuf>),
+        cx: &mut Context<Self>,
+    ) {
         if self.features.sidebar_pins_locked {
             self.notice = Some(t!("nav.pins_locked").into());
             cx.notify();
             return;
         }
-        if self.is_pinned(&path) {
-            self.pins.retain(|p| p.path != path);
-        } else {
-            self.pins.push(Pin::new(path));
+        let mut paths: Vec<PathBuf> = self.pins.iter().map(|p| p.path.clone()).collect();
+        change(&mut paths);
+        self.store_pins(paths, cx);
+    }
+
+    /// Pins whose folder was moved or renamed (also by an undo) follow it, locked or not: the
+    /// pin stays what the user pinned.
+    pub(crate) fn follow_moved_pins(&mut self, done: &sx_ops::Op, cx: &mut Context<Self>) {
+        let pairs: Vec<(&std::path::Path, &std::path::Path)> = match done {
+            sx_ops::Op::Move { pairs, .. } => pairs
+                .iter()
+                .map(|pair| (pair.from.as_path(), pair.to.as_path()))
+                .collect(),
+            sx_ops::Op::Rename { from, to } => vec![(from.as_path(), to.as_path())],
+            _ => return,
+        };
+        let mut changed = false;
+        let paths: Vec<PathBuf> = self
+            .pins
+            .iter()
+            .map(|pin| {
+                for (from, to) in &pairs {
+                    if same_path(&pin.path, from) {
+                        changed = true;
+                        return to.to_path_buf();
+                    }
+                    if let Ok(rest) = pin.path.strip_prefix(from) {
+                        changed = true;
+                        return to.join(rest);
+                    }
+                }
+                pin.path.clone()
+            })
+            .collect();
+        if changed {
+            self.store_pins(paths, cx);
         }
-        if let Some(file) = &self.pins_file {
-            let paths: Vec<PathBuf> = self.pins.iter().map(|p| p.path.clone()).collect();
-            if let Err(err) = crate::pins::save(file, &paths) {
-                tracing::warn!(error = %err, "pins not saved");
-            }
+    }
+
+    fn store_pins(&mut self, mut paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let mut seen = HashSet::new();
+        paths.retain(|p| seen.insert(p.to_string_lossy().to_lowercase()));
+        self.pins = paths.iter().cloned().map(Pin::new).collect();
+        if let Some(file) = &self.pins_file
+            && let Err(err) = crate::pins::save(file, &paths)
+        {
+            tracing::warn!(error = %err, "pins not saved");
         }
+        self.hovered = None;
         cx.notify();
     }
+}
+
+/// Whether two paths name the same folder: Windows paths ignore case.
+pub(crate) fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
+    a == b || a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
 fn hwnd(window: &Window) -> Option<isize> {
@@ -997,6 +1193,27 @@ fn hwnd(window: &Window) -> Option<isize> {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.focus_stops.begin_frame();
+        // A dialog (a paste conflict) or an inline rename that starts takes over from the
+        // palette; the focus goes to it.
+        if self.ops.dialog.is_some() || self.ops.renaming.is_some() {
+            self.palette = None;
+            self.context_menu = None;
+        }
+        // Like Windows' menus, it closes when the window loses focus.
+        let active = window.is_window_active();
+        if self
+            .context_menu
+            .as_mut()
+            .is_some_and(|menu| !menu.keep_open(active))
+        {
+            self.context_menu = None;
+        }
+        self.sidebar_targets.borrow_mut().clear();
+        self.sync_drag(window, cx);
+        self.sync_search(window, cx);
+        self.focused_now = window.focused(cx);
+        // The toast holds its timer while it has focus (keyboard users reaching for Undo).
+        self.ops.toast_focused = self.toast_area.contains_focused(window, cx);
         if std::mem::take(&mut self.rename_pending) {
             self.begin_rename(window, cx);
         }
@@ -1030,27 +1247,6 @@ impl Render for Workspace {
             .text_color(fg)
             .text_size(size)
             .line_height(line)
-            .on_action(cx.listener(|this, _: &actions::NavBack, _, cx| {
-                if this.tab_mut().history.back().is_some() {
-                    this.notice = None;
-                    this.load(cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &actions::NavForward, _, cx| {
-                if this.tab_mut().history.forward().is_some() {
-                    this.notice = None;
-                    this.load(cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &actions::NavUp, _, cx| this.go_up(cx)))
-            .on_action(cx.listener(|this, _: &actions::NavRefresh, _, cx| {
-                let id = this.tab().id;
-                this.load_tab(id, true, cx);
-                this.refresh_drives(cx);
-            }))
-            .on_action(cx.listener(|this, _: &actions::FocusAddress, window, cx| {
-                this.edit_address(window, cx);
-            }))
             .on_action(cx.listener(|this, _: &actions::TabNew, window, cx| {
                 this.open_tab(Location::Home, cx);
                 this.leave_address(window, cx);
@@ -1071,6 +1267,7 @@ impl Render for Workspace {
                 this.hovered = None;
                 cx.notify();
             }))
+            .child(self.drag_listeners(cx))
             .child(self.render_title_bar(window, cx))
             .child(self.render_command_bar(window, cx))
             .child(
@@ -1082,9 +1279,112 @@ impl Render for Workspace {
                     .child(self.render_content(window, cx)),
             )
             .child(self.render_status_bar(cx))
-            .children(overlays);
+            .children(overlays)
+            .children(self.render_palette(window, cx))
+            .children(self.render_context_menu(window, cx))
+            // Above dialogs too: a Hot Switch is never dimmed by a scrim.
+            .children(self.render_osd(cx));
+        let root = self.nav_actions(root, cx);
         let root = self.file_actions(root, cx);
+        let root = self.hotswitch_actions(root, cx);
         self.focus_actions(root, cx)
+    }
+}
+
+impl Workspace {
+    /// Navigation and search commands, bound from the `CommandRegistry`.
+    fn nav_actions(
+        &self,
+        root: gpui_kit::Stateful<gpui_kit::Div>,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
+        root.on_action(cx.listener(|this, _: &actions::NavBack, _, cx| {
+            // Results have no place in the history: Back goes back to the folder listing.
+            if this.tab().search.is_some() {
+                let tab_id = this.tab().id;
+                this.end_search(tab_id, false, cx);
+                return;
+            }
+            if this.tab_mut().history.back().is_some() {
+                this.notice = None;
+                this.load(cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &actions::NavForward, _, cx| {
+            if this.tab_mut().history.forward().is_some() {
+                this.notice = None;
+                this.load(cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &actions::NavUp, _, cx| this.go_up(cx)))
+        .on_action(cx.listener(|this, _: &actions::NavRefresh, _, cx| {
+            let id = this.tab().id;
+            this.load_tab(id, true, cx);
+            this.refresh_drives(cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::FocusAddress, window, cx| {
+            this.edit_address(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::SearchFilter, window, cx| {
+            this.focus_search(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &actions::SearchFind, window, cx| {
+            this.find(window, cx);
+        }))
+        .on_action(
+            cx.listener(|this, _: &actions::CommandPalette, window, cx| {
+                this.open_palette(crate::palette::PaletteMode::Commands, window, cx);
+            }),
+        )
+        .on_action(cx.listener(|this, _: &actions::QuickOpen, window, cx| {
+            this.open_palette(crate::palette::PaletteMode::Folders, window, cx);
+        }))
+        .on_action(
+            cx.listener(|this, _: &actions::HotSwitchPanel, window, cx| {
+                this.open_palette(crate::palette::PaletteMode::Switches, window, cx);
+            }),
+        )
+        .on_action(cx.listener(|this, _: &actions::NativeMenu, window, cx| {
+            if let Some((location, at)) = this.focused_sidebar_item(window) {
+                if let Some(path) = location.as_path() {
+                    let target = sx_shell::menu::MenuTarget::Items(vec![path.to_path_buf()]);
+                    this.open_native_menu_for(target, at, false, window, cx);
+                }
+                return;
+            }
+            let at = this.keyboard_menu_point(cx);
+            this.open_native_menu(at, false, window, cx);
+        }))
+        .on_action(
+            cx.listener(|this, _: &actions::ContextMenuKey, window, cx| {
+                let viewport = window.viewport_size();
+                let middle = gpui_kit::point(viewport.width / 2.0, viewport.height / 3.0);
+                if let Some((location, at)) = this.focused_sidebar_item(window) {
+                    this.open_sidebar_menu(&location, at.unwrap_or(middle), true, window, cx);
+                    return;
+                }
+                // Below the focused row, else at the top of the list, else mid-window (an
+                // empty folder has no rows).
+                let at = this
+                    .keyboard_menu_point(cx)
+                    .or_else(|| this.tab().rows_bounds.get().map(|b| b.origin))
+                    .unwrap_or(middle);
+                this.open_list_menu(at, true, window, cx);
+            }),
+        )
+        .on_action(
+            cx.listener(|this, _: &actions::FileProperties, window, cx| {
+                let target = match this.focused_sidebar_item(window) {
+                    Some((location, _)) => location
+                        .as_path()
+                        .map(|p| sx_shell::menu::MenuTarget::Items(vec![p.to_path_buf()])),
+                    None => this.menu_target(),
+                };
+                if let Some(target) = target {
+                    this.show_properties(target, cx);
+                }
+            }),
+        )
     }
 }
 
@@ -1111,6 +1411,16 @@ impl Workspace {
         .on_action(cx.listener(|this, _: &actions::FileCut, _, cx| this.copy_selection(true, cx)))
         .on_action(cx.listener(|this, _: &actions::FilePaste, _, cx| this.paste(cx)))
         .on_action(cx.listener(|this, _: &actions::FileCopyPath, _, cx| this.copy_paths(cx)))
+        .on_action(cx.listener(|this, _: &actions::OpenTerminal, _, cx| {
+            if let Some(dir) = this.terminal_target() {
+                this.open_terminal(dir, cx);
+            }
+        }))
+        .on_action(cx.listener(|this, _: &actions::OpenInCode, _, cx| {
+            if let Some(path) = this.code_target() {
+                this.open_in_code(path, cx);
+            }
+        }))
         .on_action(cx.listener(|this, _: &actions::EditUndo, _, cx| this.undo(cx)))
         .on_action(cx.listener(|this, _: &actions::EditRedo, _, cx| this.redo(cx)))
         .on_action(cx.listener(|this, _: &actions::SidebarPin, _, cx| this.toggle_pin(cx)))

@@ -1,6 +1,9 @@
 //! `DirSnapshot` (ARCHITECTURE.md §9): one folder listing in compact form. Names live in one
 //! UTF-8 arena (plus a lowercase arena for filtering), extensions are interned, and the sorted
 //! and filtered orders are `u32` index vectors, so 100k entries stay around 11 MB.
+//!
+//! Search results (F-SRCH-02) use the same type: each entry then also records the folder it was
+//! found in ([`DirSnapshot::push_found`]), and paths are built from that folder.
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -62,6 +65,8 @@ pub enum Column {
     Modified,
     Type,
     Size,
+    /// The folder a search result was found in.
+    Folder,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,10 +125,16 @@ pub struct DirSnapshot {
     ext_index: HashMap<Box<str>, u16>,
     /// Exact UTF-16 names of lossy entries, by entry index (pushed in index order).
     lossy_names: Vec<(u32, Box<[u16]>)>,
+    /// Search results only: the folders entries were found in, and each entry's folder (empty
+    /// for a folder listing, so a listing pays nothing for it).
+    folders: Vec<PathBuf>,
+    folder_of: Vec<u32>,
     /// Entry indices in sort order.
     order: Vec<u32>,
     /// `order` after hidden/system/filter rules.
     visible: Vec<u32>,
+    /// Entries the hidden/system rules show, whatever the filter.
+    unfiltered: usize,
     sort: SortSpec,
     view: ViewOptions,
 }
@@ -137,8 +148,11 @@ impl Default for DirSnapshot {
             exts: vec![String::new()],
             ext_index: HashMap::new(),
             lossy_names: Vec::new(),
+            folders: Vec::new(),
+            folder_of: Vec::new(),
             order: Vec::new(),
             visible: Vec::new(),
+            unfiltered: 0,
             sort: SortSpec::default(),
             view: ViewOptions::default(),
         }
@@ -168,6 +182,11 @@ impl DirSnapshot {
         self.visible.len()
     }
 
+    /// Entries shown without the filter (the "of 207 items" next to a filtered count).
+    pub fn unfiltered_len(&self) -> usize {
+        self.unfiltered
+    }
+
     /// The entry at a visible row.
     pub fn row(&self, row: usize) -> Option<EntryView<'_>> {
         self.visible.get(row).map(|&ix| self.view_of(ix))
@@ -186,9 +205,31 @@ impl DirSnapshot {
         self.sort
     }
 
-    /// The path of an entry inside `dir`, built from its exact name (lossy names included).
+    /// The options in effect; `filter` is case-folded (see [`fold_case`]).
+    pub fn view(&self) -> &ViewOptions {
+        &self.view
+    }
+
+    /// Whether this holds search results (entries from several folders).
+    pub fn is_results(&self) -> bool {
+        !self.folders.is_empty()
+    }
+
+    /// The folder a search result was found in; `None` in a folder listing.
+    pub fn folder(&self, index: u32) -> Option<&Path> {
+        let folder = *self.folder_of.get(index as usize)?;
+        self.folders.get(folder as usize).map(PathBuf::as_path)
+    }
+
+    /// The path of an entry, built from its exact name (lossy names included): inside `dir` for
+    /// a folder listing, inside the folder it was found in for search results.
     pub fn path_of(&self, dir: &Path, index: u32) -> Option<PathBuf> {
         let rec = self.entries.get(index as usize)?;
+        let dir = match self.folder(index) {
+            Some(folder) => folder,
+            None if self.is_results() => return None,
+            None => dir,
+        };
         if rec.lossy {
             let at = self
                 .lossy_names
@@ -203,7 +244,14 @@ impl DirSnapshot {
     pub fn heap_bytes(&self) -> usize {
         let exts: usize = self.exts.iter().map(|e| e.capacity() * 2).sum();
         let lossy: usize = self.lossy_names.iter().map(|(_, n)| n.len() * 2 + 8).sum();
-        self.entries.capacity() * size_of::<EntryRec>()
+        let folders: usize = self
+            .folders
+            .iter()
+            .map(|f| f.as_os_str().len() * 2 + size_of::<PathBuf>())
+            .sum();
+        folders
+            + self.folder_of.capacity() * size_of::<u32>()
+            + self.entries.capacity() * size_of::<EntryRec>()
             + self.names.capacity()
             + self.names_lower.capacity()
             + exts
@@ -214,11 +262,37 @@ impl DirSnapshot {
     /// Appends an enumeration batch. New entries go to the end of the current order; call
     /// [`Self::sort`] once enumeration finishes (the first batch renders unsorted-but-fast).
     pub fn push_batch(&mut self, batch: &[RawEntry]) {
+        self.push_entries(batch, None);
+    }
+
+    /// Appends search results found in `folder` (consecutive batches of one folder share it).
+    /// Do not mix with [`Self::push_batch`] in one snapshot.
+    pub fn push_found(&mut self, folder: &Path, batch: &[RawEntry]) {
+        if batch.is_empty() {
+            return;
+        }
+        let at = match self.folders.last() {
+            Some(last) if last == folder => self.folders.len() - 1,
+            _ => {
+                self.folders.push(folder.to_path_buf());
+                self.folders.len() - 1
+            }
+        };
+        let Ok(at) = u32::try_from(at) else {
+            return;
+        };
+        self.push_entries(batch, Some(at));
+    }
+
+    fn push_entries(&mut self, batch: &[RawEntry], folder: Option<u32>) {
         self.entries.reserve(batch.len());
         for raw in batch {
             let Ok(index) = u32::try_from(self.entries.len()) else {
                 return;
             };
+            if let Some(folder) = folder {
+                self.folder_of.push(folder);
+            }
             let ext = if raw.kind.is_container() {
                 0
             } else {
@@ -242,8 +316,11 @@ impl DirSnapshot {
             // offsets.
             push_lowercase_same_len(&mut self.names_lower, &raw.name);
             self.order.push(index);
-            if self.passes(index) {
-                self.visible.push(index);
+            if self.shown(index) {
+                self.unfiltered += 1;
+                if self.matches(index) {
+                    self.visible.push(index);
+                }
             }
         }
     }
@@ -259,9 +336,26 @@ impl DirSnapshot {
     /// result swapped in with [`Self::apply_order`].
     pub fn sorted_order(&self, spec: SortSpec) -> Vec<u32> {
         let keys = spec.natural.then(|| NameKeys::build(self));
+        let ranks = (spec.column == Column::Folder).then(|| self.folder_ranks());
         let mut order: Vec<u32> = (0..self.entries.len() as u32).collect();
-        order.sort_by(|&a, &b| self.compare(spec, a, b, keys.as_ref()));
+        order.sort_by(|&a, &b| self.compare(spec, a, b, keys.as_ref(), ranks.as_deref()));
         order
+    }
+
+    /// Each folder's place in path order, ignoring case.
+    fn folder_ranks(&self) -> Vec<u32> {
+        let lower: Vec<String> = self
+            .folders
+            .iter()
+            .map(|f| f.to_string_lossy().to_lowercase())
+            .collect();
+        let mut by_path: Vec<usize> = (0..self.folders.len()).collect();
+        by_path.sort_by(|&a, &b| lower[a].cmp(&lower[b]));
+        let mut ranks = vec![0; self.folders.len()];
+        for (rank, folder) in by_path.into_iter().enumerate() {
+            ranks[folder] = rank as u32;
+        }
+        ranks
     }
 
     /// Installs an order from [`Self::sorted_order`]. Ignored if the entries changed since.
@@ -275,24 +369,43 @@ impl DirSnapshot {
     }
 
     pub fn set_view(&mut self, mut view: ViewOptions) {
-        let mut filter = String::with_capacity(view.filter.len());
-        push_lowercase_same_len(&mut filter, &view.filter);
-        view.filter = filter;
+        view.filter = fold_case(&view.filter);
+        // Typing on narrows the filter: only what is shown now can still match.
+        let narrowing = view.show_hidden == self.view.show_hidden
+            && view.show_system == self.view.show_system
+            && view.filter.contains(self.view.filter.as_str());
         self.view = view;
-        self.rebuild_visible();
+        if narrowing {
+            let mut visible = std::mem::take(&mut self.visible);
+            visible.retain(|&ix| self.matches(ix));
+            self.visible = visible;
+        } else {
+            self.rebuild_visible();
+        }
     }
 
     fn rebuild_visible(&mut self) {
-        let visible: Vec<u32> = self
-            .order
-            .iter()
-            .copied()
-            .filter(|&ix| self.passes(ix))
-            .collect();
+        let mut unfiltered = 0;
+        let mut visible = Vec::with_capacity(self.visible.len());
+        for &ix in &self.order {
+            if self.shown(ix) {
+                unfiltered += 1;
+                if self.matches(ix) {
+                    visible.push(ix);
+                }
+            }
+        }
         self.visible = visible;
+        self.unfiltered = unfiltered;
     }
 
-    fn passes(&self, ix: u32) -> bool {
+    /// The filter box.
+    fn matches(&self, ix: u32) -> bool {
+        self.view.filter.is_empty() || self.lower(ix).contains(&self.view.filter)
+    }
+
+    /// The hidden/system rules.
+    fn shown(&self, ix: u32) -> bool {
         let rec = &self.entries[ix as usize];
         if !self.view.show_hidden && rec.attrs & FILE_ATTRIBUTE_HIDDEN != 0 {
             return false;
@@ -300,13 +413,17 @@ impl DirSnapshot {
         // Protected OS files are hidden+system; they need both switches.
         let protected = rec.attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)
             == FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
-        if protected && !self.view.show_system {
-            return false;
-        }
-        self.view.filter.is_empty() || self.lower(ix).contains(&self.view.filter)
+        !protected || self.view.show_system
     }
 
-    fn compare(&self, spec: SortSpec, a: u32, b: u32, keys: Option<&NameKeys>) -> Ordering {
+    fn compare(
+        &self,
+        spec: SortSpec,
+        a: u32,
+        b: u32,
+        keys: Option<&NameKeys>,
+        ranks: Option<&[u32]>,
+    ) -> Ordering {
         let (ra, rb) = (&self.entries[a as usize], &self.entries[b as usize]);
         if spec.folders_first {
             let folder = |r: &EntryRec| !r.kind.is_container();
@@ -324,6 +441,16 @@ impl DirSnapshot {
             Column::Modified => ra.modified.cmp(&rb.modified),
             Column::Size => ra.size.cmp(&rb.size),
             Column::Type => self.exts[ra.ext as usize].cmp(&self.exts[rb.ext as usize]),
+            Column::Folder => {
+                let rank = |ix: u32| {
+                    let folder = self.folder_of.get(ix as usize).copied().unwrap_or(0);
+                    ranks
+                        .and_then(|r| r.get(folder as usize))
+                        .copied()
+                        .unwrap_or(0)
+                };
+                rank(a).cmp(&rank(b))
+            }
         };
         let primary = if spec.descending {
             primary.reverse()
@@ -378,6 +505,15 @@ impl DirSnapshot {
         self.exts.push(ext);
         ix
     }
+}
+
+/// `text` lowercased the way names are stored for filtering: a character whose lowercase form
+/// has a different UTF-8 length is kept as-is, so byte offsets in the result are offsets in
+/// `text` too (a match found in the folded name can be highlighted in the original).
+pub fn fold_case(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    push_lowercase_same_len(&mut out, text);
+    out
 }
 
 /// Appends `name` lowercased character by character, keeping a character as-is when its
@@ -493,6 +629,111 @@ mod tests {
         });
         assert_eq!(names(&snap), ["file2.txt", "file10.txt"]);
         assert_eq!(snap.row_of(1), Some(0));
+    }
+
+    fn filter(snap: &mut DirSnapshot, text: &str) -> Vec<String> {
+        snap.set_view(ViewOptions {
+            filter: text.into(),
+            ..ViewOptions::default()
+        });
+        names(snap).into_iter().map(String::from).collect()
+    }
+
+    #[test]
+    fn narrowing_and_widening_the_filter() {
+        let mut snap = sample();
+        snap.sort(SortSpec::default());
+        let all_t = ["Zeta", "file2.txt", "file10.txt", "photo.JPG"];
+        assert_eq!(filter(&mut snap, "T"), all_t);
+        assert_eq!(filter(&mut snap, "tx"), ["file2.txt", "file10.txt"]);
+        assert_eq!(filter(&mut snap, "10.tx"), ["file10.txt"]);
+        // Back to a shorter filter: everything that matches it again, in sort order.
+        assert_eq!(filter(&mut snap, "t"), all_t);
+        assert_eq!(snap.unfiltered_len(), 5);
+        // Hidden entries stay hidden without a filter.
+        assert_eq!(filter(&mut snap, "").len(), 5);
+        assert_eq!(snap.unfiltered_len(), 5);
+        assert_eq!(snap.view().filter, "");
+    }
+
+    /// Filter cost per keystroke (PERFORMANCE.md: <= 8 ms for 10k entries).
+    #[test]
+    #[ignore = "timing; run in release with --ignored --nocapture"]
+    fn filter_timing() {
+        for count in [10_000_u64, 100_000] {
+            let batch: Vec<RawEntry> = (0..count)
+                .map(|i| {
+                    let name = format!("Photo {i:06} – Holiday Report.JPG");
+                    raw(&name, EntryKind::File, i, i as i64, 0)
+                })
+                .collect();
+            let mut snap = DirSnapshot::default();
+            snap.push_batch(&batch);
+            snap.sort(SortSpec::default());
+            for text in ["h", "ho", "hol", "holx", "hol", "", "report"] {
+                let started = std::time::Instant::now();
+                snap.set_view(ViewOptions {
+                    filter: text.into(),
+                    ..ViewOptions::default()
+                });
+                let clone = std::time::Instant::now();
+                let copy = snap.clone();
+                println!(
+                    "{count} entries, filter {text:?}: {:.2} ms ({} rows), clone {:.2} ms",
+                    (clone - started).as_secs_f64() * 1000.0,
+                    snap.visible_len(),
+                    clone.elapsed().as_secs_f64() * 1000.0,
+                );
+                drop(copy);
+            }
+        }
+    }
+
+    #[test]
+    fn search_results_keep_their_folders() {
+        let mut found = DirSnapshot::default();
+        let (docs, music) = (Path::new(r"C:\root\docs"), Path::new(r"C:\root\Music"));
+        found.push_found(docs, &[raw("b.pdf", EntryKind::File, 2, 0, 0)]);
+        found.push_found(docs, &[raw("a.pdf", EntryKind::File, 1, 0, 0)]);
+        found.push_found(music, &[raw("c.pdf", EntryKind::File, 3, 0, 0)]);
+        found.push_found(music, &[]);
+        assert!(found.is_results());
+        assert_eq!(found.len(), 3);
+        assert_eq!(found.folder(1), Some(docs));
+        // The listing's own folder is ignored: results know where they came from.
+        assert_eq!(
+            found.path_of(Path::new(r"C:\elsewhere"), 2),
+            Some(music.join("c.pdf"))
+        );
+        found.sort(SortSpec {
+            column: Column::Folder,
+            descending: true,
+            ..SortSpec::default()
+        });
+        assert_eq!(names(&found), ["c.pdf", "a.pdf", "b.pdf"]);
+        assert!(found.heap_bytes() > 0);
+        // A listing has no folders and builds paths in its own folder.
+        let listing = sample();
+        assert!(!listing.is_results());
+        assert_eq!(listing.folder(0), None);
+        assert_eq!(
+            listing.path_of(Path::new(r"C:\x"), 0),
+            Some(Path::new(r"C:\x").join("file10.txt"))
+        );
+    }
+
+    #[test]
+    fn fold_case_keeps_byte_offsets() {
+        for text in ["Report.PDF", "İstanbul", "ÉMILE", "日本語", "ẞig"] {
+            let folded = fold_case(text);
+            assert_eq!(folded.len(), text.len());
+            assert!(
+                folded
+                    .char_indices()
+                    .all(|(at, _)| text.is_char_boundary(at))
+            );
+        }
+        assert_eq!(fold_case("Report.PDF"), "report.pdf");
     }
 
     #[test]

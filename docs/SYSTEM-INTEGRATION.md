@@ -118,7 +118,11 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 | Ikon per file | `IShellItemImageFactory::GetImage(SIIGBF_ICONONLY)` | exe, lnk, ico, url, folder khusus |
 | Thumbnail | `IShellItemImageFactory::GetImage` pass 1 `SIIGBF_INCACHEONLY`, pass 2 `SIIGBF_THUMBNAILONLY` | Worker STA, cancelable; memakai thumbcache Windows |
 | Menu native | `IShellFolder::GetUIObjectOf(IID_IContextMenu)` → `QueryContextMenu` (`CMF_NORMAL | CMF_EXPLORE`, + `CMF_EXTENDEDVERBS` saat Shift) → `TrackPopupMenuEx` → `InvokeCommand` (`CMINVOKECOMMANDINFOEX`) | Selama menu terbuka, teruskan `WM_INITMENUPOPUP`, `WM_DRAWITEM`, `WM_MEASUREITEM`, `WM_MENUCHAR` ke `IContextMenu2/3` lewat `SetWindowSubclass` agar submenu "Send to"/"Open with" berikon |
-| Menu background | `IShellFolder::CreateViewObject(IID_IContextMenu)` | Termasuk submenu Baru ▸ |
+| Menu background | `SHBindToObject` folder → `IShellFolder::CreateViewObject(IID_IContextMenu)` | Termasuk submenu Baru ▸ |
+| Menu native: verb milik sendiri | `GetCommandString(GCS_VERBW)` atas command yang dipilih | `rename`, `delete` (item), dan `paste` (latar folder, atau satu folder item) tidak dijalankan shell. Ketiganya kembali ke Switch Explorer (`sx_shell::menu::OwnVerb`) supaya tercatat di journal, bisa di-undo, dan rename-nya inline. Verb lain dijalankan shell (`InvokeCommand` memakai offset command). |
+| Menu native: dua langkah | `sx_shell::menu::prepare` (thread latar: `SHParseDisplayName`, cek induk sama lewat `ILIsParent`) → `show` di modal host | Share jaringan yang offline tidak membekukan window. Path verbatim (`\\?\`, `\\?\UNC\`) dibuang awalannya. Path ≥ 260 karakter ditolak dengan pesan. Hanya menu terbaru yang dibuka (tiket): klik kanan yang lebih tua dibatalkan. |
+| Menu native: invoke | `CMIC_MASK_UNICODE | CMIC_MASK_PTINVOKE | CMIC_MASK_ASYNCOK`, `CMF_CANRENAME | CMF_ITEMMENU` untuk item | Verb shell boleh berjalan async, jadi verb yang lama tidak menahan window. `ERROR_CANCELLED` (dialog verb dibatalkan) = ditutup. Mode tema menu dikembalikan ke default setelah menu tertutup, karena berlaku untuk seluruh proses. Belum: `SHSetInstanceExplorer` agar verb async menahan proses tetap hidup saat app ditutup. |
+| Menu native: posisi & loop | `sx_shell::modal` (ADR-015) → `TrackPopupMenuEx(TPM_RETURNCMD)` | Dari mouse, menu muncul di titik lepas tombol kanan. Dari keyboard (`Shift+F10`), di bawah baris yang fokus, atau di pointer/tengah window bila baris itu tidak terlihat. Multi-pilih memakai item yang satu folder dengan item fokus, karena hasil pencarian bisa lintas folder. |
 | Menu native dark | `SetPreferredAppMode` di uxtheme (ordinal 135, tidak terdokumentasi) | `integration.native_menu_dark`; gagal → abaikan |
 | Open with | `SHAssocEnumHandlers` → `IAssocHandler`; "Pilih aplikasi lain" → `SHOpenWithDialog` | Tampil di menu bertema kita |
 | Properties | `SHObjectProperties` (1 item), `SHMultiFileProperties` (banyak) | Dialog asli Windows |
@@ -130,10 +134,24 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 
 ## 9. OLE drag & drop
 
+Implementasi: `sx_shell::dnd` (sisi OLE) dan `sx_ui::dnd` (zona, Drag Guard, menjalankan drop).
+
 **Sebagai sumber (drag keluar):**
-- `IDataObject` dari shell untuk item terpilih (`SHCreateDataObject` atau
-  `IShellFolder::GetUIObjectOf(IID_IDataObject)`) sehingga aplikasi lain menerima format lengkap.
-- Drag image dari bitmap kita (ikon + badge jumlah) lewat `IDragSourceHelper`.
+- `IDataObject` dari shell untuk item terpilih (`SHCreateShellItemArrayFromIDLists` lalu
+  `BindToHandler(BHID_DataObject)`) sehingga aplikasi lain menerima format lengkap. PIDL diurai di
+  thread lain (`dnd::prepare`); drag baru dimulai bila tombol masih ditekan.
+- Efek yang ditawarkan diiriskan dengan kemampuan item (`SFGAO_CANCOPY/CANMOVE/CANLINK`), seperti view
+  Explorer: drive hanya bisa dijadikan shortcut, media baca-saja tidak bisa dipindah.
+- Setelah drag, `WM_LBUTTONUP`/`WM_RBUTTONUP` sintetis dikirim (loop modal menelannya), memperhitungkan
+  tombol mouse yang ditukar (`SM_SWAPBUTTON`).
+- Drag image dari bitmap kita lewat `IDragSourceHelper::InitializeFromBitmap`: ikon item pertama
+  (`IShellItemImageFactory`, `SIIGBF_ICONONLY`, 96 px pada skala 100%). Tanpa ini shell meminta gambar ke
+  window (`DI_GETDRAGIMAGE`) yang tidak dijawab GPUI, dan yang tampil kotak putih. Badge jumlah menyusul.
+- `IDropSource` milik kita: `Esc` atau tombol lain membatalkan. Bila `dnd.external_out` mati, kursor menjadi
+  "tidak boleh" di atas window lain dan melepas di sana membatalkan drag.
+- Sebagai sumber, Switch Explorer tidak pernah menghapus file asli sendiri. Pindah ke aplikasi lain
+  dikerjakan target (Explorer selalu memindahkan sendiri); efek MOVE yang dilaporkan tanpa itu paling buruk
+  menjadi salinan.
 - `SHDoDragDrop` di UI thread (STA), dijalankan lewat modal host (ADR-015), **bukan** langsung di handler
   atau task GPUI. Setelah selesai, kirim `WM_LBUTTONUP` sintetis. Efek yang diizinkan dihitung Drag Guard
   (DEVELOPER-MODE.md §5).
@@ -145,8 +163,18 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 - `DragEnter`/`DragOver`: titik layar → koordinat client → registry zona drop (bounds folder/sidebar/tab yang
   dicatat per frame) → target → efek dari modifier (`MK_CONTROL`/`MK_SHIFT`/`MK_ALT`), Drag Guard, dan
   volume sama/beda → `*pdwEffect`; `IDropTargetHelper` untuk drag image.
-- `Drop`: `CF_HDROP` atau "Shell IDList Array"; virtual files lewat `CFSTR_FILEDESCRIPTORW` +
-  `CFSTR_FILECONTENTS` (stream). Operasi dijalankan `sx-ops` (journal + undo).
+- `Drop`: `CF_HDROP` (sudah; path relatif dan isi `$Recycle.Bin` ditolak); "Shell IDList Array" dan
+  virtual files lewat `CFSTR_FILEDESCRIPTORW` + `CFSTR_FILECONTENTS` (stream) menyusul. Drive atau share
+  utuh tidak pernah disalin/dipindah lewat drop.
+- Belum: `IDataObjectAsyncCapability`. Sumber yang menulis file sementara (pengelola arsip, klien mail)
+  bisa menghapusnya begitu `DoDragDrop` selesai, sebelum `sx-ops` menyalinnya. Drop seperti itu gagal
+  (tanpa kehilangan data). Membaca "Shell IDList Array" di `DragEnter` (bukan `CF_HDROP`, yang memaksa
+  sumber malas merender) juga menyusul. Operasi dijalankan `sx-ops` (journal + undo), setelah `Drop`
+  kembali.
+- Yang dilaporkan ke sumber: salin → `DROPEFFECT_COPY`. Pindah → *optimized move*: kita yang memindahkan,
+  jadi `Performed DropEffect` = NONE, `Logical Performed DropEffect` = MOVE, dan `Drop` mengembalikan NONE
+  agar sumber tidak pernah menghapus file asli yang belum selesai kita pindahkan. Menu (`Ask`) dan
+  konfirmasi → NONE; keputusannya dijalankan kemudian oleh kita.
 - Skenario pindah: ikuti dokumentasi Microsoft "Handling Shell Data Transfer Scenarios" (*optimized move*,
   *delete-on-paste*, `CFSTR_PERFORMEDDROPEFFECT`, `CFSTR_LOGICALPERFORMEDDROPEFFECT`, `CFSTR_PASTESUCCEEDED`).
 
@@ -189,6 +217,22 @@ Succeeded" sesuai skenario delete-on-paste.
 - Sebelum restore: file `$I` slot harus mencatat path asli yang sama (slot `$R` bisa dipakai ulang setelah
   Recycle Bin dikosongkan), dan nama tujuan dipilih dulu ("nama (2)") bila nama asli sudah dipakai, supaya
   shell tidak pernah bertemu tabrakan (ia bisa menggabungkan folder). Callback yang berisi logika dibungkus `catch_unwind`; sisanya hanya mengembalikan `S_OK`.
+- Daftar bin (`list_bin`): `SHGetKnownFolderItem(FOLDERID_RecycleBinFolder)` + `BHID_EnumItems`, metadata
+  dari `$I…` (v1/v2) yang dibaca maksimal ~64 KB. Item ditolak (dan dihitung) bila path asalnya tidak absolut,
+  memuat `.`/`..`, atau tidak berada di drive/share yang sama dengan slotnya.
+- Hapus permanen & Kosongkan = `Op::Purge` (engine `sx-ops`, mode read-only dihormati): enumerasi bin yang
+  sama, cocokkan slot yang diminta dan cek `$I`-nya masih mencatat path asal yang sama, lalu `DeleteItem`
+  atas item shell bin itu (`FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT`, tanpa `ALLOWUNDO`) dengan
+  owner HWND window. Shell sendiri yang membuang `$R`+`$I` dan memberi tahu semua view bin. Kosongkan
+  memakai daftar yang tampil, bukan `SHEmptyRecycleBinW`, jadi item yang baru masuk tidak ikut terhapus.
+  Setiap item punya sink: kegagalan per item (`hrDelete`) dilaporkan, dan item dihitung selesai hanya bila
+  slotnya benar-benar sudah tidak ada (`NotFound`). Purge tidak bisa dibatalkan di tengah jalan; shell
+  menghapus semuanya dalam satu `PerformOperations`.
+- Item di volume tanpa huruf drive (`\\?\Volume{…}`, volume yang di-mount ke folder) tidak lolos cek
+  lokasi asal dan dihitung "tidak ditampilkan"; buka Recycle Bin di File Explorer untuk item itu.
+- Pembersihan `$I` saat restore hanya untuk slot `$R…` yang induknya folder `S-1-…` di bawah
+  `$Recycle.Bin` di root volume. Hapus permanen biasa (Shift+Delete) di dalam folder `$Recycle.Bin` yang
+  dibuka manual bisa meninggalkan `$I` yatim; hapus dari halaman Recycle Bin untuk membersihkan keduanya.
 
 ## 12. Taskbar, notifikasi, hotkey global
 

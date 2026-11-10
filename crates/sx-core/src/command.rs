@@ -140,8 +140,12 @@ pub const BUILTIN: &[CommandSpec] = &[
     cmd("search.filter", Workspace, &["ctrl-f"], true, false),
     cmd("search.find", Workspace, &["ctrl-e", "f3"], true, false),
     cmd("file.open", List, &["enter"], false, true),
+    cmd("file.open_new_tab", List, &["ctrl-enter"], true, true),
     cmd("file.rename", List, &["f2"], true, true),
-    cmd("file.properties", List, &["alt-enter"], true, true),
+    cmd("file.properties", Workspace, &["alt-enter"], true, true),
+    // No default shortcut, like Explorer's "Open in Terminal" (F-OPS-12).
+    cmd("file.open_terminal", Workspace, &[], true, true),
+    cmd("file.open_vscode", Workspace, &[], true, true),
     cmd("file.new_folder", Workspace, &["ctrl-shift-n"], true, true),
     cmd("file.delete", List, &["delete", "ctrl-d"], true, true),
     cmd(
@@ -155,6 +159,10 @@ pub const BUILTIN: &[CommandSpec] = &[
     cmd("file.cut", List, &["ctrl-x"], true, true),
     cmd("file.paste", Workspace, &["ctrl-v"], true, true),
     cmd("file.copy_path", List, &["ctrl-shift-c"], true, true),
+    // The shell's own menu for the selection, or for the folder with nothing selected.
+    cmd("menu.more_options", Workspace, &["shift-f10"], false, false),
+    // The Menu key: the themed menu of the selection.
+    cmd("menu.context", Workspace, &["menu"], false, false),
     cmd("edit.undo", Workspace, &["ctrl-z"], true, false),
     cmd("edit.redo", Workspace, &["ctrl-y"], true, false),
     cmd("edit.select_all", List, &["ctrl-a"], true, false),
@@ -204,7 +212,7 @@ mod tests {
     #[test]
     fn builtin_ids_are_unique_and_dotted() {
         // Commands Explorer has no shortcut for either; reached from the UI and the palette.
-        const UNBOUND: &[&str] = &["sidebar.pin"];
+        const UNBOUND: &[&str] = &["sidebar.pin", "file.open_terminal", "file.open_vscode"];
         let registry = CommandRegistry::builtin().expect("built-in commands are unique");
         assert_eq!(registry.len(), BUILTIN.len());
         for spec in registry.iter() {

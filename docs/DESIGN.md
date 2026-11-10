@@ -56,7 +56,7 @@ dark `#7A8FA8` di `#0A1628` ≈ 5.5:1.
 | `accent.highlight` | Lagoon → Cerulean (120°) | sama | Tide Slash, tombol primer, toggle on |
 | `accent.solid` | Tide → Deep Tide (135°) | sama | Checkbox, bidang solid bertulisan putih |
 | `selection.bg` | Cerulean 16% | Cerulean 22% | Baris terpilih |
-| `focus.ring` | Tide | Lagoon | `focus.ring_width` (2 px) sebagai border elemen: transparan (atau warna border elemen itu sendiri) saat tidak fokus, jadi tidak ada yang bergeser; dilukis di atas isi elemen (termasuk Tide Slash) dan tidak terpotong container yang meng-clip. Di atas kontrol yang di-highlight (item aktif, gradien hover) memakai `focus.ring_on_highlight` (Ink) |
+| `focus.ring` | Tide | Lagoon | `focus.ring_width` (2 px) tepat di luar tepi elemen (lapisan anak yang digambar saat fokus): kontras dengan permukaan di sekitarnya, bukan dengan isi kontrol, jadi tetap terlihat di tombol berisi warna, gradien hover, dan Tide Slash; hover tidak menghapusnya; tidak memakan ruang layout |
 
 Warna kategori (ikon folder kategori, chip, bar komposisi Organizer): Dokumen `#3B82F6`, Audio `#F43F5E`,
 Gambar `#F59E0B`, Video `#8B5CF6`, Arsip `#10B981`, Kode `#06B6D4`, Aplikasi `#64748B`, Lainnya `#94A3B8`.
@@ -192,27 +192,55 @@ yang sama ("3 file diunggah ke Laporan").
 
 ### 8.4 Panel Hot Switch & OSD
 
+Panel Hot Switch adalah mode ketiga command palette (§8.9): bentuk, posisi, kotak cari, dan navigasinya
+sama. Dibuka dengan `Ctrl+K`, `K` atau klik chip status (§9.2).
+
 ```text
-┌ Hot Switch ────────────────────────────────── [ Cari switch…    ] ┐
+┌───────────────────────────────────────────────────────────────────┐
+│ 🔍 Cari switch                                                     │
+├───────────────────────────────────────────────────────────────────┤
 │ Drag & drop                                                        │
-│   Semua drag & drop                ●━━  Aktif      Ctrl+Shift+D    │
-│   Drag file                        ●━━  Aktif      Ctrl+K, F       │
-│   Drag folder                      ━━○  Nonaktif   Ctrl+K, D       │
-│   Drag dari sidebar & pinned       ━━○  Nonaktif   Ctrl+K, S       │
-│   Drag ke/dari aplikasi lain       ●━━  Aktif      Ctrl+K, E       │
-│   Preset anti salah drag           ━━○  Mati       Ctrl+K, G       │
+│   Semua drag & drop                    Ctrl+Shift+D  Aktif     ━━● │
+│   Drag file                            Ctrl+K, F     Aktif     ━━● │
+│   Drag folder                          Ctrl+K, D     Nonaktif  ○━━ │
+│   Drag dari sidebar                    Ctrl+K, S     Tertahan  ━━● │
+│   Preset anti salah drag               Ctrl+K, G     Nonaktif  ○━━ │
 │ Tampilan & keselamatan                                             │
-│   File tersembunyi                 ━━○             Ctrl+K, H       │
-│   Ekstensi file                    ●━━             Ctrl+K, X       │
-│   Mode baca-saja                   ━━○             Ctrl+K, R       │
-│                                       [Atur hotkey…]   [Tutup]     │
-└────────────────────────────────────────────────────────────────────┘
+│   File tersembunyi                     Ctrl+K, H     Nonaktif  ○━━ │
+│   Ekstensi file                        Ctrl+K, X     Aktif     ━━● │
+├───────────────────────────────────────────────────────────────────┤
+│ Enter atau Spasi menyalakan atau mematikan switch yang dipilih; … │
+└───────────────────────────────────────────────────────────────────┘
 
            ╭────────────────────────────────────────────────╮
            │  ⊘  Drag folder dinonaktifkan                  │   ← OSD (tengah bawah)
            │     Drag file tetap aktif. Balik lagi: Ctrl+K, D│
            ╰────────────────────────────────────────────────╯
 ```
+
+- **Baris:** label, hotkey (`fg.secondary`), status (`fg.muted`), lalu toggle (§11, `size.toggle_*`)
+  di ujung kanan supaya semua toggle sejajar, seperti Settings Windows. Kolom status selebar kata
+  terlebar ("Aktif", "Nonaktif", "Tertahan"), jadi hotkey juga sejajar. Status selalu ditulis, jadi
+  keadaan tidak hanya dibedakan lewat warna.
+- **Tinggi:** semua baris tampil bila window cukup tinggi (maks 20 baris, min 4); lebih dari itu
+  daftar bergulir.
+- **Pilihan:** switch enum yang ditampilkan sebagai on/off (mis. "Tanya saat drop" = `dnd.default_action`
+  `ask`); mematikannya mengembalikan nilai sebelumnya. Tanpa hotkey default, kolom hotkey kosong. Ikut
+  "Tertahan" bila "Semua drag" mati.
+- **Judul kelompok:** caption `fg.muted`, tidak bisa dipilih; disembunyikan saat mencari.
+  Panah dan PageUp/PageDown melompatinya (PageUp di atas berhenti di switch pertama); naik ke baris
+  pertama kelompok ikut menampilkan judulnya.
+- **Membalik:** `Enter`, klik, atau `Space` tanpa modifier selama kotak cari kosong (setelah ada teks,
+  `Space` adalah spasi). OSD muncul seperti hotkey biasa; panel tetap terbuka dan barisnya langsung
+  diperbarui.
+- **Tertahan:** sub-switch yang menyala tapi tidak berlaku karena switch induknya mati bertuliskan
+  "Tertahan". Saat baris itu dipilih, footer menyebut switch induk dan hotkey-nya (Tertahan karena
+  "Semua drag" mati. Nyalakan dengan Ctrl+Shift+D.). OSD memakai istilah yang sama.
+- **Footer:** satu baris caption `fg.muted` di atas garis `divider` (tidak membungkus, agar tinggi panel
+  tetap). Tombol "Atur hotkey…" menyusul bersama keymap editor.
+- **Aksesibilitas:** fokus tetap di kotak cari; labelnya memuat baris terpilih lengkap dengan status
+  (dan sebab tertahan), jadi membalik switch juga terdengar. Baris berperan option dengan status
+  toggled, posisi dihitung tanpa judul ("2 dari 11"), dan nama kelompok sebagai deskripsi.
 
 ### 8.5 Settings → Drag & drop
 
@@ -274,12 +302,109 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 
 ### 8.8 Responsif
 
-- Lebar < 720 px: sidebar otomatis jadi rail 56 px.
-- Lebar < 560 px: preview pane disembunyikan; kotak cari menjadi ikon.
+- Lebar < 720 px: sidebar otomatis jadi rail 56 px; kotak cari menjadi ikon (dibuka dengan klik atau
+  `Ctrl+F`, terlipat lagi saat kosong dan kehilangan fokus).
+- Lebar minimum window 560 px: preview pane disembunyikan.
 - Kolom details menyusut berurutan: Tipe → Diubah; Nama dan Ukuran selalu terlihat.
 - Lebar kolom Diubah, Tipe, dan Ukuran bisa diseret di tepi kirinya pada header (kursor resize kolom, garis
   `divider` saat disorot), 56–480 px; Nama mengambil sisanya. Lebar berlaku per tab selama sesi; mode
   tampilan per folder (Fase 2) akan menyimpannya.
+- Hasil pencarian menambah kolom Folder. Kolom ini mengambil ruang Tipe lalu Diubah lebih dulu, dan
+  menyusut agar Nama tetap punya 200 px; bila ruangnya tidak cukup untuk lebar minimum, kolom Folder tidak
+  ditampilkan.
+
+### 8.9 Command palette
+
+```text
+          ┌──────────────────────────────────────────────────────┐
+          │ 🔍 nf                                                 │  kolom ketik, surface.input
+          ├──────────────────────────────────────────────────────┤
+          │ ▌New folder                            Ctrl+Shift+N │  baris terpilih: row.selected.bg
+          │  Dragging from the sidebar   Switch, on   Ctrl+K, S │
+          │  Pinned folder lock          Switch, off  Ctrl+K, L │
+          └──────────────────────────────────────────────────────┘
+```
+
+- Dibuka dengan `Ctrl+Shift+P` / `F1`. Posisinya di tengah atas, `space.md` di bawah title bar, dan menutupi
+  command bar. Title bar tetap bisa dipakai: drag, tombol window, dan snap layout.
+- Lebar `size.palette_width` (560 px), dengan batas `space.xl` dari tepi window. Panel memakai
+  `surface.overlay`, `border.subtle`, `radius.lg`, dan `shadow.popover`, tanpa scrim.
+- Maksimal 10 baris terlihat, lalu daftar bisa di-scroll dan scrollbar muncul.
+- Baris terpilih memakai `row.selected.bg` dan `row.selected.border`, dan baris lain `row.hover.bg` saat
+  disorot. Command yang tidak bisa jalan saat itu (Maju tanpa riwayat, Rename tanpa seleksi) ditulis
+  `fg.disabled` dan tidak bereaksi saat dipilih.
+- Isi barisnya:
+  - Label dengan huruf yang cocok ditulis tebal `match.fg`.
+  - Keterangan `fg.muted` (status switch, path tempat).
+  - Shortcut `fg.secondary` rata kanan.
+- `↑`/`↓` memilih baris dan berputar di ujung daftar. `PgUp`/`PgDn` berhenti di ujung. `Enter` atau klik
+  menjalankan baris terpilih. `Esc` atau klik di luar panel menutupnya.
+- Fokus tertahan di palette selama terbuka (`Tab` dan `F6` tidak keluar). Setelah palette tertutup, fokus
+  kembali ke tempat semula, kecuali untuk command daftar (rename, hapus, pilih semua), yang selalu
+  dijalankan di daftar.
+- Switch dari palette berjalan seperti hotkey-nya, dengan OSD, walau `hotswitch.enabled` (hotkey Hot
+  Switch) mati.
+- Dialog yang muncul (konflik paste) atau rename yang dimulai menutup palette.
+- Pembaca layar: daftar memakai role listbox dan setiap baris role option (label, keterangan, shortcut,
+  posisi). Kolom ketik menyebut baris yang sedang terpilih.
+- Tempat bisa dicari lewat path-nya, tetapi selalu di bawah kecocokan label.
+- `Ctrl+P` membuka panel yang sama untuk folder saja (quick open). Isinya, tiap folder sekali:
+  - Folder tab yang terbuka, dengan label kanan "Tab terbuka". Memilihnya pindah ke tab itu.
+  - Folder pinned.
+  - Folder yang dibuka selama sesi ini, terbaru dulu (maks 50, hanya di memori).
+  - Drive.
+  Menekan shortcut mode yang lain selagi panel terbuka langsung pindah mode.
+
+### 8.10 Menu konteks bertema
+
+```text
+  ┌──────────────────────────────┐
+  │   Open                 Enter │
+  │ ──────────────────────────── │
+  │   Cut                 Ctrl+X │
+  │   Copy                Ctrl+C │
+  │ ──────────────────────────── │
+  │   Rename                  F2 │   baris di bawah pointer: hover.bg
+  │   Delete to the Recycle Bin  │
+  │ ──────────────────────────── │
+  │   Properties       Alt+Enter │
+  │   Show more options Shift+F10│
+  └──────────────────────────────┘
+```
+
+- Lebar `size.menu_width` (260 px). Panel memakai `surface.overlay`, `border.subtle`, `radius.md`, dan
+  `shadow.popover`. Baris setinggi `size.control`, separator `divider`.
+- Baris yang disorot atau ditekan memakai `hover.bg` / `pressed.bg`. Baris pilihan keyboard juga diberi cincin
+  fokus. Baris yang tidak bisa dijalankan memakai `fg.disabled`. Centang menandai pilihan aktif
+  (misalnya urutan di "Urutkan menurut ▸").
+- Menu item folder dan menu latar juga berisi "Buka di Terminal" dan "Buka di VS Code" (yang terakhir hanya
+  bila VS Code terpasang), sesudah Salin path / Pin.
+- Pengecualian, menu drop (Salin di sini / Pindahkan ke sini / Batal): "Pindahkan" yang tidak mungkin
+  (sumber hanya mengizinkan salin, atau item sudah di folder itu) tidak ditampilkan; "Salin" selalu di baris
+  pertama (nonaktif bila tidak mungkin) agar "Pindahkan" tidak pernah berada di bawah pointer tempat "Salin"
+  biasanya. Yang diblokir switch tidak disembunyikan diam-diam: drop-nya ditolak dengan hint (§9.3).
+- Menu muncul di titik klik kanan. Bila tidak muat di bawah, menu dibuka ke atas; bila tidak muat di kanan,
+  menu digeser ke dalam window. Submenu terbuka di kanan menu, atau di kiri bila ruangnya tidak cukup.
+- Isi setiap menu mengikuti FEATURES F-CTX-01/03/04. Label dan shortcut diambil dari `CommandRegistry`, sama
+  dengan palette. Tempel ke folder item tidak memakai shortcut, karena `Ctrl+V` menempel ke folder yang
+  sedang tampil.
+- `↑`/`↓` memilih baris (melewati separator dan baris nonaktif), `→`/`←` membuka dan menutup submenu,
+  `Enter`/`Space` atau klik menjalankan baris. `Esc` atau klik di luar menu menutupnya.
+- Fokus tertahan di menu selama terbuka, dan shortcut window mati (key context `ContextMenu`). Setelah menu
+  ditutup, fokus kembali ke tempat semula; command daftar dijalankan di daftar.
+- Cara membuka:
+  - Klik kanan (dilepas) pada item, area kosong, atau item sidebar.
+  - Tombol Menu, untuk seleksi atau item sidebar yang fokus. Baris pertama langsung terpilih, dengan cincin
+    fokus.
+  - `Shift`+klik kanan dan `Shift+F10` langsung membuka menu Windows.
+- Cara menutup: `Esc`, klik di luar menu (klik itu hanya menutup, tidak membuka menu baru), menjalankan
+  baris, window kehilangan fokus, atau dialog/rename yang dimulai.
+- Panel muncul dengan fade `motion.base`, tanpa animasi bila `perf.animations` mati.
+- Hanya satu baris yang menyala, yaitu baris pilihan pointer atau keyboard. Tempel nonaktif bila clipboard
+  tidak berisi file.
+- Pembaca layar: panel memakai role menu dengan nama, dan baris memakai role menuitem (urutan memakai
+  menuitemradio dan toggled). Baris pilihan keyboard diumumkan sebagai baris yang fokus (active descendant),
+  dan shortcut-nya ikut dibacakan.
 
 ## 9. Umpan balik status: OSD, chip, hint
 
@@ -291,9 +416,13 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 - **Isi:** ikon 24 px dalam lingkaran (aktif: isi `osd.state_on` + ikon `osd.icon_on`; nonaktif:
   `osd.state_off` + ikon dicoret `osd.icon_off`). Baris 1 Body strong: "Drag folder dinonaktifkan" /
   "Drag folder diaktifkan". Baris 2 Caption: dampak + hotkey, mis. "Drag file tetap aktif. Balik lagi:
-  Ctrl+K, D".
+  Ctrl+K, D". Switch tanpa hotkey (pilihan dari panel) hanya menyebut dampaknya, mis. "Drop kembali seperti
+  Explorer."
 - **Kelompok & preset:** "Drag ke/dari aplikasi lain dinonaktifkan (2 switch)", "Preset anti salah drag
   aktif (9 switch diubah)".
+- **Hint diblokir (§9.3):** OSD yang sama juga membawa hint saat drag atau drop ditolak switch. Hint
+  mengikuti `dnd.blocked_hint` saja (tetap muncul walau `hotswitch.osd = off`). Klik membuka panel Hot
+  Switch dengan switch itu sudah terpilih, jadi `Enter` langsung mengubahnya.
 - **Perilaku:** muncul ≤ 50 ms setelah tombol; tampil `hotswitch.osd_ms` (1800 ms); toggle berulang
   memperbarui OSD yang sama dan mereset timer (tidak menumpuk); hover menahan; klik membuka panel Hot
   Switch. Tidak pernah mengambil fokus.
@@ -303,14 +432,21 @@ Judul window menyebut aplikasi peminta. Label tombol mengikuti dialog asli (Buka
 ### 9.2 Chip status
 - Di status bar, kanan: ikon drag + teks pendek. Tiga keadaan: "Drag: aktif" (`statuschip.on`),
   "Drag: sebagian" (`statuschip.partial`, ikon setengah), "Drag: mati" (`statuschip.off`, ikon dicoret).
-- Tooltip: daftar sub-switch beserta status dan hotkey. Klik: panel Hot Switch sebagai popover.
+- Tooltip: daftar sub-switch beserta status dan hotkey. Klik: panel Hot Switch (§8.4); hover dan
+  pressed memakai `hover.bg` dan `pressed.bg`, target 24 px tinggi. Chip hanya untuk mouse (tidak masuk
+  urutan Tab); keyboard memakai `Ctrl+K`, `K`, dan deskripsi aksesibilitasnya menyebut itu.
 - Badge title bar (`hotswitch.titlebar_badge`): pill kecil "Drag mati" di dekat tombol window ketika
   master drag nonaktif, agar tetap terlihat walau status bar disembunyikan.
 
 ### 9.3 Hint saat diblokir
-- Saat pengguna mencoba drag item yang switch-nya nonaktif: toast kecil dekat kursor "Drag folder sedang
-  nonaktif." dengan tombol [Aktifkan] dan hotkey-nya. Maksimal sekali per 30 detik per switch
-  (`dnd.blocked_hint`).
+- Saat pengguna mencoba drag item yang switch-nya nonaktif: OSD Hot Switch (§9.1) "Drag folder sedang
+  nonaktif" dengan cara menyalakannya ("Nyalakan dengan Ctrl+K, D."; tanpa hotkey bila
+  `hotswitch.enabled` mati: "Klik untuk membuka panel Hot Switch."). Klik OSD membuka panel Hot Switch
+  (§8.4) dengan switch itu terpilih. Maksimal sekali per 30 detik per switch (`dnd.blocked_hint`). Drag
+  tidak dimulai; tekan tetap menjadi klik biasa.
+- Hal yang sama saat drop ditolak: mode baca-saja ("Mode baca-saja sedang aktif" · "Matikan dengan
+  Ctrl+K, R."), `dnd.external_in`, `dnd.target.*`. Tekan yang tertahan `dnd.require_modifier` memberi
+  "Tahan Alt untuk drag".
 - Seleksi campuran (file + folder) dengan salah satu nonaktif: drag ditolak seluruhnya, hint menyebut
   alasannya. Tidak ada item yang diam-diam tertinggal.
 
@@ -326,7 +462,7 @@ dengan bahasa Windows pengguna.
 | Hapus permanen | "Hapus 3 item secara permanen? Item tidak masuk Recycle Bin." [Hapus permanen] [Batal] | "Permanently delete 3 items? They won't go to the Recycle Bin." |
 | Setelah pindah | "3 item dipindahkan ke Arsip." [Urungkan] | "Moved 3 items to Archive." [Undo] |
 | OSD | "Drag folder dinonaktifkan" / "Drag file tetap aktif. Balik lagi: Ctrl+K, D" | "Folder dragging turned off" / "File dragging is still on. Toggle: Ctrl+K, D" |
-| Hint diblokir | "Drag folder sedang nonaktif." [Aktifkan] | "Folder dragging is off." [Turn on] |
+| Hint diblokir (OSD) | "Drag folder sedang nonaktif" · "Nyalakan dengan Ctrl+K, D." | "Folder dragging is off" · "Turn it on with Ctrl+K, D." |
 | File terkunci | "Tidak bisa memindahkan "Laporan.xlsx" karena sedang dibuka di Excel. Tutup file lalu coba lagi." | "Can't move "Laporan.xlsx" because it's open in Excel. Close it and try again." |
 | Folder kosong | "Folder ini kosong. Seret file ke sini atau tekan Ctrl+Shift+N untuk membuat folder." | "This folder is empty. Drag files here or press Ctrl+Shift+N to create a folder." |
 | Verifikasi Drive gagal | "Checksum "video.mp4" tidak cocok setelah diunggah. File lokal tetap aman." [Unggah ulang] | "Checksum for "video.mp4" didn't match after upload. Your local file is safe." [Upload again] |
@@ -348,10 +484,13 @@ dengan bahasa Windows pengguna.
 | Tombol bahaya | `button.danger.bg` | `…bg_hover` | gelap 5% | ring | opasitas 40% |
 | Toggle | off: border `toggle.off.border` | +`hover.bg` | on: `toggle.on.bg`, thumb `toggle.on.thumb` | ring | opasitas 40% |
 | Checkbox | border `checkbox.border` | +`hover.bg` | `checkbox.checked.bg` + `checkbox.check` | ring | opasitas 40% |
-| Input | `surface.input` + `border.input` | border lebih kuat | — | `border.input_focus` | `fg.disabled` |
+| Input | `surface.input` + `border.input` | `border.input_hover` | — | `border.input_focus` + cincin fokus | `fg.disabled` |
 | Menu konteks | `surface.overlay`, `shadow.popover` | `hover.bg` | `pressed.bg` | ring | `fg.disabled` |
 | Dialog/sheet | `surface.overlay`, `scrim`, `shadow.dialog` | — | — | fokus terperangkap | — |
 | Toast | `toast.bg`, `toast.fg` | tahan timer | — | dapat difokus via F6 | — |
+
+Toast dengan tombol (Urungkan) tampil 8 detik; toast tanpa tombol ("Diurungkan.") 3 detik. Hover atau fokus
+menahan keduanya.
 | OSD | §9.1 | tahan timer | klik → panel | tidak bisa difokus | — |
 | Drop target | — | `drop_target.bg` + `drop_target.border` | — | — | `drop_blocked.border` |
 | Scrollbar | `scrollbar.thumb` | `scrollbar.thumb_hover` | — | — | — |
@@ -388,7 +527,7 @@ fade opasitas 80 ms untuk OSD/toast agar tidak terasa patah.
 - Ikon folder bertema (`view.themed_folder_icons`): folder dua tone (`icon.folder.back` /
   `icon.folder.front`), glyph folder khusus (Downloads, Pictures, …) tetap ditampilkan. Folder kategori di
   Home memakai warna kategori.
-- Ikon switch di OSD/panel: drag-hand (semua), file (drag file), folder (drag folder), sidebar (drag
+- Ikon switch di OSD (panel Hot Switch memakai toggle, tanpa ikon): drag-hand (semua), file (drag file), folder (drag folder), sidebar (drag
   sidebar), panah keluar-masuk (aplikasi lain), perisai (preset), gembok (pinned), mata (hidden),
   titik-ekstensi (extension), gambar (thumbnail), pensil-dicoret (read-only).
 

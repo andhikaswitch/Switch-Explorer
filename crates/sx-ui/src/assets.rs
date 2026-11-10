@@ -5,10 +5,16 @@ use std::borrow::Cow;
 
 use gpui_kit::{AssetSource, Result, SharedString};
 
-const OWN: &[(&str, &[u8])] = &[(
-    "icons/sx/trash.svg",
-    include_bytes!("../assets/icons/trash.svg"),
-)];
+/// The drag chip's icon (Lucide "move").
+pub(crate) const MOVE_ICON: &str = "icons/sx/move.svg";
+
+const OWN: &[(&str, &[u8])] = &[
+    (
+        "icons/sx/trash.svg",
+        include_bytes!("../assets/icons/trash.svg"),
+    ),
+    (MOVE_ICON, include_bytes!("../assets/icons/move.svg")),
+];
 
 /// Use with `application().with_assets(sx_ui::Assets)`.
 #[derive(Clone, Copy, Debug, Default)]

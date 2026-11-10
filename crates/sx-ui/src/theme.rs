@@ -11,6 +11,9 @@ use gpui_kit::{
 };
 use sx_theme::{Mode, Paint, ResolveOptions, ResolvedTheme, ThemeFile, Token, builtin};
 
+/// GPUI draws `border_1()` one pixel wide; sizes that include a border are worked out with it.
+pub(crate) const HAIRLINE: f32 = 1.0;
+
 /// The theme the UI is drawn with.
 #[derive(Debug)]
 pub struct Tokens {

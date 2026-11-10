@@ -6121,6 +6121,12 @@ version = "0.1.0"
 [[package]]
 name = "sx-search"
 version = "0.1.0"
+dependencies = [
+ "sx-core",
+ "sx-win",
+ "tempfile",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "sx-settings"
@@ -6168,10 +6174,12 @@ dependencies = [
  "image",
  "raw-window-handle",
  "rust-i18n",
+ "serde",
  "serde_json",
  "sx-core",
  "sx-fs",
  "sx-ops",
+ "sx-search",
  "sx-settings",
  "sx-shell",
  "sx-theme",

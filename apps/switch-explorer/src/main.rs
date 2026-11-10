@@ -10,7 +10,6 @@ mod logging;
 mod single;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context as _;
@@ -20,7 +19,7 @@ use gpui_kit::{
     App, AppContext as _, Global, WindowBackgroundAppearance, WindowBounds, WindowOptions, px, size,
 };
 use sx_core::{CommandRegistry, Location};
-use sx_settings::{Features, SettingsError, SettingsStore};
+use sx_settings::{SettingsError, SettingsStore};
 use sx_theme::Mode;
 use sx_ui::{OpenRequest, ThemeController, Workspace, WorkspaceOptions};
 
@@ -43,7 +42,8 @@ fn data_dir(var: &str) -> Option<PathBuf> {
 fn main() -> anyhow::Result<()> {
     let started = Instant::now();
     let args = Args::parse()?;
-    let (features, warnings) = load_settings(&args);
+    let (settings, warnings) = load_settings(&args);
+    let features = settings.snapshot();
     let level = if args.safe_mode {
         "debug"
     } else {
@@ -88,18 +88,22 @@ fn main() -> anyhow::Result<()> {
             // GPUI platform start-up (DirectX, DirectWrite) is most of the cold start.
             tracing::debug!(ms = started.elapsed().as_secs_f64() * 1000.0, "app running");
             gpui_kit::init(cx);
+            // OS modal loops (the shell's menu) run from this thread's host window (ADR-015).
+            if let Err(err) = sx_shell::modal::init() {
+                tracing::warn!(error = %err, "modal host unavailable: shell menus will not open");
+            }
             sx_ui::actions::bind(&registry, cx);
             tracing::debug!(ms = started.elapsed().as_secs_f64() * 1000.0, "kit ready");
             if let Some(handle) = ipc {
                 cx.set_global(IpcServer(handle));
             }
-            open_main_window(&args, features, os_build, started, requests, cx);
+            open_main_window(&args, settings, os_build, started, requests, cx);
         });
     Ok(())
 }
 
 /// `settings.toml` (defaults in safe mode) plus the session overrides from the command line.
-fn load_settings(args: &Args) -> (Arc<Features>, Vec<SettingsError>) {
+fn load_settings(args: &Args) -> (SettingsStore, Vec<SettingsError>) {
     let (mut settings, mut warnings) = if args.safe_mode {
         (SettingsStore::in_memory(), Vec::new())
     } else {
@@ -115,12 +119,12 @@ fn load_settings(args: &Args) -> (Arc<Features>, Vec<SettingsError>) {
             warnings.push(err);
         }
     }
-    (settings.snapshot(), warnings)
+    (settings, warnings)
 }
 
 fn open_main_window(
     args: &Args,
-    features: Arc<Features>,
+    settings: SettingsStore,
     os_build: u32,
     started: Instant,
     requests: mpsc::UnboundedReceiver<OpenRequest>,
@@ -141,9 +145,16 @@ fn open_main_window(
         Ok(controller) => controller.install(mode, solid, cx),
         Err(err) => tracing::error!(error = %err, "built-in theme failed to parse"),
     }
+    let session_file = (!args.safe_mode)
+        .then(|| data_dir("LOCALAPPDATA").map(|d| d.join("session.json")))
+        .flatten();
+    let session = session_file
+        .as_deref()
+        .filter(|_| settings.snapshot().tabs_restore_session)
+        .and_then(sx_ui::session::load);
     let options = WorkspaceOptions {
         locations: start_locations(args),
-        features,
+        settings,
         backdrop_supported,
         appearance,
         forced_light: args.light,
@@ -155,12 +166,19 @@ fn open_main_window(
         journal_dir: (!args.safe_mode)
             .then(|| data_dir("LOCALAPPDATA").map(|d| d.join("journal")))
             .flatten(),
+        session_file: session_file.clone(),
+        session: session.clone(),
     };
+    // The last window's place, when it still shows on a display; centered otherwise.
+    let displays: Vec<_> = cx.displays().iter().map(|d| d.bounds()).collect();
+    let restored_bounds = session
+        .as_ref()
+        .and_then(|s| s.window)
+        .and_then(|w| w.bounds(&displays, WINDOW_MIN));
     let window_options = WindowOptions {
-        window_bounds: Some(WindowBounds::centered(
-            size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)),
-            cx,
-        )),
+        window_bounds: Some(restored_bounds.unwrap_or_else(|| {
+            WindowBounds::centered(size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx)
+        })),
         window_min_size: Some(size(px(WINDOW_MIN.0), px(WINDOW_MIN.1))),
         window_background: if solid {
             WindowBackgroundAppearance::Opaque
@@ -170,11 +188,15 @@ fn open_main_window(
         ..TitleBar::window_options()
     };
     let opened = gpui_kit::open_window(window_options, cx, |window, cx| {
-        window.on_window_should_close(cx, |_, cx| {
+        let workspace = cx.new(|cx| Workspace::new(options, window, cx));
+        let weak = workspace.downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            // A change from the last moment would otherwise not be written yet.
+            let _ = weak.update(cx, |workspace, _| workspace.save_session_now());
             cx.quit();
             true
         });
-        cx.new(|cx| Workspace::new(options, window, cx))
+        workspace
     });
     match opened {
         Ok(_) => tracing::info!(
@@ -207,7 +229,8 @@ fn start_locations(args: &Args) -> Vec<Location> {
     {
         out.push(Location::Path(parent));
     }
-    if args.home || out.is_empty() {
+    // Nothing asked for: the last session, or Home (the workspace decides).
+    if args.home {
         out.insert(0, Location::Home);
     }
     out

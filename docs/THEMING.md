@@ -36,14 +36,14 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Latar | `bg.window`, `bg.titlebar`, `bg.sidebar`, `bg.content`, `bg.statusbar` | Paint |
 | Permukaan | `surface.card`, `surface.card_hover`, `surface.overlay`, `surface.input`, `surface.chip`, `scrim` | Paint |
 | Teks | `fg.primary`, `fg.secondary`, `fg.muted`, `fg.disabled`, `fg.on_highlight`, `fg.on_solid`, `fg.link` | Color |
-| Garis | `border.subtle`, `border.strong`, `border.input`, `border.input_focus`, `divider` | Color |
+| Garis | `border.subtle`, `border.strong`, `border.input`, `border.input_focus`, `border.input_hover` (kotak teks disorot), `divider` | Color |
 | Aksen (bidang) | `accent.highlight`, `accent.highlight_hover`, `accent.highlight_pressed`, `accent.solid`, `accent.solid_hover`, `accent.solid_pressed` | Paint |
 | Aksen (garis/teks) | `accent.text`, `accent.glow`, `accent.edge` | Color |
-| State | `hover.bg`, `pressed.bg`, `selection.bg`, `selection.border`, `selection.inactive_bg`, `focus.ring`, `focus.ring_on_highlight` (cincin fokus di atas kontrol yang sedang di-highlight), `drop_target.bg`, `drop_target.border`, `drop_blocked.border` | Color |
+| State | `hover.bg`, `pressed.bg`, `selection.bg`, `selection.border`, `selection.inactive_bg`, `focus.ring`, `drop_target.bg`, `drop_target.border`, `drop_blocked.border` | Color |
 | Navigasi | `nav.item.fg`, `nav.item.icon`, `nav.item.hover.bg`*, `nav.item.hover.fg`, `nav.item.pressed.bg`*, `nav.item.active.bg`*, `nav.item.active.fg`, `nav.item.active.edge`, `nav.item.active.glow`, `nav.section.fg` | Color (*Paint) |
 | Tab | `tab.fg`, `tab.hover.bg`, `tab.active.bg`*, `tab.active.fg`, `tab.active.indicator`* | Color (*Paint) |
 | Breadcrumb | `breadcrumb.fg`, `breadcrumb.current.fg`, `breadcrumb.hover.bg`, `breadcrumb.separator` | Color |
-| Daftar & grid | `header.fg`, `header.hover.bg`, `row.hover.bg`, `row.selected.bg`, `row.selected.border`, `row.selected_inactive.bg`, `tile.hover.bg`, `tile.selected.bg` | Color |
+| Daftar & grid | `header.fg`, `header.hover.bg`, `row.hover.bg`, `row.selected.bg`, `row.selected.border`, `row.selected_inactive.bg`, `tile.hover.bg`, `tile.selected.bg`, `match.fg` (bagian nama yang cocok dengan filter/pencarian, tebal) | Color |
 | Tombol | `button.primary.{bg,bg_hover,bg_pressed,fg}`, `button.secondary.{bg,bg_hover,bg_pressed,border,fg,fg_hover}`, `button.ghost.{bg_hover,bg_pressed,fg,fg_hover}`, `button.danger.{bg,bg_hover,fg}` | Paint/Color |
 | Kartu | `surface.card_hover`* (latar), `card.hover.fg` | Paint/Color |
 | Kontrol | `toggle.on.bg`, `toggle.on.thumb`, `toggle.off.border`, `toggle.off.thumb`, `checkbox.checked.bg`, `checkbox.check`, `checkbox.border`, `slider.fill`, `slider.track`, `input.placeholder` | Paint/Color |
@@ -56,7 +56,7 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Bayangan | `shadow.card`, `shadow.popover`, `shadow.dialog`, `shadow.glow` | Shadow |
 | Angka | `radius.*`, `space.*`, `row.height.*`, `row.cut.opacity`, `slash.angle_deg`, `slash.edge_width`, `motion.*` | Number |
 | Tipografi | `font.size.{caption,body,subtitle,title,display}`, `font.line.{…}` (px, DESIGN §4) | Number |
-| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `size.osd_{height,min_width,max_width,offset}` (OSD Hot Switch, DESIGN §9.1), `focus.ring_width`, `opacity.disabled` | Number |
+| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `size.osd_{height,min_width,max_width,offset}` (OSD Hot Switch, DESIGN §9.1), `size.search_width` (kotak cari, DESIGN §8.1), `size.palette_width` (command palette), `size.menu_width` (menu konteks), `size.toggle_{width,height}` (toggle, DESIGN §11), `focus.ring_width`, `opacity.disabled` | Number |
 | Font | `font.ui`, `font.display`, `font.mono` (daftar fallback), `font.scale` | Font/Number |
 
 Setiap token dideklarasikan sekali di `sx-theme` lewat `define_tokens!` (id, tipe, grup, deskripsi i18n,
@@ -90,7 +90,8 @@ bersamaan). Kunci bertitik **wajib** diberi tanda kutip agar TOML tidak membuatn
 Di light, indikator status (`toggle.on.bg`, `slider.fill`, `progress.fill`, `tab.active.indicator`)
 memakai `{accent.solid}` karena gradien lagoon hanya ~1.5:1 di atas latar hampir putih; di dark gradien
 highlight tetap dipakai. Chip status light memakai `pal.accent.800` dan amber `#92400E` karena
-`surface.chip` menggelapkan latar status bar.
+`surface.chip` menggelapkan latar status bar. `match.fg` light juga `pal.accent.800`: `accent.text`
+(`pal.accent.700`) hanya ~4.3:1 di atas baris terpilih.
 
 ```toml
 [meta]
@@ -171,6 +172,11 @@ mono = ["Cascadia Mono", "Consolas"]
 "size.osd_min_width" = 280
 "size.osd_max_width" = 420
 "size.osd_offset" = 72
+"size.search_width" = 240
+"size.palette_width" = 560
+"size.menu_width" = 260
+"size.toggle_width" = 40
+"size.toggle_height" = 20
 "focus.ring_width" = 2
 "opacity.disabled" = 0.4
 
@@ -208,6 +214,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "row.selected.bg" = "{selection.bg}"
 "row.selected.border" = "{selection.border}"
 "row.selected_inactive.bg" = "{selection.inactive_bg}"
+"match.fg" = "{accent.text}"
 "tile.hover.bg" = "{hover.bg}"
 "tile.selected.bg" = "{selection.bg}"
 "button.primary.bg" = "{accent.highlight}"
@@ -224,7 +231,6 @@ mono = ["Cascadia Mono", "Consolas"]
 "button.ghost.bg_pressed" = "{accent.highlight_pressed}"
 "button.ghost.fg" = "{fg.primary}"
 "button.ghost.fg_hover" = "{fg.on_highlight}"
-"focus.ring_on_highlight" = "{fg.on_highlight}"
 "card.hover.fg" = "{fg.on_highlight}"
 "button.danger.bg" = "#C42B1C"
 "button.danger.bg_hover" = "#D13A2B"
@@ -287,6 +293,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "border.strong" = "alpha({pal.accent.700}, 0.22)"
 "border.input" = "#72869E"
 "border.input_focus" = "{pal.accent.700}"
+"border.input_hover" = "darken({border.input}, 0.14)"
 "divider" = "alpha(#0A1A2F, 0.08)"
 "accent.text" = "{pal.accent.700}"
 "accent.glow" = "alpha({pal.accent.500}, 0.45)"
@@ -297,7 +304,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "selection.border" = "alpha({pal.accent.700}, 0.80)"
 "selection.inactive_bg" = "alpha(#607389, 0.12)"
 "focus.ring" = "{pal.accent.700}"
-"drop_target.bg" = "alpha({pal.lagoon}, 0.18)"
+"drop_target.bg" = "alpha({pal.lagoon}, 0.10)"
 "drop_target.border" = "{pal.accent.700}"
 "drop_blocked.border" = "#B45309"
 "slider.track" = "alpha(#607389, 0.30)"
@@ -313,6 +320,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "danger.text" = "#B42318"
 "info.text" = "{pal.accent.700}"
 "statuschip.on" = "{pal.accent.800}"
+"match.fg" = "{pal.accent.800}"
 "statuschip.partial" = "#92400E"
 "tab.active.indicator" = "{accent.solid}"
 "toggle.on.bg" = "{accent.solid}"
@@ -347,6 +355,8 @@ mono = ["Cascadia Mono", "Consolas"]
 "border.strong" = "alpha({pal.accent.400}, 0.24)"
 "border.input" = "#5A7394"
 "border.input_focus" = "{pal.lagoon}"
+"border.input_hover" = "lighten({border.input}, 0.14)"
+"toggle.off.border" = "{fg.muted}"   # toggle mati juga duduk di baris terpilih & ditekan
 "divider" = "alpha(#EAF4FF, 0.08)"
 "accent.text" = "{pal.accent.400}"
 "accent.glow" = "alpha({pal.accent.500}, 0.55)"
@@ -357,7 +367,7 @@ mono = ["Cascadia Mono", "Consolas"]
 "selection.border" = "alpha({pal.lagoon}, 0.80)"
 "selection.inactive_bg" = "alpha(#A9BCD3, 0.12)"
 "focus.ring" = "{pal.lagoon}"
-"drop_target.bg" = "alpha({pal.lagoon}, 0.16)"
+"drop_target.bg" = "alpha({pal.lagoon}, 0.10)"
 "drop_target.border" = "{pal.lagoon}"
 "drop_blocked.border" = "#F59E0B"
 "slider.track" = "alpha(#A9BCD3, 0.24)"
@@ -490,6 +500,11 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 | `fg.primary`, `fg.secondary`, `fg.muted` | `bg.content`, `surface.card`, `surface.overlay` | 4.5:1 |
 | `fg.primary`, `fg.secondary`, `fg.muted` | `row.selected.bg`, `row.selected_inactive.bg` (di atas `bg.content`) | 4.5:1 |
 | `header.fg` | `bg.content` | 4.5:1 |
+| `match.fg` | `bg.content`; `row.hover.bg`, `row.selected.bg`, `row.selected_inactive.bg` (di atas `bg.content`) | 4.5:1 |
+| `fg.primary`, `fg.secondary`, `fg.muted`, `match.fg` | `surface.overlay`; `row.hover.bg`, `row.selected.bg` di atas `surface.overlay` (command palette) | 4.5:1 |
+| `row.selected.border` | `surface.overlay` (baris terpilih di palette) | 3:1 |
+| `fg.primary`, `fg.secondary` | `hover.bg`, `pressed.bg` di atas `surface.overlay` (menu konteks) | 4.5:1 |
+| `toggle.off.border`, `toggle.off.thumb`, `toggle.on.bg` | `surface.overlay`; `row.hover.bg`, `row.selected.bg`, `pressed.bg` di atas `surface.overlay` (panel Hot Switch) | 3:1 |
 | `fg.primary`, `fg.secondary` | `bg.window` (command bar), `bg.statusbar` | 4.5:1 |
 | `fg.primary`, `fg.secondary`, `fg.muted` | `bg.sidebar` | 4.5:1 |
 | `nav.item.fg`, `nav.section.fg` | `bg.sidebar` | 4.5:1 |
@@ -497,7 +512,7 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 | `tab.fg` | `bg.titlebar` | 4.5:1 |
 | `tab.active.fg` | `tab.active.bg` | 4.5:1 |
 | `breadcrumb.fg`, `breadcrumb.current.fg` | `bg.window` | 4.5:1 |
-| `statuschip.on`, `…partial`, `…off` | `bg.statusbar`; `surface.chip` (di atas `bg.statusbar`) | 4.5:1 |
+| `statuschip.on`, `…partial`, `…off` | `bg.statusbar`; `surface.chip`, `hover.bg`, `pressed.bg` (di atas `bg.statusbar`; chip bisa diklik) | 4.5:1 |
 | `osd.fg` | `osd.bg` | 4.5:1 |
 | `toast.fg` | `toast.bg` | 4.5:1 |
 | `input.placeholder` | `surface.input` | 4.5:1 |
@@ -510,12 +525,16 @@ harus lolos §11 (`crates/sx-theme/tests/builtin_themes.rs`).
 | `card.hover.fg` | `surface.card_hover` (di atas `bg.content`) | 4.5:1 |
 | `fg.on_solid` | `accent.solid` & variannya | 4.5:1 |
 | `button.danger.fg` | `button.danger.bg`, `…bg_hover` | 4.5:1 |
-| `focus.ring`, `border.input`, `border.input_focus` | `bg.content`, `surface.input` | 3:1 |
-| `border.input`, `border.input_focus` | `bg.window` (address field di command bar) | 3:1 |
+| `focus.ring`, `border.input`, `border.input_focus`, `border.input_hover` | `bg.content`, `surface.input` | 3:1 |
+| `border.input`, `border.input_focus`, `border.input_hover` | `bg.window` (address field & kotak cari di command bar) | 3:1 |
 | `focus.ring` | `bg.sidebar`, `bg.titlebar`, `bg.window` | 3:1 |
-| `focus.ring_on_highlight` | `nav.item.active.bg`, `nav.item.hover.bg`, `nav.item.pressed.bg` (di atas `bg.sidebar`); `button.ghost.bg_hover`, `…bg_pressed` (di atas `bg.window`) | 3:1 |
+| `focus.ring` | `surface.overlay`, `toast.bg`, `surface.card` (di atas `bg.content`) | 3:1 |
+| `fg.secondary` | `osd.bg` (di atas `bg.content`) | 4.5:1 |
+| `statuschip.off` | `bg.titlebar` (badge "Drag mati") | 4.5:1 |
 | `checkbox.border`, `toggle.off.border`, `selection.border` | `bg.content` | 3:1 |
-| `drop_target.border`, `drop_blocked.border` | `bg.content` | 3:1 |
+| `drop_target.border`, `drop_blocked.border` | `bg.content`, `bg.sidebar` | 3:1 |
+| `fg.primary`, `fg.secondary`, `fg.muted`, `match.fg` | `drop_target.bg` (di atas `bg.content`) | 4.5:1 |
+| `nav.item.fg`, `fg.muted` | `drop_target.bg` (di atas `bg.sidebar`) | 4.5:1 |
 | `slider.fill`, `progress.fill`, `toggle.on.bg` | `bg.content` | 3:1 |
 | `tab.active.indicator` | `bg.titlebar` | 3:1 |
 | `checkbox.check` | `checkbox.checked.bg` (di atas `bg.content`) | 3:1 |
