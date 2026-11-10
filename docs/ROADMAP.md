@@ -85,8 +85,8 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
       Progres: drag keluar dari daftar dan sidebar (pin & drive) lewat OLE dengan drag image; drop target
       sendiri untuk drop dari aplikasi lain maupun dari Switch Explorer ke folder di daftar, folder terbuka,
       dan item sidebar; salin/pindah/menu tanya/konfirmasi pindah folder lewat `sx-ops` (journal + undo);
-      highlight `drop_target`/`drop_blocked`. Belum: shortcut (`Alt`), breadcrumb/tab sebagai target,
-      spring-open, virtual files, menyusun ulang pinned lewat drag, `IDataObjectAsyncCapability`, membaca
+      highlight `drop_target`/`drop_blocked`; pin diurutkan ulang dengan drag ke pin lain. Belum: shortcut (`Alt`), breadcrumb/tab sebagai target,
+      spring-open, virtual files, `IDataObjectAsyncCapability`, membaca
       "Shell IDList Array" saat `DragEnter`, identitas file (ID) untuk alias path (drive map vs UNC).
 - [ ] **Drag Guard** lengkap (DEVELOPER-MODE.md §5) + preset "Anti salah drag" + test state machine.
       Progres: aturan §5.3 dan state machine §5.4 di `sx_core::drag` dengan tabel test; preset bisa di-toggle

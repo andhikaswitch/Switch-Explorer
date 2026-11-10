@@ -113,8 +113,8 @@ seleksi campuran (file + folder): semua item harus lolos; jika satu gagal → se
 boleh_drop(target)  = (target.sidebar ? dnd.target.sidebar : dnd.target.folders) && !safety.readonly_mode
 boleh_keluar        = dnd.external_out      boleh_masuk = dnd.external_in
 menyusun ulang pinned = dnd.enabled && !sidebar.pins_locked   (tidak memindahkan file)
-pindah item sidebar = hanya lewat "Pindahkan ke sini" di menu drop, tidak pernah lewat drag biasa, dan tidak
-                      saat sidebar.pins_locked; ke aplikasi lain item sidebar hanya bisa disalin/shortcut
+drag item sidebar   = tidak pernah memindahkan foldernya; di pin lain = mengurutkan ulang pin (efek link,
+                      seperti Quick access), di tempat lain = salin, ke aplikasi lain = salin/shortcut
 pindah known folder (Desktop, Documents, Downloads, …) = tidak pernah (Windows tetap menunjuk tempat lamanya)
 pin mengikuti foldernya saat folder itu dipindah atau di-rename (juga lewat undo)
 ```
@@ -160,15 +160,16 @@ Sambungan (`sx_ui::dnd`):
 - `Ask` membuka menu bertema (Salin di sini / Pindahkan ke sini / Batal), hanya dengan efek yang diizinkan
   sumber; memilih di menu sudah menjadi konfirmasi. `ConfirmMove` membuka dialog bila ada folder di
   antara item.
-- Drag milik kita memakai switch saat tombol ditekan sampai selesai. Pin yang di-drag ke item sidebar
-  ditolak (memindahkan folder pinned tidak boleh terjadi; menyusun ulang pinned lewat drag menyusul).
+- Drag milik kita memakai switch saat tombol ditekan sampai selesai. Pin yang di-drag ke pin lain
+  mengambil tempat pin itu (`menyusun ulang pinned`); saat `sidebar.pins_locked` ditolak dengan hint, dan
+  menu klik kanan pin menawarkan "Buka kunci folder pinned".
   Drive atau share utuh tidak pernah disalin/dipindah. Selama dialog, palette, menu, atau rename terbuka,
   drop ditolak.
 - Drag kiri yang dilepas di folder asalnya tidak melakukan apa pun, juga dengan `ask` (seperti Explorer);
   drag kanan di sana tetap memunculkan menu dengan "Salin di sini". Menu hanya berisi pilihan yang bisa
   dijalankan.
-- Belum: shortcut (`Alt`, `Ctrl+Shift`) ditolak dulu, spring-open, menyusun ulang pinned lewat drag, drop
-  ke breadcrumb/tab, dan virtual files.
+- Belum: shortcut (`Alt`, `Ctrl+Shift`) ditolak dulu, spring-open, drop ke breadcrumb/tab, pin baru lewat
+  drag folder ke sidebar, dan virtual files.
 
 ### 5.5 Preset "Anti salah drag"
 

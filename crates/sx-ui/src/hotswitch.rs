@@ -329,7 +329,7 @@ fn drag_state(features: &Features) -> DragState {
 }
 
 /// The hotkey of the binding that toggles `id`, for tooltips; none when it has no keys.
-fn binding_keys(id: &str) -> Option<String> {
+pub(crate) fn binding_keys(id: &str) -> Option<String> {
     DEFAULT_BINDINGS
         .iter()
         .filter(|b| !b.keys.is_empty())
@@ -341,7 +341,7 @@ fn binding_keys(id: &str) -> Option<String> {
 }
 
 /// The binding that toggles `id`, by index in `DEFAULT_BINDINGS`.
-fn binding_of(id: &str) -> Option<usize> {
+pub(crate) fn binding_of(id: &str) -> Option<usize> {
     DEFAULT_BINDINGS.iter().position(|b| match b.action {
         HotSwitchAction::Toggle(target) => target == id,
         HotSwitchAction::Group(ids) => ids.contains(&id),
@@ -355,7 +355,7 @@ impl Workspace {
     /// whatever `hotswitch.osd` says: `dnd.blocked_hint` alone decides.
     pub(crate) fn show_blocked_hint(&mut self, flag: &str, mixed: bool, cx: &mut Context<Self>) {
         // Read-only mode blocks by being on; the drag switches block by being off.
-        let on_blocks = flag == "safety.readonly_mode";
+        let on_blocks = matches!(flag, "safety.readonly_mode" | "sidebar.pins_locked");
         let name = label(flag);
         let title = if on_blocks {
             t!("hotswitch.drag_blocked_on", name = name)

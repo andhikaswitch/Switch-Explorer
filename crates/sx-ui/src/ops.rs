@@ -25,7 +25,10 @@ use sx_shell::clipboard::{self, ClipboardFiles};
 use crate::workspace::Workspace;
 
 /// How long the "Done · Undo" toast stays.
+/// How long a toast with Undo stays (time to reach the button).
 const TOAST_FOR: Duration = Duration::from_secs(8);
+/// How long a toast with nothing to press stays ("Undone.").
+const TOAST_PLAIN_FOR: Duration = Duration::from_secs(3);
 
 /// Why a job runs: user work is recorded for undo; undo and redo runs report back to the
 /// history they came from (its generation, see `UndoStack`).
@@ -584,10 +587,17 @@ impl Workspace {
         self.hide_toast_later(id, cx);
     }
 
-    /// Hides the toast after `TOAST_FOR`; while the pointer or the keyboard focus is on it, it
-    /// waits another round.
+    fn toast_for(&self, id: u64) -> Duration {
+        match &self.ops.toast {
+            Some(toast) if toast.id == id && toast.undo => TOAST_FOR,
+            _ => TOAST_PLAIN_FOR,
+        }
+    }
+
+    /// Hides the toast after `TOAST_FOR` (with Undo) or `TOAST_PLAIN_FOR`; while the pointer or
+    /// the keyboard focus is on it, it waits another round.
     fn hide_toast_later(&mut self, id: u64, cx: &mut Context<Self>) {
-        let timer = cx.background_executor().timer(TOAST_FOR);
+        let timer = cx.background_executor().timer(self.toast_for(id));
         cx.spawn(async move |this, cx| {
             timer.await;
             let _ = this.update(cx, |this, cx| {

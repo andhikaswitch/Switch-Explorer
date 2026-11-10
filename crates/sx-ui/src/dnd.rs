@@ -89,6 +89,16 @@ struct Spot {
     target: DropTarget,
 }
 
+impl Spot {
+    /// The sidebar item it is, for a sidebar place.
+    fn place_location(&self) -> Location {
+        match &self.place {
+            Place::Sidebar(location) => location.clone(),
+            _ => Location::Path(self.dest.clone()),
+        }
+    }
+}
+
 /// The active tab's list as the drop target sees it, refreshed when the tab or its listing
 /// changes.
 pub(crate) struct ListZone {
@@ -222,6 +232,8 @@ pub(crate) enum DropAction {
     Move,
     /// Show the menu: copy here, move here, cancel.
     Ask,
+    /// A pin dropped on another pin: it takes that pin's place (no folder moves).
+    Reorder,
 }
 
 /// What the drop target reads during a drag; written by the window. UI thread only.
@@ -629,21 +641,18 @@ impl Workspace {
         // - read-only mode: nothing leaves this folder by a move;
         // - a Windows known folder (Desktop, Downloads, …) is never moved: Windows would keep
         //   its old place;
-        // - a sidebar item moves only when asked for ("Move here" in our menu), never by a
-        //   plain drag, and never while pins are locked; other apps get a copy or a shortcut.
+        // - a sidebar item is never moved: a pin stands for its folder, and moving that folder
+        //   by dragging the pin is never what was meant. Dropped on another pin it reorders the
+        //   pins; anywhere else it is copied (or linked by another app).
         let drive = paths.iter().any(|path| path.parent().is_none());
         let from_sidebar = matches!(press.what, Pressed::Sidebar(_));
         let known = paths.iter().any(|path| is_known_folder(path));
-        let movable = !drive && !known && !press.policy.readonly;
-        let menu = Allowed {
+        let allowed = Allowed {
             copy: !drive,
-            moves: movable && !(from_sidebar && press.policy.pins_locked),
+            moves: !drive && !known && !from_sidebar && !press.policy.readonly,
             link: true,
         };
-        let allowed = Allowed {
-            moves: movable && !from_sidebar,
-            ..menu
-        };
+        let menu = allowed;
         let leave_window = press.policy.external_out;
         let outgoing = Outgoing {
             from_sidebar,
@@ -752,6 +761,7 @@ impl Workspace {
                     DropAction::Copy => self.transfer(paths, dest, Mode::Copy, quiet, cx),
                     DropAction::Move => self.move_dropped(paths, dest, quiet, cx),
                     DropAction::Ask => self.open_drop_menu(paths, dest, at, allowed, window, cx),
+                    DropAction::Reorder => self.reorder_pin(paths, &dest, cx),
                 }
                 cx.notify();
             }
@@ -794,6 +804,28 @@ impl Workspace {
             });
         })
         .detach();
+    }
+
+    /// A pin dropped on another pin takes its place; the others close up. Pins only: no folder
+    /// moves.
+    fn reorder_pin(&mut self, paths: Vec<PathBuf>, onto: &Path, cx: &mut Context<Self>) {
+        let Some(moved) = paths.into_iter().next() else {
+            return;
+        };
+        self.edit_pins(
+            |pins| {
+                let same = crate::workspace::same_path;
+                let (Some(from), Some(to)) = (
+                    pins.iter().position(|p| same(p, &moved)),
+                    pins.iter().position(|p| same(p, onto)),
+                ) else {
+                    return;
+                };
+                let pin = pins.remove(from);
+                pins.insert(to, pin);
+            },
+            cx,
+        );
     }
 
     /// The drop highlight of a list row (entry `index` of tab `tab`): `Some(blocked)`.
@@ -905,10 +937,10 @@ impl Router {
         if let Some(flag) = refusal(&policy, internal, spot.target) {
             return Decision::refused(spot.place, flag);
         }
-        // A pin dropped on a sidebar item would move the pinned folder: not until pins can be
-        // reordered by dragging (which never moves files).
+        // A pin dropped on the sidebar: on another pin it reorders the pins (never a file
+        // operation, shown as a link like Explorer's Quick access); elsewhere, nothing.
         if outgoing.is_some_and(|own| own.from_sidebar) && spot.target == DropTarget::Sidebar {
-            return Decision::nothing();
+            return self.reorder(&spot, &incoming.paths, &policy);
         }
         // A whole drive or share is never copied or moved by a drop (shortcuts come later).
         if incoming.paths.is_empty() || incoming.roots {
@@ -967,6 +999,31 @@ impl Router {
             drop: Some((spot, effect)),
             refused_by: None,
             confirm_moves: policy.confirm_folder_move,
+        }
+    }
+
+    /// A pin over a sidebar item: where it would go, if that item is another pin.
+    fn reorder(&self, spot: &Spot, paths: &[PathBuf], policy: &DragPolicy) -> Decision {
+        let onto_pin = self.0.sidebar.try_borrow().is_ok_and(|targets| {
+            targets
+                .iter()
+                .any(|target| target.pin && target.location == spot.place_location())
+        });
+        let same = paths
+            .iter()
+            .all(|path| crate::workspace::same_path(path, &spot.dest));
+        if !onto_pin || same || paths.len() != 1 {
+            return Decision::nothing();
+        }
+        if !policy.may_reorder_pins() {
+            return Decision::refused(spot.place.clone(), "sidebar.pins_locked");
+        }
+        Decision {
+            hover: Some((spot.place.clone(), false)),
+            shown: Effect::Link,
+            drop: Some((spot.clone(), DropEffect::Link)),
+            refused_by: None,
+            confirm_moves: false,
         }
     }
 
@@ -1067,6 +1124,10 @@ impl DropHandler for Router {
                 (DropAction::Move, DropReply::Move)
             }
             (DropEffect::Ask, _) => (DropAction::Ask, DropReply::Later),
+            // Reordering pins is ours alone: the source hears of nothing done.
+            (DropEffect::Link, Effect::Link) if spot.target == DropTarget::Sidebar => {
+                (DropAction::Reorder, DropReply::Later)
+            }
             _ => return DropReply::Refused,
         };
         // Our own items may do more in our menu than OLE was told (see `Outgoing::menu`).

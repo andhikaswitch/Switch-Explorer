@@ -47,6 +47,8 @@ enum Run {
     Drop(Vec<PathBuf>, PathBuf, sx_ops::Mode),
     /// Closes the menu and does nothing else.
     Close,
+    /// A Hot Switch binding, by index in `DEFAULT_BINDINGS` (as from the panel).
+    Switch(usize),
     Submenu(Vec<Entry>),
 }
 
@@ -533,6 +535,18 @@ impl Workspace {
         {
             let editable = !self.features.sidebar_pins_locked;
             entries.push(Entry::separator());
+            // Locked (`sidebar.pins_locked`, also by the anti-drag preset): the way out is right
+            // here, above the rows it greys out.
+            if let (false, Some(binding)) = (
+                editable,
+                crate::hotswitch::binding_of("sidebar.pins_locked"),
+            ) {
+                let mut unlock = Entry::new(t!("menu.unlock_pins"), true, Run::Switch(binding));
+                unlock.keys = crate::hotswitch::binding_keys("sidebar.pins_locked")
+                    .unwrap_or_default()
+                    .into();
+                entries.push(unlock);
+            }
             entries.push(Entry::new(
                 t!("nav.unpin"),
                 editable,
@@ -671,6 +685,7 @@ impl Workspace {
                 },
                 cx,
             ),
+            Run::Switch(binding) => self.run_switch_binding(binding, cx),
             Run::Close | Run::Submenu(_) => {}
         }
         cx.notify();

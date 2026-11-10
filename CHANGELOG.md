@@ -113,10 +113,12 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - `dnd.hold_delay_ms`: gerak kecil sebelum delay selesai tidak lagi membatalkan drag; drag mulai pada gerak
     pertama setelah delay, sedangkan flick (≥ 3× ambang sebelum delay) tetap klik. Drag dengan preset
     "Anti salah drag" tidak lagi terasa berat.
-  - Item sidebar hanya dipindah lewat "Pindahkan ke sini" di menu drop (tidak lewat drag biasa, tidak saat
-    pin dikunci); ke aplikasi lain hanya disalin atau dijadikan shortcut. Known folder Windows (Desktop,
-    Documents, Downloads, …) tidak pernah dipindah lewat drag. Pin mengikuti foldernya saat dipindah atau
-    di-rename, juga lewat undo.
+  - Drag pin dari sidebar tidak pernah memindahkan foldernya: di pin lain ia mengurutkan ulang pin (seperti
+    Quick access), di tempat lain menyalin, ke aplikasi lain menyalin atau membuat shortcut. Known folder
+    Windows (Desktop, Documents, Downloads, …) tidak pernah dipindah lewat drag. Pin mengikuti foldernya
+    saat folder itu dipindah atau di-rename, juga lewat undo.
+  - Pin terkunci: menu klik kanan pin menawarkan "Buka kunci folder pinned" (`Ctrl+K`, `L`).
+- Toast tanpa tombol ("Diurungkan.") hilang setelah 3 detik; toast dengan Urungkan tetap 8 detik.
 
 ### Changed
 - OSD Hot Switch: catatan untuk sub-switch yang tertahan kini menyebut induknya (Tertahan karena "Semua

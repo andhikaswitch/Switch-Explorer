@@ -486,6 +486,9 @@ dengan bahasa Windows pengguna.
 | Menu konteks | `surface.overlay`, `shadow.popover` | `hover.bg` | `pressed.bg` | ring | `fg.disabled` |
 | Dialog/sheet | `surface.overlay`, `scrim`, `shadow.dialog` | — | — | fokus terperangkap | — |
 | Toast | `toast.bg`, `toast.fg` | tahan timer | — | dapat difokus via F6 | — |
+
+Toast dengan tombol (Urungkan) tampil 8 detik; toast tanpa tombol ("Diurungkan.") 3 detik. Hover atau fokus
+menahan keduanya.
 | OSD | §9.1 | tahan timer | klik → panel | tidak bisa difokus | — |
 | Drop target | — | `drop_target.bg` + `drop_target.border` | — | — | `drop_blocked.border` |
 | Scrollbar | `scrollbar.thumb` | `scrollbar.thumb_hover` | — | — | — |

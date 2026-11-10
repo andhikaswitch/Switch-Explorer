@@ -241,7 +241,7 @@ impl Workspace {
                 let id = element_id.clone();
                 move |this, hovered: &bool, _, cx| this.set_hovered(&id, *hovered, cx)
             }))
-            .map(|el| self.sidebar_pointer(el, to, &focus, cx))
+            .map(|el| self.sidebar_pointer(el, to, matches!(id, Item::Pin(_)), &focus, cx))
             .child(
                 div()
                     .flex_none()
@@ -289,6 +289,8 @@ impl Workspace {
 pub(crate) struct SidebarTarget {
     pub(crate) focus: FocusHandle,
     pub(crate) location: Location,
+    /// A pinned folder (dropping a pin on it reorders the pins).
+    pub(crate) pin: bool,
     pub(crate) bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
 }
 
@@ -311,6 +313,7 @@ impl Workspace {
         &self,
         el: gpui_kit::Stateful<Div>,
         to: Location,
+        pin: bool,
         focus: &FocusHandle,
         cx: &Context<Self>,
     ) -> gpui_kit::Stateful<Div> {
@@ -318,6 +321,7 @@ impl Workspace {
         self.sidebar_targets.borrow_mut().push(SidebarTarget {
             focus: focus.clone(),
             location: to.clone(),
+            pin,
             bounds: bounds.clone(),
         });
         let menu_for = to.clone();

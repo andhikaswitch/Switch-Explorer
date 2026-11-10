@@ -303,6 +303,7 @@ command:
   sidebar:
     pin: Pin atau lepas pin folder ini
 menu:
+  unlock_pins: Buka kunci folder pinned
   drop_copy: Salin di sini
   drop_move: Pindahkan ke sini
   drop_cancel: Batal

@@ -303,6 +303,7 @@ command:
   sidebar:
     pin: Pin or unpin this folder
 menu:
+  unlock_pins: Unlock pinned folders
   drop_copy: Copy here
   drop_move: Move here
   drop_cancel: Cancel
