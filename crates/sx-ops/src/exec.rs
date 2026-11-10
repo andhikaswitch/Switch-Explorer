@@ -179,6 +179,7 @@ fn run_inner(
                 if let Err(err) = remove(path) {
                     return Outcome::failed(Op::Delete { paths: done }, err);
                 }
+                forget_bin_record(path);
                 done.push(path.clone());
             }
             Outcome::finished(Op::Delete { paths: done })
@@ -330,6 +331,29 @@ fn report(progress: &mut dyn FnMut(&Progress), state: &mut Progress, current: &P
     state.current = Some(current.to_path_buf());
     progress(state);
     state.done += 1;
+}
+
+/// An item deleted from the Recycle Bin (its `$R…` slot) takes its `$I…` record along, as
+/// Explorer does; a record left behind would list a ghost item. Only a `$I` file next to a `$R`
+/// slot inside a `$Recycle.Bin` folder is ever removed.
+fn forget_bin_record(path: &Path) {
+    let in_bin = path.ancestors().any(|dir| {
+        dir.file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("$Recycle.Bin"))
+    });
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return;
+    };
+    let Some(rest) = name.strip_prefix("$R") else {
+        return;
+    };
+    if !in_bin || rest.is_empty() {
+        return;
+    }
+    let record = path.with_file_name(format!("$I{rest}"));
+    // Best effort: the item itself is gone either way; a record left behind only shows up as a
+    // ghost in the bin, which the bin's own view then drops.
+    let _ = std::fs::remove_file(&record);
 }
 
 /// Never write over something, and never copy a folder into itself.

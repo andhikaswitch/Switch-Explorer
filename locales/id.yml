@@ -59,6 +59,15 @@ this_pc:
   free_of: "%{free} kosong dari %{total}"
   no_media: Tidak ada media
 recycle_bin:
+  restore: Pulihkan
+  delete: Hapus permanen
+  empty: Kosongkan Recycle Bin
+  original: Lokasi asal
+  deleted: Tanggal dihapus
+  is_empty: Recycle Bin kosong.
+  failed: Recycle Bin tidak bisa dibaca. Buka di File Explorer untuk memeriksanya.
+  empty_failed: Recycle Bin tidak berhasil dikosongkan. Coba lagi, atau kosongkan dari File Explorer.
+  confirm_empty: "Hapus permanen semua %{count} item di Recycle Bin? Ini tidak bisa dibatalkan."
   title: Recycle Bin
   body: Untuk sekarang, Recycle Bin dibuka di File Explorer.
   open: Buka di File Explorer

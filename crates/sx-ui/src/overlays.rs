@@ -55,13 +55,9 @@ impl Workspace {
 
     // ---- Dialogs --------------------------------------------------------------------------
 
-    fn render_dialog(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        if !self.dialog_focus.contains_focused(window, cx) {
-            let focus = self.dialog_focus.clone();
-            window.defer(cx, move |window, cx| window.focus(&focus, cx));
-        }
-        let t = cx.tokens();
-        let body = match &self.ops.dialog {
+    /// What the open dialog says and offers.
+    fn dialog_body(&self, cx: &mut Context<Self>) -> AnyElement {
+        match &self.ops.dialog {
             Some(Dialog::ConfirmRecycle(paths)) => self.confirm_body(
                 if paths.len() == 1 {
                     t!("ops.confirm_recycle_one", name = file_name(&paths[0]))
@@ -85,6 +81,23 @@ impl Workspace {
                 cx,
             ),
             Some(Dialog::Conflict(_)) => self.conflict_body(cx),
+            Some(Dialog::ConfirmPurge { slots, name }) => self.confirm_body(
+                if slots.len() == 1 {
+                    t!("ops.confirm_delete_one", name = name)
+                } else {
+                    t!("ops.confirm_delete_many", count = slots.len())
+                }
+                .into(),
+                t!("ops.delete_permanently").into(),
+                true,
+                cx,
+            ),
+            Some(Dialog::ConfirmEmptyBin { count }) => self.confirm_body(
+                t!("recycle_bin.confirm_empty", count = count).into(),
+                t!("recycle_bin.empty").into(),
+                true,
+                cx,
+            ),
             Some(Dialog::ConfirmMove { sources, dest, .. }) => self.confirm_body(
                 if sources.len() == 1 {
                     t!(
@@ -105,7 +118,16 @@ impl Workspace {
                 cx,
             ),
             None => div().into_any_element(),
-        };
+        }
+    }
+
+    fn render_dialog(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if !self.dialog_focus.contains_focused(window, cx) {
+            let focus = self.dialog_focus.clone();
+            window.defer(cx, move |window, cx| window.focus(&focus, cx));
+        }
+        let body = self.dialog_body(cx);
+        let t = cx.tokens();
         div()
             .id("dialog-scrim")
             .key_context("Dialog")

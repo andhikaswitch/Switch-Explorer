@@ -59,6 +59,15 @@ this_pc:
   free_of: "%{free} free of %{total}"
   no_media: No media
 recycle_bin:
+  restore: Restore
+  delete: Delete permanently
+  empty: Empty Recycle Bin
+  original: Original location
+  deleted: Date deleted
+  is_empty: The Recycle Bin is empty.
+  failed: Can't read the Recycle Bin. Open it in File Explorer to check it.
+  empty_failed: The Recycle Bin wasn't emptied. Try again, or empty it from File Explorer.
+  confirm_empty: "Delete all %{count} items in the Recycle Bin permanently? This can't be undone."
   title: Recycle Bin
   body: The Recycle Bin opens in File Explorer for now.
   open: Open in File Explorer

@@ -17,9 +17,11 @@ use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoTaskMemFree};
 use windows::Win32::UI::Shell::{
-    FILEOPERATION_FLAGS, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR, FOF_NOERRORUI,
-    FOF_RENAMEONCOLLISION, FOF_SILENT, FOF_WANTNUKEWARNING, FOFX_RECYCLEONDELETE, FileOperation,
-    IFileOperation, IShellItem, SHCreateItemFromParsingName, SIGDN_FILESYSPATH,
+    BHID_EnumItems, FILEOPERATION_FLAGS, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR,
+    FOF_NOERRORUI, FOF_RENAMEONCOLLISION, FOF_SILENT, FOF_WANTNUKEWARNING, FOFX_RECYCLEONDELETE,
+    FOLDERID_RecycleBinFolder, FileOperation, IEnumShellItems, IFileOperation, IShellItem,
+    KF_FLAG_DEFAULT, SHCreateItemFromParsingName, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI,
+    SHERB_NOSOUND, SHEmptyRecycleBinW, SHGetKnownFolderItem, SIGDN_FILESYSPATH,
 };
 use windows::core::PCWSTR;
 
@@ -58,6 +60,136 @@ fn shell_item(path: &Path) -> Result<IShellItem, ShellError> {
             source,
         }
     })
+}
+
+/// An item in the Recycle Bin, for its page (FEATURES.md F-LOC-02).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BinItem {
+    /// Its slot in the bin (`…\$Recycle.Bin\<SID>\$R…`).
+    pub slot: PathBuf,
+    /// Where it was deleted from, with its name.
+    pub original: PathBuf,
+    /// Its size when deleted (a folder: everything in it).
+    pub size: u64,
+    /// When it was deleted (FILETIME ticks; 0 when unknown).
+    pub deleted: i64,
+    pub folder: bool,
+}
+
+/// What a `$I…` file says about its item: original path, size, deletion time.
+#[derive(Debug, PartialEq, Eq)]
+struct BinRecord {
+    original: PathBuf,
+    size: u64,
+    /// FILETIME ticks; 0 when unknown.
+    deleted: i64,
+}
+
+/// Reads a `$I…` record. Version 1 (Vista to 8.1) has a fixed 260-character path, version 2
+/// (Windows 10+) a length and then the path. Anything else is not a record.
+fn parse_record(bytes: &[u8]) -> Option<BinRecord> {
+    let u64_at = |at: usize| -> Option<u64> {
+        Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
+    };
+    let version = u64_at(0)?;
+    let size = u64_at(8)?;
+    let filetime = u64_at(16)?;
+    let units: Vec<u16> = match version {
+        1 => bytes
+            .get(24..24 + 520)?
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect(),
+        2 => {
+            let len = u32::from_le_bytes(bytes.get(24..28)?.try_into().ok()?) as usize;
+            bytes
+                .get(28..28usize.checked_add(len.checked_mul(2)?)?)?
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| u16::from_le_bytes(*c))
+                .collect()
+        }
+        _ => return None,
+    };
+    let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());
+    if end == 0 {
+        return None;
+    }
+    let deleted = i64::try_from(filetime).unwrap_or(0);
+    Some(BinRecord {
+        original: PathBuf::from(OsString::from_wide(&units[..end])),
+        size,
+        deleted,
+    })
+}
+
+/// The `$I…` record next to a `$R…` slot.
+fn record_of(slot: &Path) -> Option<BinRecord> {
+    let name: Vec<u16> = slot.file_name()?.encode_wide().collect();
+    if name.len() < 3 || name[0] != u16::from(b'$') || name[1] != u16::from(b'R') {
+        return None;
+    }
+    let mut info = name;
+    info[1] = u16::from(b'I');
+    parse_record(&std::fs::read(slot.with_file_name(OsString::from_wide(&info))).ok()?)
+}
+
+/// What is in the Recycle Bin, on every drive (the shell's own view of it). Blocking; needs an
+/// STA (it enters one): call it off the UI thread. An item without a readable record is left
+/// out rather than shown without its origin.
+pub fn list_bin() -> Result<Vec<BinItem>, ShellError> {
+    let _com = crate::com::StaGuard::new()?;
+    let mut out = Vec::new();
+    // SAFETY: COM calls on this thread's STA; every item is used and released here.
+    unsafe {
+        let bin: IShellItem =
+            SHGetKnownFolderItem(&FOLDERID_RecycleBinFolder, KF_FLAG_DEFAULT, None)
+                .map_err(ShellError::Com)?;
+        let items: IEnumShellItems = bin
+            .BindToHandler(None, &BHID_EnumItems)
+            .map_err(ShellError::Com)?;
+        loop {
+            let mut got = [None];
+            let mut fetched = 0u32;
+            if items.Next(&mut got, Some(&raw mut fetched)).is_err() || fetched == 0 {
+                break;
+            }
+            let Some(item) = got[0].take() else {
+                break;
+            };
+            let Some(slot) = file_system_path(&item) else {
+                continue;
+            };
+            let Some(record) = record_of(&slot) else {
+                continue;
+            };
+            out.push(BinItem {
+                folder: slot.is_dir(),
+                slot,
+                original: record.original,
+                size: record.size,
+                deleted: record.deleted,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// Empties the Recycle Bin of every drive, without the shell's own question or progress (the
+/// app asked first). Blocking: call it off the UI thread.
+pub fn empty_bin() -> Result<(), ShellError> {
+    // SAFETY: no window, no root path (every drive); flags only.
+    unsafe {
+        SHEmptyRecycleBinW(
+            None,
+            PCWSTR::null(),
+            SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND,
+        )
+    }
+    .map_err(ShellError::Com)
 }
 
 fn file_system_path(item: &IShellItem) -> Option<PathBuf> {
@@ -575,6 +707,43 @@ pub fn restore(items: &[(PathBuf, PathBuf)]) -> Restored {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bin_records_of_both_versions_are_read() {
+        let path: Vec<u16> = r"C:\Data\notes.txt".encode_utf16().collect();
+        // Version 2: length (with the NUL), then the path.
+        let mut v2 = Vec::new();
+        v2.extend_from_slice(&2u64.to_le_bytes());
+        v2.extend_from_slice(&1234u64.to_le_bytes());
+        v2.extend_from_slice(&133_000_000_000_000_000u64.to_le_bytes());
+        v2.extend_from_slice(&(path.len() as u32 + 1).to_le_bytes());
+        for unit in path.iter().chain(std::iter::once(&0)) {
+            v2.extend_from_slice(&unit.to_le_bytes());
+        }
+        let record = super::parse_record(&v2).unwrap();
+        assert_eq!(record.original, PathBuf::from(r"C:\Data\notes.txt"));
+        assert_eq!(record.size, 1234);
+        assert_eq!(record.deleted, 133_000_000_000_000_000);
+        // Version 1: a fixed 260-character field.
+        let mut v1 = Vec::new();
+        v1.extend_from_slice(&1u64.to_le_bytes());
+        v1.extend_from_slice(&7u64.to_le_bytes());
+        v1.extend_from_slice(&0u64.to_le_bytes());
+        let mut field = [0u16; 260];
+        field[..path.len()].copy_from_slice(&path);
+        for unit in field {
+            v1.extend_from_slice(&unit.to_le_bytes());
+        }
+        let record = super::parse_record(&v1).unwrap();
+        assert_eq!(record.original, PathBuf::from(r"C:\Data\notes.txt"));
+        assert_eq!(record.deleted, 0, "a zero time is no time");
+        // Not a record: unknown version, truncated, empty path.
+        assert_eq!(super::parse_record(&[0u8; 10]), None);
+        let mut v3 = v2.clone();
+        v3[0] = 3;
+        assert_eq!(super::parse_record(&v3), None);
+        assert_eq!(super::parse_record(&v2[..30]), None);
+    }
+
     use super::*;
     use crate::StaGuard;
 

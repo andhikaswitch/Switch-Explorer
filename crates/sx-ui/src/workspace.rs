@@ -161,6 +161,8 @@ pub struct Workspace {
     _subscriptions: Vec<Subscription>,
     /// Follows the window's place for the session.
     pub(crate) window_watch: Option<Subscription>,
+    /// The Recycle Bin page (F-LOC-02).
+    pub(crate) bin: crate::bin_page::BinView,
     /// Where the session is written (F-WIN-05).
     pub(crate) session_file: Option<PathBuf>,
     /// The newest session write asked for; an older timer writes nothing.
@@ -272,6 +274,7 @@ impl Workspace {
             session_ticket: 0,
             window_place: None,
             window_watch: None,
+            bin: crate::bin_page::BinView::default(),
         };
         if this.features.ops_taskbar_progress {
             this.ops.taskbar = this.hwnd.and_then(|hwnd| {
@@ -525,8 +528,12 @@ impl Workspace {
         }
         let cancel = tab.begin_load();
         let Location::Path(path) = tab.location().clone() else {
+            let bin = *tab.location() == Location::RecycleBin;
             tab.content = Content::Page;
             tab.selection.clear();
+            if bin {
+                self.refresh_bin(cx);
+            }
             cx.notify();
             return;
         };

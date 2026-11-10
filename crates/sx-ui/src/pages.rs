@@ -1,5 +1,5 @@
-//! Pages that are not folder listings: Home (placeholder in Phase 1), This PC and Recycle Bin
-//! (opened in File Explorer until its own view lands, ROADMAP Phase 2).
+//! Pages that are not folder listings: Home (placeholder in Phase 1) and This PC. The Recycle
+//! Bin has its own module (`bin_page`).
 
 use std::path::PathBuf;
 
@@ -45,22 +45,6 @@ impl Workspace {
                 .text_color(t.color(Token::FgSecondary))
                 .child(SharedString::from(t!("home.body"))),
         )
-    }
-
-    pub(crate) fn render_recycle_bin(&self, cx: &Context<Self>) -> impl IntoElement {
-        let t = cx.tokens();
-        self.page(t!("recycle_bin.title").into(), cx)
-            .child(
-                div()
-                    .text_color(t.color(Token::FgSecondary))
-                    .child(SharedString::from(t!("recycle_bin.body"))),
-            )
-            .child(div().flex().child(self.text_button(
-                "bin-open",
-                t!("recycle_bin.open").into(),
-                cx,
-                |this, cx| this.open_shell_folder("shell:RecycleBinFolder", cx),
-            )))
     }
 
     pub(crate) fn render_this_pc(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -147,7 +131,7 @@ impl Workspace {
     }
 
     /// Opens a shell location (`shell:RecycleBinFolder`) in File Explorer.
-    fn open_shell_folder(&mut self, name: &str, cx: &mut Context<Self>) {
+    pub(crate) fn open_shell_folder(&mut self, name: &str, cx: &mut Context<Self>) {
         let open = sx_shell::exec::open(PathBuf::from(name), None);
         let name = name.to_string();
         cx.spawn(async move |this, cx| {

@@ -69,6 +69,15 @@ pub(crate) enum Dialog {
     ConfirmRecycle(Vec<PathBuf>),
     ConfirmDelete(Vec<PathBuf>),
     Conflict(PendingPaste),
+    /// Items deleted for good from the Recycle Bin (their slots), named by the first one.
+    ConfirmPurge {
+        slots: Vec<PathBuf>,
+        name: String,
+    },
+    /// Everything in the Recycle Bin, deleted for good.
+    ConfirmEmptyBin {
+        count: usize,
+    },
     /// A drag moves folders and `dnd.confirm_folder_move` asks first.
     ConfirmMove {
         sources: Vec<PathBuf>,
@@ -490,6 +499,8 @@ impl Workspace {
     ) {
         let done = &outcome.done;
         self.follow_moved_pins(done, cx);
+        // Recycling, restoring and deleting change what the bin page lists.
+        self.refresh_bin(cx);
         match origin {
             Origin::User if self.features.ops_undo => self.ops.undo.record(done.clone()),
             Origin::User => {}
@@ -907,6 +918,10 @@ impl Workspace {
                 dest,
                 quiet,
             }) => self.transfer(sources, dest, Mode::Move, quiet, cx),
+            Some(Dialog::ConfirmPurge { slots, .. }) => {
+                self.run_op(Op::Delete { paths: slots }, Origin::User, cx);
+            }
+            Some(Dialog::ConfirmEmptyBin { .. }) => self.empty_bin_now(cx),
             Some(conflict @ Dialog::Conflict(_)) => self.ops.dialog = Some(conflict),
             None => {}
         }

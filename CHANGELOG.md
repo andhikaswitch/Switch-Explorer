@@ -119,6 +119,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
     saat folder itu dipindah atau di-rename, juga lewat undo.
   - Pin terkunci: menu klik kanan pin menawarkan "Buka kunci folder pinned" (`Ctrl+K`, `L`).
 - Toast tanpa tombol ("Diurungkan.") hilang setelah 3 detik; toast dengan Urungkan tetap 8 detik.
+- Halaman Recycle Bin (F-LOC-02): isi Recycle Bin semua drive, terbaru dulu, dengan lokasi asal, tanggal
+  dihapus, dan ukuran (dibaca dari catatan `$I…`, di luar UI thread). Pulihkan mengembalikan item ke tempat
+  asalnya (nama baru bila sudah terpakai) dan bisa di-undo; Hapus permanen dan Kosongkan Recycle Bin
+  bertanya dulu. Hapus permanen dari bin juga membuang catatan `$I…`-nya, jadi tidak ada item hantu.
 - Session restore (F-WIN-05, `tabs.restore_session`): tab yang terbuka, tab aktif, dan posisi/ukuran window
   (termasuk maximized) dibuka lagi saat start tanpa argumen. Disimpan di
   `%LOCALAPPDATA%\SwitchExplorer\session.json` (atomik, di luar UI thread, dan sekali lagi saat window

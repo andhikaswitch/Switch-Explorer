@@ -176,7 +176,11 @@ impl Workspace {
     fn dialog_stops(&self) -> Vec<FocusHandle> {
         let ids: &[&str] = match &self.ops.dialog {
             Some(
-                Dialog::ConfirmRecycle(_) | Dialog::ConfirmDelete(_) | Dialog::ConfirmMove { .. },
+                Dialog::ConfirmRecycle(_)
+                | Dialog::ConfirmDelete(_)
+                | Dialog::ConfirmMove { .. }
+                | Dialog::ConfirmPurge { .. }
+                | Dialog::ConfirmEmptyBin { .. },
             ) => &["dialog-cancel", "dialog-confirm"],
             Some(Dialog::Conflict(_)) => &[
                 "conflict-all",

@@ -116,6 +116,9 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
       `session.json`; hanya tab aktif yang dienumerasi saat start. Belum: split & ukuran pane (menunggu split
       view), dan sisanya.
 - [ ] Home dashboard (gauge, kategori pintar, pinned, terbaru, aktivitas); halaman Aktivitas; Recycle Bin view.
+      Progres: Recycle Bin view (F-LOC-02): isi bin semua drive (nama, lokasi asal, tanggal dihapus, ukuran),
+      seleksi, Pulihkan (journal + undo), Hapus permanen & Kosongkan (dengan konfirmasi). Belum: Home
+      dashboard, halaman Aktivitas.
 - [ ] Properties (`Alt+Enter`), copy path, buka terminal/VS Code, mode baca-saja, elevasi via `IFileOperation`.
       Progres: Properties, copy path, mode baca-saja, "Buka di Terminal" (`ops.terminal`: Windows Terminal,
       PowerShell, cmd) dan "Buka di VS Code" (bila terpasang) di menu item folder, menu latar, dan palette.
