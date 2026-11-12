@@ -163,6 +163,8 @@ pub struct Workspace {
     pub(crate) window_watch: Option<Subscription>,
     /// The Recycle Bin page (F-LOC-02).
     pub(crate) bin: crate::bin_page::BinView,
+    /// The Home page (F-HOME).
+    pub(crate) home: crate::home::HomeView,
     /// Where the session is written (F-WIN-05).
     pub(crate) session_file: Option<PathBuf>,
     /// The newest session write asked for; an older timer writes nothing.
@@ -275,6 +277,7 @@ impl Workspace {
             window_place: None,
             window_watch: None,
             bin: crate::bin_page::BinView::default(),
+            home: crate::home::HomeView::default(),
         };
         if this.features.ops_taskbar_progress {
             this.ops.taskbar = this.hwnd.and_then(|hwnd| {
@@ -438,6 +441,9 @@ impl Workspace {
             self.leave_address(window, cx);
             if std::mem::take(&mut self.tabs[ix].unloaded) {
                 self.load(cx);
+            } else if *self.tabs[ix].location() == Location::Home {
+                // Back on Home: its free space, times and recent files are from last time.
+                self.refresh_home(cx);
             }
             self.session_changed(cx);
             cx.notify();
@@ -529,11 +535,13 @@ impl Workspace {
         }
         let cancel = tab.begin_load();
         let Location::Path(path) = tab.location().clone() else {
-            let bin = *tab.location() == Location::RecycleBin;
+            let page = tab.location().clone();
             tab.content = Content::Page;
             tab.selection.clear();
-            if bin {
-                self.refresh_bin(cx);
+            match page {
+                Location::RecycleBin => self.refresh_bin(cx),
+                Location::Home => self.refresh_home(cx),
+                _ => {}
             }
             cx.notify();
             return;

@@ -130,7 +130,7 @@ HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennew
 | Preview | `AssocQueryStringW(ASSOCSTR_SHELLEXTENSION, ext, "{8895b1c6-b41f-4c1c-a562-0d564250836f}")` → `IPreviewHandler` di child HWND | Spike di Fase 2 (z-order & backdrop) |
 | Properti file | `IPropertyStore` (`SHGetPropertyStoreFromParsingName`) | Dimensi, durasi, penulis |
 | Known folders | `SHGetKnownFolderPath` | Desktop, Documents, Downloads, dst. |
-| Recent | `%APPDATA%\Microsoft\Windows\Recent\*.lnk` + `IShellLinkW` | Untuk Home |
+| Recent | `%APPDATA%\Microsoft\Windows\Recent\*.lnk` + `IShellLinkW` | Untuk Home (`sx_shell::recent`): folder dari `FOLDERID_Recent`, shortcut terbaru dulu, target dibaca dengan `IPersistFile::Load` + `IShellLinkW::GetPath` tanpa `Resolve` (target tidak disentuh); folder dikenali dari atribut yang tersimpan di shortcut; hanya target di drive `DRIVE_FIXED` yang dicek keberadaannya (drive yang hurufnya sudah tidak ada dibuang tanpa I/O). `GetPath` dipanggil dengan flag 0: terukur tidak menyentuh jaringan dan tidak mengekspansi ulang variabel lingkungan; `Resolve`/`SetPath`/`SetIDList` tidak boleh dipakai di sini (menghubungi target, puluhan detik bila mati). Program/skrip/shortcut dan path device/verbatim dibuang (SECURITY §8). 300 shortcut terbaru dibaca; bila tidak satu pun terbaca, hasilnya error, bukan "kosong". Di thread sendiri (STA), hanya saat `home.show_recent` hidup |
 
 ## 9. OLE drag & drop
 

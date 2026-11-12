@@ -117,8 +117,11 @@ breadcrumb panjang~~, ~~kolom yang bisa diubah lebarnya~~, ~~progress taskbar~~ 
       view), dan sisanya.
 - [ ] Home dashboard (gauge, kategori pintar, pinned, terbaru, aktivitas); halaman Aktivitas; Recycle Bin view.
       Progres: Recycle Bin view (F-LOC-02): isi bin semua drive (nama, lokasi asal, tanggal dihapus, ukuran),
-      seleksi, Pulihkan (journal + undo), Hapus permanen & Kosongkan (dengan konfirmasi). Belum: Home
-      dashboard, halaman Aktivitas.
+      seleksi, Pulihkan (journal + undo), Hapus permanen & Kosongkan (dengan konfirmasi).
+      Home dashboard: gauge storage drive lokal (F-HOME-01), kartu pinned (F-HOME-02), Terbaru dari Recent
+      Items Windows dengan switch `home.show_recent` (F-HOME-04), aktivitas terakhir + Urungkan (F-HOME-05).
+      Belum: kategori pintar (F-HOME-03, butuh pencarian multi-folder), gauge Google Drive (modul cloud),
+      halaman Aktivitas.
 - [ ] Properties (`Alt+Enter`), copy path, buka terminal/VS Code, mode baca-saja, elevasi via `IFileOperation`.
       Progres: Properties, copy path, mode baca-saja, "Buka di Terminal" (`ops.terminal`: Windows Terminal,
       PowerShell, cmd) dan "Buka di VS Code" (bila terpasang) di menu item folder, menu latar, dan palette.

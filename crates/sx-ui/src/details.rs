@@ -324,6 +324,8 @@ impl Workspace {
         let focus = self.focus_stop(&ElementId::Name(id.into()), cx);
         div()
             .id(id)
+            .role(gpui_kit::Role::Button)
+            .aria_label(label.clone())
             .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
             .flex()
             .items_center()

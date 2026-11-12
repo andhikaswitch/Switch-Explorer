@@ -354,31 +354,31 @@ impl Workspace {
             .flex_wrap()
             .items_center()
             .gap(t.px(Token::SpaceSm))
-            .child(self.bin_button(
+            .child(self.action_button(
                 "bin-restore",
                 t!("recycle_bin.restore").into(),
                 any,
-                t!("recycle_bin.unavailable").into(),
+                why(any, t!("recycle_bin.unavailable").into()),
                 cx,
                 |this, cx| {
                     this.bin_restore(cx);
                 },
             ))
-            .child(self.bin_button(
+            .child(self.action_button(
                 "bin-delete",
                 t!("recycle_bin.delete").into(),
                 any,
-                t!("recycle_bin.unavailable").into(),
+                why(any, t!("recycle_bin.unavailable").into()),
                 cx,
                 |this, cx| {
                     this.bin_delete(cx);
                 },
             ))
-            .child(self.bin_button(
+            .child(self.action_button(
                 "bin-empty",
                 t!("recycle_bin.empty").into(),
                 !bin.items.is_empty(),
-                t!("recycle_bin.is_empty").into(),
+                why(!bin.items.is_empty(), t!("recycle_bin.is_empty").into()),
                 cx,
                 Self::bin_empty,
             ))
@@ -460,13 +460,15 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// A toolbar button; one that cannot act now is drawn disabled and takes no click.
-    fn bin_button(
+    /// A secondary button that can be unavailable: then it is drawn disabled and takes no
+    /// click. `note` is what a screen reader hears after the label: why it is unavailable, or
+    /// what it acts on.
+    pub(crate) fn action_button(
         &self,
         id: &'static str,
         label: SharedString,
         enabled: bool,
-        why_not: SharedString,
+        note: SharedString,
         cx: &Context<Self>,
         on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> AnyElement {
@@ -482,8 +484,7 @@ impl Workspace {
             .id(id)
             .role(gpui_kit::Role::Button)
             .aria_label(label.clone())
-            // Screen readers hear why a dimmed button does nothing now.
-            .when(!enabled, |el| el.aria_description(why_not))
+            .when(!note.is_empty(), |el| el.aria_description(note))
             .when(enabled, |el| {
                 el.tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
                     .hover(move |s| s.bg(hover).text_color(hover_fg).border_color(clear))
@@ -654,6 +655,15 @@ impl Workspace {
                     .w(size_width),
             )
             .into_any_element()
+    }
+}
+
+/// The note of a button that only explains itself while it is unavailable.
+fn why(enabled: bool, reason: SharedString) -> SharedString {
+    if enabled {
+        SharedString::default()
+    } else {
+        reason
     }
 }
 

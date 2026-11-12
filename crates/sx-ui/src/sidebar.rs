@@ -28,6 +28,17 @@ const TRASH_ICON: &str = "icons/sx/trash.svg";
 const GAUGE_WARNING: f32 = 0.85;
 const GAUGE_DANGER: f32 = 0.95;
 
+/// The fill of a capacity gauge that is `used` (0..=1) full.
+pub(crate) fn gauge_fill(used: f32) -> Token {
+    if used >= GAUGE_DANGER {
+        Token::GaugeFillDanger
+    } else if used >= GAUGE_WARNING {
+        Token::GaugeFillWarning
+    } else {
+        Token::GaugeFill
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Item {
     Home,
@@ -135,13 +146,7 @@ impl Workspace {
     fn drive_gauge(&self, drive: &Drive, highlighted: bool, cx: &Context<Self>) -> Option<Div> {
         let t = cx.tokens();
         let used = drive.space?.used_fraction();
-        let fill = if used >= GAUGE_DANGER {
-            Token::GaugeFillDanger
-        } else if used >= GAUGE_WARNING {
-            Token::GaugeFillWarning
-        } else {
-            Token::GaugeFill
-        };
+        let fill = gauge_fill(used);
         let normal = fill == Token::GaugeFill;
         let on_highlight = t.color(Token::NavItemActiveFg);
         Some(
@@ -209,6 +214,9 @@ impl Workspace {
             .id(element_id.clone())
             .tab_stop_ring(&focus, self.ring_for(&focus, t.px(Token::RadiusSm)), cx)
             .flex()
+            // Never squeezed by a short window (the sidebar scrolls instead): a drive item
+            // would lose the room for its gauge and caption.
+            .flex_none()
             .items_center()
             .gap(t.px(Token::SpaceMd))
             .min_h(control)

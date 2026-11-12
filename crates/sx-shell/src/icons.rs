@@ -53,6 +53,16 @@ const OWN_ICON: &[&str] = &[
 ];
 
 impl IconKey {
+    /// The key of a file's type alone, from its name: loading it never opens the file (for
+    /// files the user has not navigated to, such as recent files on a share).
+    pub fn for_type(path: &Path) -> Self {
+        Self::Type(
+            path.extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                .unwrap_or_default(),
+        )
+    }
+
     pub fn for_item(path: &Path, is_dir: bool) -> Self {
         if is_dir {
             return Self::Folder;

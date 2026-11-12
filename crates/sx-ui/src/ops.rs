@@ -330,7 +330,7 @@ pub(crate) fn off_thread<T: Send + 'static>(
 type ClipboardRead = Result<Option<(ClipboardFiles, Vec<Conflict>, u32)>, sx_shell::ShellError>;
 
 /// The message once a job is done.
-fn done_text(op: &Op, origin: Origin) -> SharedString {
+pub(crate) fn done_text(op: &Op, origin: Origin) -> SharedString {
     let count = op.item_count();
     let plural = |key: &str| {
         if count == 1 {

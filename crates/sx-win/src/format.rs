@@ -11,9 +11,9 @@ use windows::Win32::UI::Shell::{
 };
 use windows::core::PCWSTR;
 
-/// Short date and time in the user's locale and time zone, e.g. `12/05/2025 21:10`.
+/// A file time (100 ns ticks since 1601, UTC) as a calendar time in the user's time zone.
 /// `None` for zero or out-of-range times.
-pub fn file_time(ticks: i64) -> Option<String> {
+fn local_time(ticks: i64) -> Option<SYSTEMTIME> {
     if ticks <= 0 {
         return None;
     }
@@ -27,6 +27,33 @@ pub fn file_time(ticks: i64) -> Option<String> {
         FileTimeToSystemTime(&raw const ft, &raw mut utc).ok()?;
         SystemTimeToTzSpecificLocalTimeEx(None, &raw const utc, &raw mut local).ok()?;
     }
+    Some(local)
+}
+
+/// The short date alone in the user's locale and time zone, e.g. `12/05/2025`.
+pub fn file_date(ticks: i64) -> Option<String> {
+    short_date(&local_time(ticks)?)
+}
+
+/// The calendar day of a file time in the user's time zone, as a day number: two times are
+/// "today" and "yesterday" when their numbers differ by one.
+pub fn local_day(ticks: i64) -> Option<i64> {
+    let local = local_time(ticks)?;
+    // Days from civil (Howard Hinnant's algorithm), proleptic Gregorian.
+    let (y, m, d) = (
+        i64::from(local.wYear),
+        i64::from(local.wMonth),
+        i64::from(local.wDay),
+    );
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era * 146_097 + doe)
+}
+
+fn short_date(local: &SYSTEMTIME) -> Option<String> {
     let mut buf = [0u16; 128];
     // SAFETY: null locale = user default; `local` is a valid SYSTEMTIME; the buffer length is
     // passed with the slice. The return value counts the terminating NUL.
@@ -34,17 +61,23 @@ pub fn file_time(ticks: i64) -> Option<String> {
         GetDateFormatEx(
             PCWSTR::null(),
             DATE_SHORTDATE,
-            Some(&raw const local),
+            Some(std::ptr::from_ref(local)),
             PCWSTR::null(),
             Some(&mut buf),
             PCWSTR::null(),
         )
     };
-    if date <= 0 {
-        return None;
-    }
-    let mut out = String::from_utf16_lossy(&buf[..date as usize - 1]);
-    // SAFETY: as above.
+    (date > 0).then(|| String::from_utf16_lossy(&buf[..date as usize - 1]))
+}
+
+/// Short date and time in the user's locale and time zone, e.g. `12/05/2025 21:10`.
+/// `None` for zero or out-of-range times.
+pub fn file_time(ticks: i64) -> Option<String> {
+    let local = local_time(ticks)?;
+    let mut buf = [0u16; 128];
+    let mut out = short_date(&local)?;
+    // SAFETY: null locale = user default; `local` is a valid SYSTEMTIME; the buffer length is
+    // passed with the slice. The return value counts the terminating NUL.
     let time = unsafe {
         GetTimeFormatEx(
             PCWSTR::null(),

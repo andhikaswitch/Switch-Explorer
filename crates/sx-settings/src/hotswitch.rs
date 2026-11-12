@@ -64,6 +64,8 @@ pub const DEFAULT_BINDINGS: &[HotSwitchBinding] = &[
     ),
     bind("", HotSwitchAction::Choice("ops.terminal", "powershell")),
     bind("", HotSwitchAction::Choice("ops.terminal", "cmd")),
+    // Recent files on Home, to hide them while sharing the screen (no default keys).
+    bind("", HotSwitchAction::Toggle("home.show_recent")),
 ];
 
 /// A named set of switch values (`--set` syntax for the values).

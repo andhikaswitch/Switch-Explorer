@@ -14,6 +14,7 @@ pub mod icons;
 pub mod menu;
 pub mod modal;
 pub mod names;
+pub mod recent;
 pub mod recycle;
 pub mod taskbar;
 pub mod worker;

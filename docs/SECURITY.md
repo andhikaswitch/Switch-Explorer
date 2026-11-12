@@ -71,6 +71,17 @@
 
 - Tanpa telemetri. Log lokal, rotasi 7 hari; path lengkap hanya di level `debug`.
 - Crash report lokal tanpa token; pengguna sendiri yang memutuskan membagikannya.
+- File terbaru di Home (`home.show_recent`) dibaca dari Recent Items milik Windows; aplikasi tidak
+  mencatat riwayat sendiri dan tidak menyimpan daftarnya. Folder Recent bisa diisi aplikasi mana pun,
+  jadi isinya diperlakukan sebagai data tak tepercaya:
+  - Target dibaca dari shortcut tanpa `Resolve` dan tanpa menyentuh targetnya; hanya target di drive
+    lokal (`DRIVE_FIXED`) yang dicek keberadaannya. Shortcut ke share tidak memicu koneksi apa pun.
+  - Yang ditampilkan hanya path dokumen biasa (`X:\…` atau `\\server\share\…`, tanpa `.`/`..`, bukan
+    path device/verbatim). Program, skrip, dan shortcut (`exe`, `bat`, `cmd`, `ps1`, `lnk`, `url`, …)
+    tidak pernah ditampilkan, karena satu klik pada baris membukanya.
+  - Ikon baris selalu ikon per jenis file (dari ekstensi): file target tidak dibuka demi ikon, jadi
+    target di share tidak dihubungi sebelum pengguna sendiri membukanya.
+  - Nama ditampilkan tanpa karakter kontrol bidi.
 
 ## 9. Rilis & rantai pasok
 

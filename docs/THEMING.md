@@ -56,7 +56,7 @@ Komponen merujuk semantik, semantik merujuk palet. Override bisa dilakukan di la
 | Bayangan | `shadow.card`, `shadow.popover`, `shadow.dialog`, `shadow.glow` | Shadow |
 | Angka | `radius.*`, `space.*`, `row.height.*`, `row.cut.opacity`, `slash.angle_deg`, `slash.edge_width`, `motion.*` | Number |
 | Tipografi | `font.size.{caption,body,subtitle,title,display}`, `font.line.{…}` (px, DESIGN §4) | Number |
-| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `size.osd_{height,min_width,max_width,offset}` (OSD Hot Switch, DESIGN §9.1), `size.search_width` (kotak cari, DESIGN §8.1), `size.palette_width` (command palette), `size.menu_width` (menu konteks), `size.toggle_{width,height}` (toggle, DESIGN §11), `focus.ring_width`, `opacity.disabled` | Number |
+| Chrome & kontrol | `size.{titlebar,commandbar,statusbar,sidebar,tab_max,tab_indicator,control,icon,icon_sm}`, `size.osd_{height,min_width,max_width,offset}` (OSD Hot Switch, DESIGN §9.1), `size.search_width` (kotak cari, DESIGN §8.1), `size.palette_width` (command palette), `size.menu_width` (menu konteks), `size.home_storage_row` dan `size.home_label` (baris gauge Home serta kolom label/waktunya, DESIGN §8.2), `size.toggle_{width,height}` (toggle, DESIGN §11), `focus.ring_width`, `opacity.disabled` | Number |
 | Font | `font.ui`, `font.display`, `font.mono` (daftar fallback), `font.scale` | Font/Number |
 
 Setiap token dideklarasikan sekali di `sx-theme` lewat `define_tokens!` (id, tipe, grup, deskripsi i18n,
@@ -175,6 +175,8 @@ mono = ["Cascadia Mono", "Consolas"]
 "size.search_width" = 240
 "size.palette_width" = 560
 "size.menu_width" = 260
+"size.home_storage_row" = 432
+"size.home_label" = 124
 "size.toggle_width" = 40
 "size.toggle_height" = 20
 "focus.ring_width" = 2

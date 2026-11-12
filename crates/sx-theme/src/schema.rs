@@ -273,6 +273,9 @@ define_tokens! {
     SizePaletteWidth = "size.palette_width": Number,
     // The themed context menu and its submenus (F-CTX-01).
     SizeMenuWidth = "size.menu_width": Number,
+    // Home (DESIGN.md §8.2): a storage gauge row, and its label and "time ago" columns.
+    SizeHomeStorageRow = "size.home_storage_row": Number,
+    SizeHomeLabel = "size.home_label": Number,
     // A toggle switch (DESIGN.md §11): the Hot Switch panel, later Settings.
     SizeToggleWidth = "size.toggle_width": Number,
     SizeToggleHeight = "size.toggle_height": Number,

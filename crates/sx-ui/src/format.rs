@@ -89,6 +89,71 @@ pub fn drive_space(drive: &Drive) -> SharedString {
     }
 }
 
+/// `335 GB of 476 GB`, used of total, or "No media".
+pub fn drive_used(drive: &Drive) -> SharedString {
+    match drive.space {
+        Some(space) => t!(
+            "home.used_of",
+            used = sx_win::format::byte_size(space.total.saturating_sub(space.free)),
+            total = sx_win::format::byte_size(space.total)
+        )
+        .into(),
+        None => t!("this_pc.no_media").into(),
+    }
+}
+
+/// FILETIME ticks (100 ns since 1601) of a system time.
+fn ticks_of(time: std::time::SystemTime) -> Option<i64> {
+    const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
+    let since = time.duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_nanos() / 100)
+        .ok()?
+        .checked_add(UNIX_EPOCH_TICKS)
+}
+
+/// How long ago `then` was, as people say it: "Just now", "5 minutes ago", "Yesterday" (the
+/// calendar day before today), "3 days ago"; from a week on, the date.
+pub fn ago(then: std::time::SystemTime, now: std::time::SystemTime) -> SharedString {
+    let day = |time| ticks_of(time).and_then(sx_win::format::local_day);
+    let days = day(now).zip(day(then)).map(|(now, then)| now - then);
+    let date = || ticks_of(then).and_then(sx_win::format::file_date);
+    ago_text(
+        now.duration_since(then).map_or(0, |d| d.as_secs()),
+        days,
+        date,
+    )
+}
+
+/// [`ago`] from its parts: the seconds since then, the calendar days between the two (when
+/// known), and the date to show from a week on.
+fn ago_text(
+    seconds: u64,
+    days: Option<i64>,
+    date: impl FnOnce() -> Option<String>,
+) -> SharedString {
+    const MINUTE: u64 = 60;
+    const HOUR: u64 = 60 * MINUTE;
+    const DAY: u64 = 24 * HOUR;
+    // A time in the future (a clock that was set back) reads as now.
+    match seconds {
+        s if s < MINUTE => t!("time.just_now"),
+        s if s < 2 * MINUTE => t!("time.minute_ago"),
+        s if s < HOUR => t!("time.minutes_ago", count = s / MINUTE),
+        s if s < 2 * HOUR => t!("time.hour_ago"),
+        s if s < DAY => t!("time.hours_ago", count = s / HOUR),
+        s => {
+            // By the calendar: 25 hours ago can be yesterday or the day before.
+            let days = days.unwrap_or((s / DAY) as i64).max(1);
+            match days {
+                1 => t!("time.yesterday"),
+                2..=6 => t!("time.days_ago", count = days),
+                _ => return date().unwrap_or_default().into(),
+            }
+        }
+    }
+    .into()
+}
+
 /// Why a folder could not be listed, as a sentence with a fix.
 pub fn load_error(err: &sx_fs::LoadError) -> SharedString {
     use sx_fs::LoadError;
@@ -230,6 +295,39 @@ mod tests {
         );
         let other = Path::new(r"D:\Elsewhere");
         assert_eq!(found_in(Some(root), other).as_ref(), r"D:\Elsewhere");
+    }
+
+    #[test]
+    fn times_ago_read_like_speech() {
+        // The default locale is English.
+        let text =
+            |seconds: u64, days: Option<i64>| ago_text(seconds, days, || Some("12/05/2025".into()));
+        assert_eq!(text(5, None).as_ref(), "Just now");
+        assert_eq!(text(60, None).as_ref(), "1 minute ago");
+        assert_eq!(text(59 * 60, None).as_ref(), "59 minutes ago");
+        assert_eq!(text(3600, None).as_ref(), "1 hour ago");
+        // Late last night is still "hours ago", whatever the calendar says.
+        assert_eq!(text(23 * 3600, Some(1)).as_ref(), "23 hours ago");
+        // 25 hours ago: yesterday, or the day before, by the calendar.
+        assert_eq!(text(25 * 3600, Some(1)).as_ref(), "Yesterday");
+        assert_eq!(text(25 * 3600, Some(2)).as_ref(), "2 days ago");
+        assert_eq!(text(3 * 86_400, None).as_ref(), "3 days ago");
+        assert_eq!(text(30 * 86_400, Some(30)).as_ref(), "12/05/2025");
+    }
+
+    #[test]
+    fn times_ago_use_the_clock_and_the_calendar() {
+        use std::time::{Duration, SystemTime};
+        let now = SystemTime::UNIX_EPOCH + Duration::from_hours(500_000);
+        assert_eq!(
+            ago(now - Duration::from_secs(90), now).as_ref(),
+            "1 minute ago"
+        );
+        // The clock went back: not "in the future".
+        assert_eq!(ago(now + Duration::from_secs(90), now).as_ref(), "Just now");
+        // From a week on: a date, without a time of day.
+        let old = ago(now - Duration::from_hours(24 * 30), now);
+        assert!(!old.is_empty() && !old.contains(':'), "{old}");
     }
 
     #[test]

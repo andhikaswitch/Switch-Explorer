@@ -442,6 +442,11 @@ define_flags! {
     /// Home page.
     home_enabled: bool = true,
         id = "home.enabled", group = Modules, vis = Basic, stab = Stable, scope = Global;
+    /// The "Recent" section of Home, read from Windows' Recent Items. Off: that folder is not
+    /// read at all.
+    home_show_recent: bool = true,
+        id = "home.show_recent", group = Modules, vis = Basic, stab = Stable, scope = Global,
+        hot = true;
     /// Organizer tool (lazy).
     tools_organizer: bool = true,
         id = "tools.organizer", group = Modules, vis = Basic, stab = Stable, scope = Global;

@@ -201,11 +201,11 @@ Home, This PC, dan Recycle Bin.
 
 | ID | Fitur | P | Fase |
 |---|---|---|---|
-| F-HOME-01 | Gauge storage: drive lokal (data asli) + akun Google Drive (kuota via API); klik = buka | P1 | F2 |
-| F-HOME-02 | Grid pinned | P1 | F2 |
+| F-HOME-01 | Gauge storage: drive lokal (data asli) + akun Google Drive (kuota via API); klik = buka. Baris ringkas: nama drive, gauge, "terpakai dari total"; ruang kosong dibaca ulang setiap Home dibuka. Gauge Google Drive menyusul bersama modul cloud | P1 | F2 |
+| F-HOME-02 | Grid pinned: kartu per folder pinned, klik = buka | P1 | F2 |
 | F-HOME-03 | Kategori pintar (Dokumen, Audio, Gambar, Video, Arsip, Kode) = saved search atas folder sumber (default Desktop, Documents, Downloads); hitungan dihitung lazy di background atau via Everything; "+ Kategori"; taksonomi sama dengan Organizer | P1 | F2 |
-| F-HOME-04 | Terbaru: dari Recent Items Windows (`%APPDATA%\Microsoft\Windows\Recent`, resolve `.lnk`), tanpa tracking sendiri | P1 | F2 |
-| F-HOME-05 | Aktivitas terakhir: 5 operasi terakhir dengan tombol Urungkan | P1 | F2 |
+| F-HOME-04 | Terbaru: dari Recent Items Windows (`%APPDATA%\Microsoft\Windows\Recent`, resolve `.lnk`), tanpa tracking sendiri. 10 file terbaru (folder dilewati): nama, folder, "2 jam lalu"; klik = buka file, tombol folder = buka lokasinya dengan file itu terpilih. Program, skrip, dan shortcut tidak ditampilkan (SECURITY §8); ikon baris = ikon jenis file. Dibaca di luar UI thread tiap Home dibuka/di-refresh (`F5`). Target di drive lokal yang sudah tidak ada dibuang; target jaringan tidak diperiksa (supaya share mati tidak menahan daftar). Bisa dimatikan: `home.show_recent` (panel Hot Switch); saat mati folder Recent tidak dibaca | P1 | F2 |
+| F-HOME-05 | Aktivitas terakhir: 5 operasi terakhir (sesi ini, dari riwayat undo) dengan tombol Urungkan di operasi terbaru; undo berurutan dari yang terbaru, jadi yang lebih lama tampil tanpa tombol | P1 | F2 |
 
 ## F-HIST — Aktivitas
 

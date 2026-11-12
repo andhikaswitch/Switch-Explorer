@@ -78,6 +78,11 @@ impl UndoStack {
         }
     }
 
+    /// What the last operations did, newest first: the first one is what undo takes back.
+    pub fn recent(&self, count: usize) -> impl Iterator<Item = &Op> {
+        self.undo.iter().rev().take(count)
+    }
+
     /// The operation to run again, without taking it (see [`Self::next_undo`]).
     pub fn next_redo(&self) -> Option<Op> {
         self.redo.last().cloned()
@@ -110,6 +115,20 @@ mod tests {
 
     fn folder(n: u32) -> Op {
         Op::NewFolder { path: path(n) }
+    }
+
+    #[test]
+    fn recent_lists_newest_first_and_follows_undo() {
+        let mut stack = UndoStack::new(10);
+        assert_eq!(stack.recent(5).count(), 0);
+        for n in 1..=4 {
+            stack.record(folder(n));
+        }
+        let listed: Vec<&Op> = stack.recent(3).collect();
+        assert_eq!(listed, [&folder(4), &folder(3), &folder(2)]);
+        // What undo takes back leaves the list: its first entry is always the next undo.
+        stack.take_undo();
+        assert_eq!(stack.recent(1).next(), Some(&folder(3)));
     }
 
     #[test]

@@ -133,6 +133,18 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/) dan
   - Daftar Recycle Bin bisa dipakai dari keyboard (panah, Shift/Ctrl, Ctrl+Space, Ctrl+A, Enter = pulihkan,
     Delete = hapus permanen) dengan ring fokus di baris; dialog hapus permanen memakai kalimat khusus bin
     ("tidak bisa dibatalkan").
+- Halaman Home (F-HOME) menggantikan placeholder:
+  - Penyimpanan: satu baris gauge per drive ("terpakai dari total", warna peringatan ≥ 85% dan bahaya
+    ≥ 95%); klik membuka drive.
+  - Pinned: kartu folder yang disematkan.
+  - Aktivitas terakhir: 5 operasi terakhir sesi ini, dengan Urungkan di yang terbaru.
+  - Terbaru: 10 file terakhir dari Recent Items Windows (tanpa tracking sendiri) dengan waktu relatif dan
+    tombol "Buka lokasi file". Switch baru `home.show_recent` (panel Hot Switch, tanpa hotkey default)
+    menyembunyikannya; saat mati folder Recent tidak dibaca sama sekali. Program, skrip, dan shortcut
+    tidak ditampilkan; target di share tidak dihubungi (baik saat membaca daftar maupun untuk ikon)
+    sebelum Anda membukanya. Tombol lokasi membuka folder dengan file itu terpilih.
+  - Fokus keyboard menggulir halaman; Home diperbarui saat tab-nya ditampilkan lagi.
+- Item drive di sidebar tidak lagi tergencet dan bertumpuk di jendela pendek (sidebar bergulir).
 - Terminal untuk "Buka di Terminal" bisa dipilih di panel Hot Switch dan palette (Windows Terminal,
   PowerShell, Command Prompt). Pesan gagal menyebut terminal yang gagal dan cara memilih yang lain.
 - Session restore (F-WIN-05, `tabs.restore_session`): tab yang terbuka, tab aktif, dan posisi/ukuran window

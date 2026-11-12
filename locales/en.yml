@@ -53,7 +53,24 @@ error:
   open_in_use: "\"%{name}\" is in use by another app. Close it there and try again."
 home:
   title: Home
-  body: Pinned folders, drives and recent files will appear here. For now, pick a place on the left.
+  storage: Storage
+  used_of: "%{used} of %{total}"
+  activity: Recent activity
+  no_activity: Nothing yet. What you copy, move, rename or delete shows up here.
+  no_pins: "Nothing pinned yet. Open a folder, then choose Pin to sidebar."
+  recent: Recent
+  no_recent: No recent files yet. Files you open show up here.
+  recent_failed: "Can't read Windows' recent files. Press F5 to try again."
+  open_location: Open file location
+  recent_row: "%{name}, in %{folder}, %{when}"
+time:
+  just_now: Just now
+  minute_ago: 1 minute ago
+  minutes_ago: "%{count} minutes ago"
+  hour_ago: 1 hour ago
+  hours_ago: "%{count} hours ago"
+  yesterday: Yesterday
+  days_ago: "%{count} days ago"
 this_pc:
   title: This PC
   free_of: "%{free} free of %{total}"
@@ -207,6 +224,8 @@ flag:
     terminal: Terminal used by Open in Terminal
   safety:
     readonly_mode: Read-only mode
+  home:
+    show_recent: Recent files on Home
 preset:
   anti_drag: Anti accidental drag
 choice:
@@ -265,6 +284,8 @@ hotswitch:
     pins_locked_on: Pinned folders can't be changed.
     pins_locked_off: Pinned folders can be changed again.
     external_off: Dragging inside Switch Explorer still works.
+    recent_on: Home lists your recent files again.
+    recent_off: Home no longer reads or lists recent files.
   restored: Previous values are back.
   "on": "%{name} turned on"
   "off": "%{name} turned off"

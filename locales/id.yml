@@ -53,7 +53,24 @@ error:
   open_in_use: "\"%{name}\" sedang dipakai aplikasi lain. Tutup di sana lalu coba lagi."
 home:
   title: Beranda
-  body: Folder yang disematkan, drive, dan file terbaru akan tampil di sini. Untuk sekarang, pilih lokasi di kiri.
+  storage: Penyimpanan
+  used_of: "%{used} dari %{total}"
+  activity: Aktivitas terakhir
+  no_activity: Belum ada. Yang Anda salin, pindahkan, ganti nama, atau hapus akan muncul di sini.
+  no_pins: "Belum ada yang disematkan. Buka sebuah folder, lalu pilih Sematkan ke sidebar."
+  recent: Terbaru
+  no_recent: Belum ada file terbaru. File yang Anda buka akan muncul di sini.
+  recent_failed: "File terbaru Windows tidak bisa dibaca. Tekan F5 untuk mencoba lagi."
+  open_location: Buka lokasi file
+  recent_row: "%{name}, di %{folder}, %{when}"
+time:
+  just_now: Baru saja
+  minute_ago: 1 menit lalu
+  minutes_ago: "%{count} menit lalu"
+  hour_ago: 1 jam lalu
+  hours_ago: "%{count} jam lalu"
+  yesterday: Kemarin
+  days_ago: "%{count} hari lalu"
 this_pc:
   title: PC ini
   free_of: "%{free} kosong dari %{total}"
@@ -207,6 +224,8 @@ flag:
     terminal: Terminal untuk Buka di Terminal
   safety:
     readonly_mode: Mode baca-saja
+  home:
+    show_recent: File terbaru di Beranda
 preset:
   anti_drag: anti salah drag
 choice:
@@ -265,6 +284,8 @@ hotswitch:
     pins_locked_on: Folder yang disematkan tidak bisa diubah.
     pins_locked_off: Folder yang disematkan bisa diubah lagi.
     external_off: Drag di dalam Switch Explorer tetap bisa.
+    recent_on: Beranda menampilkan file terbaru lagi.
+    recent_off: Beranda tidak lagi membaca atau menampilkan file terbaru.
   restored: Nilai sebelumnya dikembalikan.
   "on": "%{name} diaktifkan"
   "off": "%{name} dinonaktifkan"

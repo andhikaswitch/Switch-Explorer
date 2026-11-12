@@ -203,6 +203,8 @@ fn impact(id: &str, on: bool, features: &Features) -> Option<String> {
         ("sidebar.pins_locked", true) => "pins_locked_on",
         ("sidebar.pins_locked", false) => "pins_locked_off",
         ("dnd.external_out", false) => "external_off",
+        ("home.show_recent", true) => "recent_on",
+        ("home.show_recent", false) => "recent_off",
         _ => return None,
     };
     Some(t!(format!("hotswitch.impact.{key}")).into_owned())
@@ -488,6 +490,10 @@ impl Workspace {
             for tab in &self.tabs {
                 tab.clear_row_cache();
             }
+        }
+        if touches(&["home.show_recent"]) {
+            // Off: the list and its memory go. On: it is read again when Home shows.
+            self.refresh_home(cx);
         }
         if touches(RELOAD) {
             let ids: Vec<u64> = self.tabs.iter().map(|tab| tab.id).collect();

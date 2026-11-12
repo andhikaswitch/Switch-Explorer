@@ -1,5 +1,5 @@
-//! Pages that are not folder listings: Home (placeholder in Phase 1) and This PC. The Recycle
-//! Bin has its own module (`bin_page`).
+//! Pages that are not folder listings: This PC, and what pages share. Home (`home`) and the
+//! Recycle Bin (`bin_page`) have their own modules.
 
 use std::path::PathBuf;
 
@@ -19,7 +19,11 @@ use crate::theme::ActiveTokens as _;
 use crate::workspace::Workspace;
 
 impl Workspace {
-    fn page(&self, title: SharedString, cx: &Context<Self>) -> gpui_kit::Stateful<gpui_kit::Div> {
+    pub(crate) fn page(
+        &self,
+        title: SharedString,
+        cx: &Context<Self>,
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
         let t = cx.tokens();
         div()
             .id("page")
@@ -29,22 +33,23 @@ impl Workspace {
             .gap(t.px(Token::SpaceLg))
             .p(t.px(Token::Space2xl))
             .overflow_y_scroll()
-            .child(
-                div()
-                    .text_size(t.px(Token::FontSizeTitle))
-                    .line_height(t.px(Token::FontLineTitle))
-                    .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                    .child(title),
-            )
+            .child(self.page_title(title, cx))
     }
 
-    pub(crate) fn render_home(&self, cx: &Context<Self>) -> impl IntoElement {
+    pub(crate) fn page_title(
+        &self,
+        title: SharedString,
+        cx: &Context<Self>,
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
         let t = cx.tokens();
-        self.page(t!("home.title").into(), cx).child(
-            div()
-                .text_color(t.color(Token::FgSecondary))
-                .child(SharedString::from(t!("home.body"))),
-        )
+        div()
+            .id("page-title")
+            .role(gpui_kit::Role::Heading)
+            .aria_level(1)
+            .text_size(t.px(Token::FontSizeTitle))
+            .line_height(t.px(Token::FontLineTitle))
+            .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+            .child(title)
     }
 
     pub(crate) fn render_this_pc(&self, cx: &Context<Self>) -> impl IntoElement {

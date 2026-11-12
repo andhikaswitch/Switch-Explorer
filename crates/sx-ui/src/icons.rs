@@ -47,7 +47,16 @@ impl IconCache {
 
     /// The icon for an item, requesting it when it is not cached yet.
     pub fn get(&mut self, path: &Path, is_dir: bool) -> Option<Arc<RenderImage>> {
-        let key = IconKey::for_item(path, is_dir);
+        self.get_key(IconKey::for_item(path, is_dir))
+    }
+
+    /// The icon of a file's type, requesting it when it is not cached yet. The file itself is
+    /// never opened for it (see [`IconKey::for_type`]).
+    pub fn get_type(&mut self, path: &Path) -> Option<Arc<RenderImage>> {
+        self.get_key(IconKey::for_type(path))
+    }
+
+    fn get_key(&mut self, key: IconKey) -> Option<Arc<RenderImage>> {
         if let Some(image) = self.images.get(&key) {
             return Some(image.clone());
         }
@@ -70,6 +79,12 @@ impl IconCache {
             }
         }
         None
+    }
+
+    /// The icon of a file's type when it is already here, without asking for it (for drawing
+    /// code that cannot change the cache; ask with [`Self::get_type`] when the file is listed).
+    pub fn peek_type(&self, path: &Path) -> Option<Arc<RenderImage>> {
+        self.images.get(&IconKey::for_type(path)).cloned()
     }
 
     pub fn insert(&mut self, key: IconKey, icon: Option<IconBitmap>) {

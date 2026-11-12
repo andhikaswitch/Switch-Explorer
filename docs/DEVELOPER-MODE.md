@@ -210,6 +210,7 @@ Desain visual di `DESIGN.md` §9.
 | `Ctrl+K`, `H` | `view.show_hidden` | toggle |
 | `Ctrl+K`, `X` | `view.show_extensions` | toggle |
 | `Ctrl+K`, `T` | `view.thumbnails` | toggle |
+| (tanpa hotkey) | `home.show_recent` (file terbaru di Home) | toggle |
 | (tanpa hotkey) | Terminal "Buka di Terminal": `ops.terminal` = `windows_terminal`/`powershell`/`cmd` (tiga baris), atau kembali ke nilai sebelumnya | pilihan |
 | `Ctrl+K`, `R` | `safety.readonly_mode` | toggle |
 | `Ctrl+K`, `K` | buka panel Hot Switch | aksi |
@@ -394,6 +395,7 @@ Switch drag & drop dan Hot Switch ada di §5.2 dan §6.3.
 | Flag | Tipe | Default | Keterangan |
 |---|---|---|---|
 | `home.enabled` | bool | true | Halaman Home |
+| `home.show_recent` | bool | true | Bagian "Terbaru" di Home (dari Recent Items Windows). Mati = folder Recent tidak dibaca sama sekali. Hot Switch tanpa hotkey default (panel/palette) |
 | `tools.organizer` / `tools.duplicates` / `tools.bulk_rename` / `tools.space_analyzer` | bool | true | Tools (lazy) |
 | `tools.sync` | bool | false | Sync (experimental) |
 | `tags.enabled` | bool | false | Tag (beta) |

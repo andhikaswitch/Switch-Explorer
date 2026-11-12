@@ -15,6 +15,7 @@ mod details;
 mod dnd;
 mod focus;
 mod format;
+mod home;
 mod hotswitch;
 mod icons;
 mod launch;

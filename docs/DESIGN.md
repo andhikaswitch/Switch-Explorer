@@ -167,6 +167,25 @@ Gambar `#F59E0B`, Video `#8B5CF6`, Arsip `#10B981`, Kode `#06B6D4`, Aplikasi `#6
 Storage ditampilkan sebagai gauge baris yang ringkas (bukan deretan kartu besar seperti FariSYNC) supaya
 Home tetap padat informasi. Gauge berubah ke `gauge.fill_warning` di ≥ 85% dan `gauge.fill_danger` di ≥ 95%.
 
+- Baris storage dan baris Terbaru memakai hover halus (`row.hover.bg`, ditekan `pressed.bg`); folder pinned
+  berupa kartu (`surface.card`, hover gradien highlight). Semuanya tab stop dengan ring fokus.
+- Aktivitas terakhir: baris terbaru berwarna `fg.primary` dengan tombol Urungkan; baris yang lebih lama
+  `fg.secondary` tanpa tombol (undo berjalan berurutan).
+- Terbaru: ikon sistem, nama, folder (`fg.secondary`), waktu relatif ("Baru saja", "5 menit lalu",
+  "Kemarin", "3 hari lalu"; sejak seminggu: tanggal), dan tombol ghost "Buka lokasi file". Bagian ini
+  hilang seluruhnya saat `home.show_recent` mati.
+- Di jendela sempit, kolom Pinned dan Aktivitas turun menjadi satu kolom; baris storage turun per drive.
+- Jarak antar bagian 24 px (`space.2xl`). Lebar baris storage `size.home_storage_row`; kolom label drive
+  dan kolom waktu `size.home_label`.
+- Fokus keyboard tidak pernah tertinggal di bawah lipatan: saat `Tab` pindah ke bagian atau baris yang
+  tidak terlihat, halaman bergulir sampai bagian itu tampak (sekali per perpindahan; roda mouse tetap
+  bebas sesudahnya).
+- "Memuat…" untuk Terbaru baru tampil setelah 150 ms. Saat mode baca-saja aktif, tombol Urungkan tampil
+  disabled (opasitas `opacity.disabled`).
+- "Kemarin" mengikuti tanggal kalender (bukan 24–48 jam); di bawah 24 jam selalu "x jam lalu"; sejak
+  seminggu: tanggal saja, tanpa jam.
+- Bagian kosong menampilkan satu kalimat `fg.secondary` yang menyebut cara mengisinya.
+
 ### 8.3 Popup tujuan Google Drive
 
 ```text
